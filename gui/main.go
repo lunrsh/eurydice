@@ -1,17 +1,23 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
+	"path"
 	"runtime"
 
 	mediamanagement "git.lunr.sh/luna/orpheus/gui/mediamangement"
+	"git.lunr.sh/luna/orpheus/gui/oncrash"
 	"git.lunr.sh/luna/orpheus/gui/playlistmanagement"
 	"git.lunr.sh/luna/orpheus/gui/state"
 	"github.com/AllenDang/cimgui-go/backend"
 	"github.com/AllenDang/cimgui-go/backend/glfwbackend"
 	"github.com/AllenDang/cimgui-go/imgui"
 	_ "github.com/AllenDang/cimgui-go/impl/glfw"
+	"github.com/charmbracelet/log"
+	"github.com/muesli/termenv"
 )
 
 var appState *state.ApplicationState
@@ -86,12 +92,59 @@ func mainLoop() {
 }
 
 func main() {
-	appState = &state.ApplicationState{
-		CurrentImguiBackend: nil,
-		Docking: &state.DockingState{},
+	logFilePath := path.Join(os.TempDir(), "orpheus.log")
+	logFile, err := os.Create(logFilePath)
+
+	log.Debugf("log file path is: %s", logFilePath)
+
+	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			log.Debug("log file already exists -- deleting")
+			err = os.Remove(logFilePath) // Attempt to delete the existing file
+
+			if err != nil {
+				log.Warnf("failed to delete existing log file: %s", err.Error())
+				logFile = nil
+			} else {
+				// Once successful, recreate the log file
+				logFile, err = os.Create(logFilePath)
+
+				if err != nil {
+					log.Warnf("failed to create log file: %s", err.Error())
+					logFile = nil
+				}
+			}
+		} else {
+			// Some other error - display and give up
+			log.Warnf("failed to create log file: %s", err.Error())
+			logFile = nil
+		}
 	}
 
-	var err error
+	// Only enable multiwriter if we have a logFile
+	var logger *log.Logger
+
+	if logFile != nil {
+		logger = log.New(io.MultiWriter(logFile, os.Stdout))
+	} else {
+		logger = log.New(os.Stdout)
+		logger.SetColorProfile(termenv.TrueColor)
+	}
+
+	// Register a panic handler now
+	defer func() {
+		if err := recover(); err != nil {
+			oncrash.Panic("Orpheus! has crashed", fmt.Sprintf("uncaught exception: %s", err), logger, logFilePath)
+		}
+	}()
+
+	appState = &state.ApplicationState{
+		CurrentImguiBackend: nil,
+		Docking:             &state.DockingState{},
+		Logger:              logger,
+		LogFilePath:         logFilePath,
+	}
+
 	appState.CurrentImguiBackend, err = backend.CreateBackend(glfwbackend.NewGLFWBackend())
 
 	if err != nil {
