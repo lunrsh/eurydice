@@ -5,36 +5,34 @@ import (
 	"os"
 	"runtime"
 
+	mediamanagement "git.lunr.sh/luna/orpheus/gui/mediamangement"
+	"git.lunr.sh/luna/orpheus/gui/playlistmanagement"
+	"git.lunr.sh/luna/orpheus/gui/state"
 	"github.com/AllenDang/cimgui-go/backend"
 	"github.com/AllenDang/cimgui-go/backend/glfwbackend"
 	"github.com/AllenDang/cimgui-go/imgui"
 	_ "github.com/AllenDang/cimgui-go/impl/glfw"
 )
 
-var (
-	currentBackend    backend.Backend[glfwbackend.GLFWWindowFlags]
-	dockID            imgui.ID
-	lastKnownWorkSize imgui.Vec2
-
-	dock1 imgui.ID
-	dock2 imgui.ID
-)
+var appState *state.ApplicationState
 
 func init() {
+	// Lock the current routine to the OS thread so we don't run into imgui issues
 	runtime.LockOSThread()
 }
 
-func loop() {
-	// MENU BAR
+func mainLoop() {
+	// Menu bar
 	if imgui.BeginMainMenuBar() {
 		if imgui.BeginMenu("File") {
 			if imgui.MenuItemBool("Open") {
 				// open
 			}
+
 			imgui.Separator()
 
 			if imgui.MenuItemBool("Exit") {
-				currentBackend.SetShouldClose(true)
+				appState.CurrentImguiBackend.SetShouldClose(true)
 			}
 
 			imgui.EndMenu()
@@ -52,58 +50,65 @@ func loop() {
 	workSize := viewport.WorkSize()
 
 	// Initialize docking
-	if dockID == 0 || lastKnownWorkSize.X != workSize.X || lastKnownWorkSize.Y != workSize.Y {
-		imgui.InternalDockBuilderRemoveNode(dockID)
-		dockID = imgui.InternalDockBuilderAddNode()
+	docking := appState.Docking
+
+	if docking.DockID == 0 || docking.LastKnownWindowSize.X != workSize.X || docking.LastKnownWindowSize.Y != workSize.Y {
+		imgui.InternalDockBuilderRemoveNode(docking.DockID)
+		docking.DockID = imgui.InternalDockBuilderAddNode()
 
 		workPos := viewport.WorkPos()
-		lastKnownWorkSize = workSize
+		docking.LastKnownWindowSize = workSize
 
-		imgui.InternalDockBuilderSetNodeSize(dockID, workSize)
-		imgui.InternalDockBuilderSetNodePos(dockID, workPos)
+		imgui.InternalDockBuilderSetNodeSize(docking.DockID, workSize)
+		imgui.InternalDockBuilderSetNodePos(docking.DockID, workPos)
 
-		dock1 = imgui.InternalDockBuilderSplitNode(dockID, imgui.DirLeft, 0.33, nil, &dockID)
-		dock2 = imgui.InternalDockBuilderSplitNode(dockID, imgui.DirRight, 0.66, nil, &dockID)
+		docking.LeftSideDock = imgui.InternalDockBuilderSplitNode(docking.DockID, imgui.DirLeft, 0.33, nil, &docking.DockID)
+		docking.RightSideDock = imgui.InternalDockBuilderSplitNode(docking.DockID, imgui.DirRight, 0.66, nil, &docking.DockID)
 
-		imgui.InternalDockBuilderDockWindow("One", dock1)
-		imgui.InternalDockBuilderDockWindow("Two", dock2)
+		imgui.InternalDockBuilderDockWindow("One", docking.LeftSideDock)
+		imgui.InternalDockBuilderDockWindow("Two", docking.RightSideDock)
 
-		imgui.InternalDockBuilderFinish(dockID)
+		imgui.InternalDockBuilderFinish(docking.DockID)
 	}
 
 	// Now define the windows with matching titles
-	imgui.SetNextWindowDockID(dock1)
+	imgui.SetNextWindowDockID(docking.LeftSideDock)
 	imgui.BeginV("Media", nil, imgui.WindowFlagsNoMove)
 	imgui.SetNextWindowViewport(imgui.MainViewport().ID()) // hack to disable viewport seperation
-	imgui.Text("I'm on the left!")
+	mediamanagement.Render(appState)
 	imgui.End()
 
-	imgui.SetNextWindowDockID(dock2)
+	imgui.SetNextWindowDockID(docking.RightSideDock)
 	imgui.BeginV("Playlist Manager", nil, imgui.WindowFlagsNoMove)
 	imgui.SetNextWindowViewport(imgui.MainViewport().ID()) // hack to disable viewport seperation
-	imgui.Text("I'm on the right!")
+	playlistmanagement.Render(appState)
 	imgui.End()
 }
 
 func main() {
+	appState = &state.ApplicationState{
+		CurrentImguiBackend: nil,
+		Docking: &state.DockingState{},
+	}
+
 	var err error
-	currentBackend, err  = backend.CreateBackend(glfwbackend.NewGLFWBackend())
+	appState.CurrentImguiBackend, err = backend.CreateBackend(glfwbackend.NewGLFWBackend())
 
 	if err != nil {
 		fmt.Printf("failed to init backend: %s\n", err)
 		os.Exit(1)
 	}
 
-	currentBackend.SetAfterCreateContextHook(func() {
-		currentBackend.SetBgColor(imgui.NewVec4(0, 0, 0, 1.0))
+	appState.CurrentImguiBackend.SetAfterCreateContextHook(func() {
+		appState.CurrentImguiBackend.SetBgColor(imgui.NewVec4(0, 0, 0, 1.0))
 
 		// This mechanism caps the FPS at V-Sync (ie. 144Hz display = 144fps, 60Hz display = 60fps)
 		//
 		// shouldn't ever reach 2k Hz within a timeframe that a: people would care and b: that this program would be around and used
-		currentBackend.SetTargetFPS(2048)
-		currentBackend.SetSwapInterval(1) // enable V-Sync
+		appState.CurrentImguiBackend.SetTargetFPS(2048)
+		appState.CurrentImguiBackend.SetSwapInterval(1) // enable V-Sync
 	})
 
-	currentBackend.CreateWindow("Orpheus!", 1366, 768)
-	currentBackend.Run(loop)
+	appState.CurrentImguiBackend.CreateWindow("Orpheus!", 1366, 768)
+	appState.CurrentImguiBackend.Run(mainLoop)
 }
