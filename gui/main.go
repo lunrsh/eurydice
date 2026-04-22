@@ -92,6 +92,13 @@ func mainLoop() {
 }
 
 func main() {
+	// Are we running as a crash handler process, to a crashed process? If so, run as crash handler, and exit
+	if os.Getenv("ORPHEUS_IS_CRASH_HANDLING") != "" {
+		oncrash.ICanHazPanicDisplay()
+		os.Exit(0)
+	}
+
+	// Initialize logging to file, primarily for crash logs
 	logFilePath := path.Join(os.TempDir(), "orpheus.log")
 	logFile, err := os.Create(logFilePath)
 
@@ -129,6 +136,28 @@ func main() {
 	} else {
 		logger = log.New(os.Stdout)
 		logger.SetColorProfile(termenv.TrueColor)
+	}
+
+	// Initialize log levels
+	logLevel := os.Getenv("ORPHEUS_LOG_LEVEL")
+
+	if logLevel != "" {
+		switch logLevel {
+		case "debug":
+			logger.SetLevel(log.DebugLevel)
+
+		case "info":
+			logger.SetLevel(log.InfoLevel)
+
+		case "warn":
+			logger.SetLevel(log.WarnLevel)
+
+		case "error":
+			logger.SetLevel(log.ErrorLevel)
+
+		case "fatal":
+			logger.SetLevel(log.FatalLevel)
+		}
 	}
 
 	// Register a panic handler now
