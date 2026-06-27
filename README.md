@@ -1,3 +1,5 @@
+![Jean-Baptiste Camille Corot, Public domain, via Wikimedia Commons](https://git.lunr.sh/luna/eurydice/media/branch/main/assets/banner.jpg)
+
 # Eurydice
 
 Eurydice is a Rockbox music manager for the modern age.
