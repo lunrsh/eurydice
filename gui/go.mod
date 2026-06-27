@@ -1,4 +1,4 @@
-module git.lunr.sh/luna/orpheus/gui
+module git.lunr.sh/luna/eurydice/gui
 
 go 1.25.7
 

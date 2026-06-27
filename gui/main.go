@@ -10,12 +10,12 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"git.lunr.sh/luna/orpheus/gui/oncrash"
-	"git.lunr.sh/luna/orpheus/gui/state"
-	"git.lunr.sh/luna/orpheus/gui/uicomponents/firstboot"
-	"git.lunr.sh/luna/orpheus/gui/uicomponents/mediamanagement"
-	"git.lunr.sh/luna/orpheus/gui/uicomponents/playlistmanagement"
-	"git.lunr.sh/luna/orpheus/gui/uicomponents/scanlibrary"
+	"git.lunr.sh/luna/eurydice/gui/oncrash"
+	"git.lunr.sh/luna/eurydice/gui/state"
+	"git.lunr.sh/luna/eurydice/gui/uicomponents/firstboot"
+	"git.lunr.sh/luna/eurydice/gui/uicomponents/mediamanagement"
+	"git.lunr.sh/luna/eurydice/gui/uicomponents/playlistmanagement"
+	"git.lunr.sh/luna/eurydice/gui/uicomponents/scanlibrary"
 	"github.com/AllenDang/cimgui-go/backend"
 	"github.com/AllenDang/cimgui-go/backend/glfwbackend"
 	"github.com/AllenDang/cimgui-go/imgui"
@@ -147,19 +147,19 @@ func mainLoop() {
 					if os.IsNotExist(err) {
 						appState.PageStates.FirstBoot.ErrHint = "The path you provided to the library in the configuration does not exist."
 						imgui.EndPopup()
-						imgui.OpenPopupStr("Library Initialization Error | Orpheus! Startup")
+						imgui.OpenPopupStr("Library Initialization Error | Eurydice Startup")
 
 						return
 					} else if os.IsPermission(err) {
 						appState.PageStates.FirstBoot.ErrHint = "You do not have permission to read from the the library you provided."
 						imgui.EndPopup()
-						imgui.OpenPopupStr("Library Initialization Error | Orpheus! Startup")
+						imgui.OpenPopupStr("Library Initialization Error | Eurydice Startup")
 
 						return
 					} else {
 						appState.PageStates.FirstBoot.ErrHint = fmt.Sprintf("An unknown error occurred: %v", err)
 						imgui.EndPopup()
-						imgui.OpenPopupStr("Library Initialization Error | Orpheus! Startup")
+						imgui.OpenPopupStr("Library Initialization Error | Eurydice Startup")
 
 						return
 					}
@@ -200,7 +200,7 @@ func mainLoop() {
 
 	// "inline" this because it's so simple
 	if imgui.BeginPopupModalV("Error | First Launch Wizard", nil, imgui.WindowFlagsAlwaysAutoResize) ||
-		imgui.BeginPopupModalV("Library Initialization Error | Orpheus! Startup", nil, imgui.WindowFlagsAlwaysAutoResize) {
+		imgui.BeginPopupModalV("Library Initialization Error | Eurydice Startup", nil, imgui.WindowFlagsAlwaysAutoResize) {
 		imgui.Text(appState.PageStates.FirstBoot.ErrHint + "\n")
 
 		if imgui.ButtonV("Close", imgui.Vec2{}) {
@@ -221,7 +221,7 @@ func main() {
 	}
 
 	// Initialize logging to file, primarily for crash logs
-	logFilePath := filepath.Join(os.TempDir(), "orpheus.log")
+	logFilePath := filepath.Join(os.TempDir(), "eurydice.log")
 	logFile, err := os.Create(logFilePath)
 
 	log.Infof("Log file path is: %s", logFilePath)
@@ -287,7 +287,7 @@ func main() {
 	// Register our crash handlers now
 	defer func() {
 		if err := recover(); err != nil {
-			oncrash.Panic("Orpheus! has crashed", fmt.Sprintf("Uncaught exception: %s", err), logger, logFilePath)
+			oncrash.Panic("Eurydice has crashed", fmt.Sprintf("Uncaught exception: %s", err), logger, logFilePath)
 		}
 	}()
 
@@ -338,7 +338,7 @@ func main() {
 				panic(fmt.Sprintf("Failed to write JSON configuration: %s (try deleting the config directory?)", err.Error()))
 			}
 		} else {
-			panic(fmt.Sprintf("Failed to read Orpheus! configuration: %s (try deleting the config directory?)", err.Error()))
+			panic(fmt.Sprintf("Failed to read Eurydice configuration: %s (try deleting the config directory?)", err.Error()))
 		}
 	} else {
 		// Unmarshal the file, and panic if we fail
@@ -404,6 +404,6 @@ func main() {
 		appState.CurrentImguiBackend.SetSwapInterval(1) // enable V-Sync
 	})
 
-	appState.CurrentImguiBackend.CreateWindow("Orpheus!", 1366, 768)
+	appState.CurrentImguiBackend.CreateWindow("Eurydice", 1366, 768)
 	appState.CurrentImguiBackend.Run(mainLoop)
 }

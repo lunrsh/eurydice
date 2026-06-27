@@ -14,7 +14,7 @@ import (
 	"strings"
 	"sync"
 
-	stateStructs "git.lunr.sh/luna/orpheus/gui/state"
+	stateStructs "git.lunr.sh/luna/eurydice/gui/state"
 	"github.com/AllenDang/cimgui-go/imgui"
 	"go.senan.xyz/taglib"
 	"golang.org/x/image/draw"

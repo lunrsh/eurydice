@@ -6,7 +6,7 @@ import (
 	"os"
 	"path"
 
-	stateStructs "git.lunr.sh/luna/orpheus/gui/state"
+	stateStructs "git.lunr.sh/luna/eurydice/gui/state"
 	"github.com/AllenDang/cimgui-go/imgui"
 	"github.com/sqweek/dialog"
 )
@@ -18,7 +18,7 @@ func Render(state *stateStructs.ApplicationState) {
 		imgui.CloseCurrentPopup()
 		imgui.EndPopup()
 	case 0:
-		imgui.Text("Welcome to the Orpheus! Rockbox management tool, made by Luna, et al.\n\nFirst, you need to tell me where your song library is, before I get started:\n\n")
+		imgui.Text("Welcome to the Eurydice Rockbox management tool, made by Luna, et al.\n\nFirst, you need to tell me where your song library is, before I get started:\n\n")
 		textCursorPosition := imgui.CursorScreenPos()
 
 		imgui.SetCursorScreenPos(imgui.Vec2{
