@@ -1,4 +1,4 @@
-package playlistmanagement
+package mediamanagement
 
 import (
 	"git.lunr.sh/luna/eurydice/gui/state"
@@ -6,5 +6,5 @@ import (
 )
 
 func Render(state *state.ApplicationState) {
-	imgui.Text("I'm on the right!")
+	imgui.Text("MediaManagement")
 }
