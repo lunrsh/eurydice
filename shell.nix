@@ -8,11 +8,13 @@
     pkg-config
     libGL
 
-    xorg.libX11
-    wayland
+    #xorg.libX11
+    #wayland
+    #gtk3
   ];
 
   shellHook = ''
-    export LD_LIBRARY_PATH="$PWD/modules/evdi/library:${pkgs.lib.makeLibraryPath [ pkgs.libGL ]}:$LD_LIBRARY_PATH"
+    export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath [ pkgs.libGL ]}:$LD_LIBRARY_PATH"
+    export XDG_DATA_DIRS="$XDG_DATA_DIRS:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}"
   '';
 }

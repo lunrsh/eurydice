@@ -103,7 +103,7 @@ func ICanHazPanicDisplay() {
 		imgui.SetNextWindowSize(imgui.Vec2{X: windowWidth, Y: windowHeight})
 
 		imgui.BeginV("crashpopup", nil, imgui.WindowFlagsNoMove|imgui.WindowFlagsNoDecoration)
-		imgui.Text("Orpheus! has crashed with the following error:\n\n" + crashError + "\n\n")
+		imgui.TextWrapped("Orpheus! has crashed with the following error:\n\n" + crashError + "\n\n")
 
 		if imgui.CollapsingHeaderTreeNodeFlags("Show Backtrace") {
 			// TODO: make this more dynamic to resize better

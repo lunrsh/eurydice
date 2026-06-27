@@ -7,4 +7,5 @@ import (
 
 func Render(state *state.ApplicationState) {
 	imgui.Text("I'm on the left!")
+	imgui.Text("I'm on the right!")
 }
