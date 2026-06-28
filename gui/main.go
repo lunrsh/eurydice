@@ -215,7 +215,7 @@ func mainLoop() {
 
 func main() {
 	// Are we running as a crash handler process? If so, run as crash handler, and exit
-	if os.Getenv("ORPHEUS_IS_CRASH_HANDLING") != "" {
+	if os.Getenv("EURYDICE_IS_CRASH_HANDLING") != "" {
 		oncrash.ICanHazPanicDisplay()
 		os.Exit(0)
 	}
@@ -261,7 +261,7 @@ func main() {
 	}
 
 	// Initialize log levels
-	logLevel := os.Getenv("ORPHEUS_LOG_LEVEL")
+	logLevel := os.Getenv("EURYDICE_LOG_LEVEL")
 
 	if logLevel != "" {
 		switch logLevel {
@@ -382,10 +382,7 @@ func main() {
 			DatabaseCtx: context.Background(),
 		},
 
-		PageStates: &state.IndividualPageStates{
-			FirstBoot:   &state.FirstBootPageState{},
-			LibraryScan: &state.LibraryScanPageState{},
-		},
+		PageStates: &state.IndividualPageStates{},
 	}
 
 	appState.CurrentImguiBackend, err = backend.CreateBackend(glfwbackend.NewGLFWBackend())

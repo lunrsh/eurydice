@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"image"
+	"image/jpeg"
 	"io/fs"
 	"mime"
 	"os"
@@ -15,6 +16,8 @@ import (
 	"sync"
 
 	stateStructs "git.lunr.sh/luna/eurydice/gui/state"
+	"git.lunr.sh/luna/eurydice/gui/state/popupstate/scanstate"
+	"git.lunr.sh/luna/eurydice/gui/uicomponents/widgets/mediamanagement"
 
 	"go.senan.xyz/taglib"
 	"golang.org/x/image/draw"
@@ -255,8 +258,20 @@ func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 								newImage := image.NewRGBA(image.Rect(0, 0, 256, 256))
 								draw.NearestNeighbor.Scale(newImage, newImage.Rect, imageData, imageData.Bounds(), draw.Over, nil)
 
-								if err := os.WriteFile(filepath.Join(state.Config.AppStatePath, "thumbnails", string(imageHashAsString)), newImage.Pix, 0644); err != nil {
-									state.Logger.Errorf("ScanLibrary->backingThread->indexNewMusic: Failed to write image '%s': %s", string(imageHashAsString), err.Error())
+								file, err := os.OpenFile(filepath.Join(state.Config.AppStatePath, "thumbnails", string(imageHashAsString)), os.O_WRONLY|os.O_CREATE, 0644)
+
+								if err != nil {
+									state.Logger.Errorf("ScanLibrary->backingThread->indexNewMusic: Failed to open image (for writing) '%s': %s", string(imageHashAsString), err.Error())
+								}
+
+								defer file.Close()
+
+								err = jpeg.Encode(file, newImage, &jpeg.Options{
+									Quality: 95,
+								})
+
+								if err != nil {
+									state.Logger.Errorf("ScanLibrary->backingThread->indexNewMusic: Failed to encode image '%s' as JPEG: %s", string(imageHashAsString), err.Error())
 								}
 							}
 
@@ -376,7 +391,7 @@ func cleanupDatabase(state *stateStructs.ApplicationState, musicFound []string) 
 func backingThread(state *stateStructs.ApplicationState) {
 	// Step 1: scan the filesystem
 	state.Logger.Debugf("ScanLibrary->backingThread: scanning library path '%s'", state.Config.JSONConfig.LibraryPath)
-	state.PageStates.LibraryScan.StepNo = stateStructs.ScanStepScanningFilesystem
+	state.PageStates.LibraryScan.StepNo = scanstate.StepScanningFilesystem
 
 	allMusicFound, err := walkToFindAllMusic(state)
 
@@ -385,12 +400,12 @@ func backingThread(state *stateStructs.ApplicationState) {
 	}
 
 	if len(allMusicFound) == 0 {
-		state.PageStates.LibraryScan.StepNo = stateStructs.ScanStepFinished
+		state.PageStates.LibraryScan.StepNo = scanstate.StepFinished
 		return
 	}
 
 	// Step 2: scan the database (for entries we already have in the database)
-	state.PageStates.LibraryScan.StepNo = stateStructs.ScanStepScanningDatabase
+	state.PageStates.LibraryScan.StepNo = scanstate.StepScanningDatabase
 	uniqueMusicFound, err := findNonindexedMusic(state, allMusicFound)
 
 	if err != nil {
@@ -410,19 +425,26 @@ func backingThread(state *stateStructs.ApplicationState) {
 	state.PageStates.LibraryScan.TotalSongsToScan = len(uniqueMusicFound)
 	state.PageStates.LibraryScan.TotalSongsScanned = 0
 
-	state.PageStates.LibraryScan.StepNo = stateStructs.ScanStepAddingSongs
+	state.PageStates.LibraryScan.StepNo = scanstate.StepAddingSongs
 
 	if err = indexNewMusic(state, uniqueMusicFound); err != nil {
 		panic(fmt.Sprintf("Failed to index new music: %s", err.Error()))
 	}
 
 	// Step 4: cleanup database (remove entries that are no longer in the filesystem)
-	state.PageStates.LibraryScan.StepNo = stateStructs.ScanStepCleaningUp
+	state.PageStates.LibraryScan.StepNo = scanstate.StepCleaningUp
 
 	if err = cleanupDatabase(state, allMusicFound); err != nil {
 		panic(fmt.Sprintf("Failed to cleanup database: %s", err.Error()))
 	}
 
+	// Step 5: Startup the media management indexer
+	go func() {
+		if err = mediamanagement.BootstrapIndex(state); err != nil {
+			panic(fmt.Sprintf("Failed to bootstrap media management index: %s", err.Error()))
+		}
+	}()
+
 	// Show that we're done!
-	state.PageStates.LibraryScan.StepNo = stateStructs.ScanStepFinished
+	state.PageStates.LibraryScan.StepNo = scanstate.StepFinished
 }

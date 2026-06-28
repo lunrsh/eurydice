@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	stateStructs "git.lunr.sh/luna/eurydice/gui/state"
+	"git.lunr.sh/luna/eurydice/gui/state/popupstate/scanstate"
 	"github.com/AllenDang/cimgui-go/imgui"
 )
 
@@ -11,8 +12,8 @@ func Render(state *stateStructs.ApplicationState) {
 	// ScanStepFinished is earlier because we need to EndPopup before closing, but we already have a defer that does that,
 	// so it'd call twice, and break things (crash).
 
-	if state.PageStates.LibraryScan.StepNo == stateStructs.ScanStepFinished {
-		state.PageStates.LibraryScan.StepNo = stateStructs.ScanStepIdle
+	if state.PageStates.LibraryScan.StepNo == scanstate.StepFinished {
+		state.PageStates.LibraryScan.StepNo = scanstate.StepIdle
 		imgui.CloseCurrentPopup()
 		imgui.EndPopup()
 
@@ -22,14 +23,14 @@ func Render(state *stateStructs.ApplicationState) {
 	defer imgui.EndPopup()
 
 	switch state.PageStates.LibraryScan.StepNo {
-	case stateStructs.ScanStepIdle:
+	case scanstate.StepIdle:
 		imgui.Text("Initializing runtime...\n")
 		imgui.Separator()
 		imgui.Spacing()
 		imgui.ProgressBarV(float32(imgui.Time()*-0.25), imgui.Vec2{X: 600, Y: 0}, "Initializing...")
 
 		go backingThread(state)
-	case stateStructs.ScanStepScanningFilesystem:
+	case scanstate.StepScanningFilesystem:
 		imgui.Text("Scanning filesystem, please wait...\n")
 		currentSongPath := state.PageStates.LibraryScan.CurrentSongPath
 
@@ -42,7 +43,7 @@ func Render(state *stateStructs.ApplicationState) {
 		imgui.Separator()
 		imgui.Spacing()
 		imgui.ProgressBarV(float32(imgui.Time()*-0.25), imgui.Vec2{X: 600, Y: 0}, "Scanning...")
-	case stateStructs.ScanStepScanningDatabase:
+	case scanstate.StepScanningDatabase:
 		imgui.Text("Scanning database, please wait...\n")
 		currentSongPath := state.PageStates.LibraryScan.CurrentSongPath
 
@@ -55,7 +56,7 @@ func Render(state *stateStructs.ApplicationState) {
 		imgui.Separator()
 		imgui.Spacing()
 		imgui.ProgressBarV(float32(imgui.Time()*-0.25), imgui.Vec2{X: 600, Y: 0}, "Scanning...")
-	case stateStructs.ScanStepAddingSongs:
+	case scanstate.StepAddingSongs:
 		imgui.Text("Adding new songs to database, please wait...\n")
 		currentSongPath := state.PageStates.LibraryScan.CurrentSongPath
 
@@ -71,7 +72,7 @@ func Render(state *stateStructs.ApplicationState) {
 
 		progressBarText := fmt.Sprintf("Adding... (%d/%d)", state.PageStates.LibraryScan.TotalSongsScanned+1, state.PageStates.LibraryScan.TotalSongsToScan+1)
 		imgui.ProgressBarV(float32(state.PageStates.LibraryScan.TotalSongsScanned)/float32(state.PageStates.LibraryScan.TotalSongsToScan), imgui.Vec2{X: 600, Y: 0}, progressBarText)
-	case stateStructs.ScanStepCleaningUp:
+	case scanstate.StepCleaningUp:
 		imgui.Text("Removing missing songs from database, please wait...\n")
 		currentSongPath := state.PageStates.LibraryScan.CurrentSongPath
 

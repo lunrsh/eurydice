@@ -29,11 +29,11 @@ func Panic(title, error string, logger *log.Logger, logFile string) {
 	// Spawn a crash handler process to handle UI
 	crashHandlerProcess := exec.Command(os.Args[0], os.Args[0:]...)
 	crashHandlerEnvironmentVariables := []string{
-		"ORPHEUS_IS_CRASH_HANDLING=1",
-		fmt.Sprintf("ORPHEUS_CRASH_TITLE=%s", base64.StdEncoding.EncodeToString([]byte(title))),
-		fmt.Sprintf("ORPHEUS_CRASH_ERROR=%s", base64.StdEncoding.EncodeToString([]byte(error))),
-		fmt.Sprintf("ORPHEUS_CRASH_TO_FILE=%s", base64.StdEncoding.EncodeToString([]byte(logFile))),
-		fmt.Sprintf("ORPHEUS_STACK_TRACE=%s", base64.StdEncoding.EncodeToString(stackTraceBuf[:stackTraceLen])),
+		"EURYDICE_IS_CRASH_HANDLING=1",
+		fmt.Sprintf("EURYDICE_CRASH_TITLE=%s", base64.StdEncoding.EncodeToString([]byte(title))),
+		fmt.Sprintf("EURYDICE_CRASH_ERROR=%s", base64.StdEncoding.EncodeToString([]byte(error))),
+		fmt.Sprintf("EURYDICE_CRASH_TO_FILE=%s", base64.StdEncoding.EncodeToString([]byte(logFile))),
+		fmt.Sprintf("EURYDICE_STACK_TRACE=%s", base64.StdEncoding.EncodeToString(stackTraceBuf[:stackTraceLen])),
 	}
 
 	// Run until we exit
@@ -50,25 +50,25 @@ func ICanHazPanicDisplay() {
 
 	// Get metadata from the parent process
 
-	crashTitleBuf, err := base64.StdEncoding.DecodeString(os.Getenv("ORPHEUS_CRASH_TITLE"))
+	crashTitleBuf, err := base64.StdEncoding.DecodeString(os.Getenv("EURYDICE_CRASH_TITLE"))
 
 	if err != nil {
 		log.Fatalf("failed to decode crash title: %s", err.Error())
 	}
 
-	crashErrorBuf, err := base64.StdEncoding.DecodeString(os.Getenv("ORPHEUS_CRASH_ERROR"))
+	crashErrorBuf, err := base64.StdEncoding.DecodeString(os.Getenv("EURYDICE_CRASH_ERROR"))
 
 	if err != nil {
 		log.Fatalf("failed to decode crash error: %s", err.Error())
 	}
 
-	crashFileBuf, err := base64.StdEncoding.DecodeString(os.Getenv("ORPHEUS_CRASH_TO_FILE"))
+	crashFileBuf, err := base64.StdEncoding.DecodeString(os.Getenv("EURYDICE_CRASH_TO_FILE"))
 
 	if err != nil {
 		log.Fatalf("failed to decode crash file path: %s", err.Error())
 	}
 
-	stackTraceBuf, err := base64.StdEncoding.DecodeString(os.Getenv("ORPHEUS_STACK_TRACE"))
+	stackTraceBuf, err := base64.StdEncoding.DecodeString(os.Getenv("EURYDICE_STACK_TRACE"))
 
 	if err != nil {
 		log.Fatalf("failed to decode stack trace: %s", err.Error())
