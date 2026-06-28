@@ -1,0 +1,179 @@
+package mediamanagement
+
+import (
+	"C"
+	"fmt"
+	"slices"
+	"strings"
+
+	stateStructs "git.lunr.sh/luna/eurydice/gui/state"
+)
+import (
+	"bytes"
+	"image"
+	"image/draw"
+	"os"
+	"path/filepath"
+
+	"git.lunr.sh/luna/eurydice/gui/state/widgetstate/mediastate"
+	"github.com/AllenDang/cimgui-go/imgui"
+)
+
+func BootstrapIndex(state *stateStructs.ApplicationState) error {
+	// Reindex everything since we're just bootstrapping...
+	// FIXME: this might cause a memory leak! the GC is probably smart enough to clean all of these out, but in the long run, it's better to be safe...
+	state.PageStates.MediaManagement.Artists = []*mediastate.ArtistState{}
+	state.PageStates.MediaManagement.Records = []*mediastate.RecordState{}
+
+	// Fetching by artist isn't a dedicated function because this is the only occurrence of it (unlike records & songs)
+	if state.PageStates.MediaManagement.SortMethod == mediastate.SortArtistThenAlbum {
+		// Bootstrap the sort-by-artist
+		allArtists := []stateStructs.Artist{}
+
+		if err := state.Config.Database.Preload("PrimarySongs").Where("library_id = ?", state.Config.ActiveLibraryID).Find(&allArtists).Error; err != nil {
+			return fmt.Errorf("failed to find all artists: %w", err)
+		}
+
+		for _, artist := range allArtists {
+			// TODO: make this a config option
+			// Hide all artists that don't have any songs (except for collabs)
+
+			if len(artist.PrimarySongs) != 0 {
+				state.PageStates.MediaManagement.Artists = append(state.PageStates.MediaManagement.Artists, &mediastate.ArtistState{
+					ID:         artist.ID,
+					ArtistName: artist.Name,
+				})
+			}
+		}
+
+		// Too lazy to implement sorting ourselves, so we use slices.SortFunc
+		// If you have more than 100k artists, you have bigger problems...
+		slices.SortStableFunc(state.PageStates.MediaManagement.Artists, func(a, b *mediastate.ArtistState) int {
+			return strings.Compare(strings.ToLower(a.ArtistName), strings.ToLower(b.ArtistName))
+		})
+	}
+
+	return nil
+}
+
+func DynLoadRecords(state *stateStructs.ApplicationState, artist *mediastate.ArtistState) error {
+	// Fetch corresponding records for the artist from the database, incl. songs for their ArtIDs
+	allRecordsFromArtist := []stateStructs.Record{}
+
+	if err := state.Config.Database.Preload("Songs").Where("library_id = ? AND artist_id = ?", state.Config.ActiveLibraryID, artist.ID).Find(&allRecordsFromArtist).Error; err != nil {
+		return fmt.Errorf("failed to find records for artist %s: %w", artist.ArtistName, err)
+	}
+
+	for _, record := range allRecordsFromArtist {
+		// Get consensus on the most popular art id for this record (hopefully they're all the same, but shit happens)
+		imageHashes := map[string]int{}
+
+		for _, song := range record.Songs {
+			imageHashes[song.ArtID]++
+		}
+
+		var mostPopularArtID string
+
+		for hash, count := range imageHashes {
+			if count > imageHashes[mostPopularArtID] {
+				mostPopularArtID = hash
+			}
+		}
+
+		var loadedImage *imgui.TextureRef
+
+		if mostPopularArtID != "" {
+			var err error
+			loadedImage, err = loadImage(state, mostPopularArtID)
+
+			if err != nil {
+				state.Logger.Errorf("Failed to load image for record '%s': %v", record.Name, err)
+			}
+		}
+
+		// Don't populate songs here in order to lazy load later (to save memory)
+		artist.Records = append(artist.Records, &mediastate.RecordState{
+			ID:    record.ID,
+			Title: record.Name,
+			Image: loadedImage,
+		})
+	}
+
+	// Too lazy to implement sorting ourselves, so we use slices.SortFunc
+	// If you have more than 100k artists, you have bigger problems...
+	slices.SortStableFunc(artist.Records, func(a, b *mediastate.RecordState) int {
+		return strings.Compare(strings.ToLower(a.Title), strings.ToLower(b.Title))
+	})
+
+	return nil
+}
+
+func DynLoadSongs(state *stateStructs.ApplicationState, record *mediastate.RecordState) error {
+	// Fetch songs for this record
+	allSongsOnThisRecord := []stateStructs.Song{}
+
+	if err := state.Config.Database.Preload("CollabArtists").Where("library_id = ? AND record_id = ?", state.Config.ActiveLibraryID, record.ID).Find(&allSongsOnThisRecord).Error; err != nil {
+		return fmt.Errorf("failed to find songs for record %d: %w", record.ID, err)
+	}
+
+	for _, song := range allSongsOnThisRecord {
+		// FIXME: this doesn't take already in memory artists into account!!!
+		mediaCompatibleArtists := []*mediastate.ArtistState{
+			record.AuthoringArtist,
+		}
+
+		for _, artist := range song.CollabArtists {
+			// We don't need records here, so let's not populate if not needed...
+			mediaCompatibleArtists = append(mediaCompatibleArtists, &mediastate.ArtistState{
+				ID:         artist.ID,
+				ArtistName: artist.Name,
+			})
+		}
+
+		var loadedImage *imgui.TextureRef
+
+		if song.ArtID != "" {
+			var err error
+			loadedImage, err = loadImage(state, song.ArtID)
+
+			if err != nil {
+				state.Logger.Errorf("Failed to load image for song '%s' from record '%s': %v", song.Title, record.Title, err)
+			}
+		}
+
+		record.Songs = append(record.Songs, &mediastate.SongState{
+			OnRecord: record,
+			Artists:  mediaCompatibleArtists,
+			Title:    song.Title,
+
+			Image: loadedImage,
+		})
+	}
+
+	return nil
+}
+
+// Loads an image into memory as an imgui texture
+func loadImage(state *stateStructs.ApplicationState, artID string) (*imgui.TextureRef, error) {
+	imageBytes, err := os.ReadFile(filepath.Join(state.Config.AppStatePath, "thumbnails", string(artID)))
+
+	if err != nil {
+		return nil, err
+	}
+
+	parsedOriginalImage, _, err := image.Decode(bytes.NewReader(imageBytes))
+
+	if err != nil {
+		return nil, fmt.Errorf("Failed to decode image for artID '%s': %w", artID, err)
+	}
+
+	rgbaImage, ok := parsedOriginalImage.(*image.RGBA)
+
+	if !ok {
+		rgbaImage = image.NewRGBA(image.Rect(0, 0, parsedOriginalImage.Bounds().Dx(), parsedOriginalImage.Bounds().Dy()))
+		draw.Draw(rgbaImage, rgbaImage.Rect, parsedOriginalImage, parsedOriginalImage.Bounds().Min, draw.Over)
+	}
+
+	texture := state.CurrentImguiBackend.CreateTextureRgba(rgbaImage, parsedOriginalImage.Bounds().Dx(), parsedOriginalImage.Bounds().Dy())
+	return &texture, nil
+}
