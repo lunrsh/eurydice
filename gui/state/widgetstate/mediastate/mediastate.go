@@ -72,6 +72,8 @@ type MediaState struct {
 
 	SearchQuery string
 	SortMethod  int
+
+	SortDropDownState *int32
 }
 
 const (

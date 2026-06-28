@@ -25,10 +25,12 @@ func BootstrapIndex(state *stateStructs.ApplicationState) error {
 	state.PageStates.MediaManagement.Artists = []*mediastate.ArtistState{}
 	state.PageStates.MediaManagement.Records = []*mediastate.RecordState{}
 
-	// Fetching by artist isn't a dedicated function because this is the only occurrence of it (unlike records & songs)
-	if state.PageStates.MediaManagement.SortMethod == mediastate.SortArtistThenAlbum {
+	switch state.PageStates.MediaManagement.SortMethod {
+	case mediastate.SortArtistThenAlbum:
+		// Fetching by artist isn't a dedicated function because this is the only occurrence of it, unlike records & songs
 		// Bootstrap the sort-by-artist
 		allArtists := []stateStructs.Artist{}
+		unknownArtists := []*mediastate.ArtistState{}
 
 		if err := state.Config.Database.Preload("PrimarySongs").Where("library_id = ?", state.Config.ActiveLibraryID).Find(&allArtists).Error; err != nil {
 			return fmt.Errorf("failed to find all artists: %w", err)
@@ -39,10 +41,16 @@ func BootstrapIndex(state *stateStructs.ApplicationState) error {
 			// Hide all artists that don't have any songs (except for collabs)
 
 			if len(artist.PrimarySongs) != 0 {
-				state.PageStates.MediaManagement.Artists = append(state.PageStates.MediaManagement.Artists, &mediastate.ArtistState{
+				artistState := &mediastate.ArtistState{
 					ID:         artist.ID,
 					ArtistName: artist.Name,
-				})
+				}
+
+				if artistState.ArtistName == "Unknown Artist" {
+					unknownArtists = append(unknownArtists, artistState)
+				} else {
+					state.PageStates.MediaManagement.Artists = append(state.PageStates.MediaManagement.Artists, artistState)
+				}
 			}
 		}
 
@@ -51,20 +59,62 @@ func BootstrapIndex(state *stateStructs.ApplicationState) error {
 		slices.SortStableFunc(state.PageStates.MediaManagement.Artists, func(a, b *mediastate.ArtistState) int {
 			return strings.Compare(strings.ToLower(a.ArtistName), strings.ToLower(b.ArtistName))
 		})
+
+		// Put the unknown artists at the bottom
+		state.PageStates.MediaManagement.Artists = append(state.PageStates.MediaManagement.Artists, unknownArtists...)
+	case mediastate.SortAlbum:
+		// Bootstrap the sort-by-album by fetching all the artists first
+		allArtists := []stateStructs.Artist{}
+		unknownRecords := []*mediastate.RecordState{}
+
+		if err := state.Config.Database.Preload("PrimarySongs").Where("library_id = ?", state.Config.ActiveLibraryID).Find(&allArtists).Error; err != nil {
+			return fmt.Errorf("failed to find all artists: %w", err)
+		}
+
+		for _, artist := range allArtists {
+			if len(artist.PrimarySongs) != 0 {
+				records, err := DynLoadRecords(state, &mediastate.ArtistState{
+					ID:         artist.ID,
+					ArtistName: artist.Name,
+				})
+
+				if err != nil {
+					return fmt.Errorf("failed to load records for artist '%s': %w", artist.Name, err)
+				}
+
+				for _, record := range records {
+					if record.Title == "Unknown Album" {
+						record.Title = fmt.Sprintf("%s - %s", artist.Name, record.Title)
+						unknownRecords = append(unknownRecords, record)
+					} else {
+						state.PageStates.MediaManagement.Records = append(state.PageStates.MediaManagement.Records, record)
+					}
+				}
+			}
+		}
+
+		slices.SortStableFunc(state.PageStates.MediaManagement.Records, func(a, b *mediastate.RecordState) int {
+			return strings.Compare(strings.ToLower(a.Title), strings.ToLower(b.Title))
+		})
+
+		// Put the unknown records at the bottom
+		state.PageStates.MediaManagement.Records = append(state.PageStates.MediaManagement.Records, unknownRecords...)
 	}
 
 	return nil
 }
 
-func DynLoadRecords(state *stateStructs.ApplicationState, artist *mediastate.ArtistState) error {
+func DynLoadRecords(state *stateStructs.ApplicationState, artist *mediastate.ArtistState) ([]*mediastate.RecordState, error) {
 	// Fetch corresponding records for the artist from the database, incl. songs for their ArtIDs
 	allRecordsFromArtist := []stateStructs.Record{}
 
 	if err := state.Config.Database.Preload("Songs").Where("library_id = ? AND artist_id = ?", state.Config.ActiveLibraryID, artist.ID).Find(&allRecordsFromArtist).Error; err != nil {
-		return fmt.Errorf("failed to find records for artist %s: %w", artist.ArtistName, err)
+		return nil, fmt.Errorf("failed to find records for artist %s: %w", artist.ArtistName, err)
 	}
 
-	for _, record := range allRecordsFromArtist {
+	allUIRepresentedRecords := make([]*mediastate.RecordState, len(allRecordsFromArtist))
+
+	for recordIndex, record := range allRecordsFromArtist {
 		// Get consensus on the most popular art id for this record (hopefully they're all the same, but shit happens)
 		imageHashes := map[string]int{}
 
@@ -92,31 +142,33 @@ func DynLoadRecords(state *stateStructs.ApplicationState, artist *mediastate.Art
 		}
 
 		// Don't populate songs here in order to lazy load later (to save memory)
-		artist.Records = append(artist.Records, &mediastate.RecordState{
+		allUIRepresentedRecords[recordIndex] = &mediastate.RecordState{
 			ID:    record.ID,
 			Title: record.Name,
 			Image: loadedImage,
-		})
+		}
 	}
 
 	// Too lazy to implement sorting ourselves, so we use slices.SortFunc
 	// If you have more than 100k artists, you have bigger problems...
-	slices.SortStableFunc(artist.Records, func(a, b *mediastate.RecordState) int {
+	slices.SortStableFunc(allUIRepresentedRecords, func(a, b *mediastate.RecordState) int {
 		return strings.Compare(strings.ToLower(a.Title), strings.ToLower(b.Title))
 	})
 
-	return nil
+	return allUIRepresentedRecords, nil
 }
 
-func DynLoadSongs(state *stateStructs.ApplicationState, record *mediastate.RecordState) error {
+func DynLoadSongs(state *stateStructs.ApplicationState, record *mediastate.RecordState) ([]*mediastate.SongState, error) {
 	// Fetch songs for this record
 	allSongsOnThisRecord := []stateStructs.Song{}
 
 	if err := state.Config.Database.Preload("CollabArtists").Where("library_id = ? AND record_id = ?", state.Config.ActiveLibraryID, record.ID).Find(&allSongsOnThisRecord).Error; err != nil {
-		return fmt.Errorf("failed to find songs for record %d: %w", record.ID, err)
+		return nil, fmt.Errorf("failed to find songs for record %d: %w", record.ID, err)
 	}
 
-	for _, song := range allSongsOnThisRecord {
+	allUIRepresentedSongs := make([]*mediastate.SongState, len(allSongsOnThisRecord))
+
+	for songIndex, song := range allSongsOnThisRecord {
 		// FIXME: this doesn't take already in memory artists into account!!!
 		mediaCompatibleArtists := []*mediastate.ArtistState{
 			record.AuthoringArtist,
@@ -141,16 +193,16 @@ func DynLoadSongs(state *stateStructs.ApplicationState, record *mediastate.Recor
 			}
 		}
 
-		record.Songs = append(record.Songs, &mediastate.SongState{
+		allUIRepresentedSongs[songIndex] = &mediastate.SongState{
 			OnRecord: record,
 			Artists:  mediaCompatibleArtists,
 			Title:    song.Title,
 
 			Image: loadedImage,
-		})
+		}
 	}
 
-	return nil
+	return allUIRepresentedSongs, nil
 }
 
 // Loads an image into memory as an imgui texture
@@ -164,7 +216,7 @@ func loadImage(state *stateStructs.ApplicationState, artID string) (*imgui.Textu
 	parsedOriginalImage, _, err := image.Decode(bytes.NewReader(imageBytes))
 
 	if err != nil {
-		return nil, fmt.Errorf("Failed to decode image for artID '%s': %w", artID, err)
+		return nil, fmt.Errorf("failed to decode image for artID '%s': %w", artID, err)
 	}
 
 	rgbaImage, ok := parsedOriginalImage.(*image.RGBA)
