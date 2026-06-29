@@ -2,6 +2,7 @@ package mediamanagement
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/AllenDang/cimgui-go/imgui"
 
@@ -36,15 +37,12 @@ func Render(state *stateStructs.ApplicationState) {
 		} else {
 			if state.PageStates.MediaManagement.SortMethod != mediastate.SortSearch {
 				state.PageStates.MediaManagement.SortMethod = mediastate.SortSearch
-
-				if err := BootstrapIndex(state); err != nil {
-					panic(fmt.Sprintf("Failed to bootstrap index: %v\n", err))
-				}
+				go backgroundSearchDaemon(state) // Start the background search daemon
 			}
 
-			if err := SearchMedia(state); err != nil {
-				panic(fmt.Sprintf("Failed to search media: %v\n", err))
-			}
+			// Search is automatically triggered based on intent plust and 50 milliseconds after the last key input
+			state.PageStates.MediaManagement.IntentToSearch = true
+			state.PageStates.MediaManagement.TimeSinceSearchRequest = time.Now()
 		}
 	}
 
@@ -223,15 +221,30 @@ func Render(state *stateStructs.ApplicationState) {
 
 		return
 	case mediastate.SortSearch:
-		for _, artist := range state.PageStates.MediaManagement.Artists {
+		for artistIndex, artist := range state.PageStates.MediaManagement.Artists {
 			if artist.ShouldHide {
 				continue
 			}
 
-			if imgui.TreeNodeExStrV(artist.ArtistName+"##ArtistName", imgui.TreeNodeFlagsFramePadding) {
-				for _, record := range artist.Records {
+			var artistAdditionalFlags imgui.TreeNodeFlags
+
+			if artistIndex == 0 {
+				artistAdditionalFlags = imgui.TreeNodeFlagsDefaultOpen
+			}
+
+			if imgui.TreeNodeExStrV(artist.ArtistName+"##SearchModeArtistName", imgui.TreeNodeFlagsFramePadding|artistAdditionalFlags) {
+				for recordIndex, record := range artist.Records {
 					if record.ShouldHide {
 						continue
+					}
+
+					if record.ArtID != "" && record.Image == nil {
+						var err error
+						record.Image, err = loadImage(state, record.ArtID)
+
+						if err != nil {
+							state.Logger.Error("Failed to load image for record %s: %s", record.Title, err.Error())
+						}
 					}
 
 					if record.Image != nil {
@@ -240,10 +253,25 @@ func Render(state *stateStructs.ApplicationState) {
 						imgui.SetCursorPosY(imgui.CursorPosY() + (32 - (imgui.FrameHeight() * 0.5)))
 					}
 
-					if imgui.TreeNodeExStrV(record.Title+"##RecordName", imgui.TreeNodeFlagsFramePadding) {
+					var recordAdditionalFlags imgui.TreeNodeFlags
+
+					if recordIndex == 0 {
+						recordAdditionalFlags = imgui.TreeNodeFlagsDefaultOpen
+					}
+
+					if imgui.TreeNodeExStrV(record.Title+"##SearchModeRecordName", imgui.TreeNodeFlagsFramePadding|recordAdditionalFlags) {
 						for _, song := range record.Songs {
 							if song.ShouldHide {
 								continue
+							}
+
+							if song.ArtID != "" && song.Image == nil {
+								var err error
+								song.Image, err = loadImage(state, record.ArtID)
+
+								if err != nil {
+									state.Logger.Error("Failed to load image for song %s: %s", song.Title, err.Error())
+								}
 							}
 
 							if song.Image != nil {
@@ -252,7 +280,7 @@ func Render(state *stateStructs.ApplicationState) {
 								imgui.SetCursorPosY(imgui.CursorPosY() + (16 - (imgui.FrameHeight() * 0.5)))
 							}
 
-							if imgui.TreeNodeExStrV(song.Title+"##SongName", imgui.TreeNodeFlagsFramePadding) {
+							if imgui.TreeNodeExStrV(song.Title+"##SearchModeSongName", imgui.TreeNodeFlagsFramePadding) {
 								imgui.TreePop()
 							}
 						}

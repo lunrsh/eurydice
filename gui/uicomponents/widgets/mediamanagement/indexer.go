@@ -185,7 +185,8 @@ func DynLoadRecords(state *stateStructs.ApplicationState, artist *mediastate.Art
 
 		var loadedImage *imgui.TextureRef
 
-		if mostPopularArtID != "" {
+		// Disable image loading on threads that aren't the main UI thread
+		if mostPopularArtID != "" && state.PageStates.MediaManagement.SortMethod != mediastate.SortSearch {
 			var err error
 			loadedImage, err = loadImage(state, mostPopularArtID)
 
@@ -199,6 +200,7 @@ func DynLoadRecords(state *stateStructs.ApplicationState, artist *mediastate.Art
 			ID:              record.ID,
 			Title:           record.Name,
 			Image:           loadedImage,
+			ArtID:           mostPopularArtID,
 			AuthoringArtist: artist,
 		}
 	}
@@ -238,7 +240,7 @@ func DynLoadSongs(state *stateStructs.ApplicationState, record *mediastate.Recor
 
 		var loadedImage *imgui.TextureRef
 
-		if song.ArtID != "" {
+		if song.ArtID != "" && state.PageStates.MediaManagement.SortMethod != mediastate.SortSearch {
 			var err error
 			loadedImage, err = loadImage(state, song.ArtID)
 
@@ -253,6 +255,7 @@ func DynLoadSongs(state *stateStructs.ApplicationState, record *mediastate.Recor
 			Title:    song.Title,
 
 			Image: loadedImage,
+			ArtID: song.ArtID,
 		}
 	}
 

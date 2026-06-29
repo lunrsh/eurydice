@@ -1,6 +1,7 @@
 package mediamanagement
 
 import (
+	"fmt"
 	"math"
 	"slices"
 	"strings"
@@ -19,6 +20,30 @@ type sortContainer struct {
 	Record                *mediastate.RecordState
 	Song                  *mediastate.SongState
 	LevenshteinDifference int
+}
+
+func backgroundSearchDaemon(state *stateStructs.ApplicationState) {
+	err := BootstrapIndex(state)
+
+	if err != nil {
+		panic(fmt.Sprintf("Failed to bootstrap search index: %v", err))
+	}
+
+	for {
+		// Exit if we're not in search mode
+		if state.PageStates.MediaManagement.SortMethod != mediastate.SortSearch {
+			return
+		}
+
+		hasEnoughTimePassed := state.PageStates.MediaManagement.TimeSinceSearchRequest.Add(50 * time.Millisecond).After(time.Now())
+
+		if state.PageStates.MediaManagement.IntentToSearch && hasEnoughTimePassed {
+			SearchMedia(state)
+			state.PageStates.MediaManagement.IntentToSearch = false
+		}
+
+		time.Sleep(50 * time.Millisecond)
+	}
 }
 
 func bestDistance(query string, layouts []string) int {
@@ -55,7 +80,7 @@ func buildLayoutsForSong(song *mediastate.SongState) []string {
 	}
 }
 
-func SearchMedia(state *stateStructs.ApplicationState) error {
+func SearchMedia(state *stateStructs.ApplicationState) {
 	// Disable all visibility of all songs in the background
 	// This is done to squeeze as much speed out as possible, even if we flicker a bit (if SearchMedia itself is called from a Goroutine)
 	hasFinishedDisabling := false
@@ -277,6 +302,4 @@ func SearchMedia(state *stateStructs.ApplicationState) error {
 
 	endTime := time.Now()
 	state.Logger.Debugf("Search query '%s' completed with %d results in %s", searchQuery, len(sortResults), endTime.Sub(startTime))
-
-	return nil
 }

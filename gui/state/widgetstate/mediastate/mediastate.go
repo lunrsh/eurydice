@@ -1,6 +1,10 @@
 package mediastate
 
-import "github.com/AllenDang/cimgui-go/imgui"
+import (
+	"time"
+
+	"github.com/AllenDang/cimgui-go/imgui"
+)
 
 // Duplicate it. Just in case. Sorry.
 
@@ -14,14 +18,17 @@ import "github.com/AllenDang/cimgui-go/imgui"
 //
 // Don't break everything, please! ~ Luna
 type SongState struct {
-	ID    uint // ID from the database
+	ID uint // ID from the database
+
+	Artists []*ArtistState
+	Title   string
+
 	Image *imgui.TextureRef
+	ArtID string
 
 	ShouldHide bool
 
 	OnRecord *RecordState
-	Artists  []*ArtistState
-	Title    string
 }
 
 // Individual record entries in the media management pane.
@@ -36,13 +43,15 @@ type SongState struct {
 type RecordState struct {
 	ID uint // ID from the database
 
-	Title string            // title of the record
+	Title string // title of the record
+	Songs []*SongState
+
 	Image *imgui.TextureRef // the underlying ArtID is decided from consensus based off of most popular image hash of songs
+	ArtID string
 
 	ShouldHide bool
 
 	AuthoringArtist *ArtistState
-	Songs           []*SongState
 }
 
 // Individual artist entries in the media management pane.
@@ -80,6 +89,9 @@ type MediaState struct {
 	SortMethod  int
 
 	SortDropDownState *int32
+
+	IntentToSearch         bool // Whether the user has requested a search. Gets set to false after the search is completed
+	TimeSinceSearchRequest time.Time
 }
 
 const (
