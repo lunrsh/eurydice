@@ -17,6 +17,8 @@ type SongState struct {
 	ID    uint // ID from the database
 	Image *imgui.TextureRef
 
+	ShouldHide bool
+
 	OnRecord *RecordState
 	Artists  []*ArtistState
 	Title    string
@@ -37,6 +39,8 @@ type RecordState struct {
 	Title string            // title of the record
 	Image *imgui.TextureRef // the underlying ArtID is decided from consensus based off of most popular image hash of songs
 
+	ShouldHide bool
+
 	AuthoringArtist *ArtistState
 	Songs           []*SongState
 }
@@ -53,6 +57,8 @@ type RecordState struct {
 type ArtistState struct {
 	ID         uint // ID from the database
 	ArtistName string
+
+	ShouldHide bool
 
 	Records []*RecordState
 }
@@ -80,4 +86,5 @@ const (
 	// MediaManagementSort represents the sort order of the media management pane.
 	SortArtistThenAlbum = iota
 	SortAlbum
+	SortSearch
 )

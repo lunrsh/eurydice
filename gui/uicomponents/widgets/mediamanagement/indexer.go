@@ -1,20 +1,17 @@
 package mediamanagement
 
 import (
-	"C"
-	"fmt"
-	"slices"
-	"strings"
-
-	stateStructs "git.lunr.sh/luna/eurydice/gui/state"
-)
-import (
 	"bytes"
+	"fmt"
 	"image"
 	"image/draw"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
+	"time"
 
+	stateStructs "git.lunr.sh/luna/eurydice/gui/state"
 	"git.lunr.sh/luna/eurydice/gui/state/widgetstate/mediastate"
 	"github.com/AllenDang/cimgui-go/imgui"
 )
@@ -99,6 +96,62 @@ func BootstrapIndex(state *stateStructs.ApplicationState) error {
 
 		// Put the unknown records at the bottom
 		state.PageStates.MediaManagement.Records = append(state.PageStates.MediaManagement.Records, unknownRecords...)
+	case mediastate.SortSearch:
+		// Bootstrap the sort-by-artist by preloading everything.
+		//
+		// I agree that lazyloading is better, but we have to load everything regardless to sort, and thus it becomes a matter of
+		// burning RAM for no reason with all the re-allocs, and all the extra code keeping track.
+		//
+		// So, for simplicity, and for long-term RAM usage (as each search is re-calculated), we load everything upfront.
+
+		state.Logger.Debug("STARTING UP AN EXPENSIVE OPERATION - please wait")
+		state.Logger.Debug("Starting to load all artists, records, and songs, for SortSearch initialization...")
+		startTime := time.Now() // used for debug logs
+
+		allArtists := []stateStructs.Artist{}
+
+		if err := state.Config.Database.Preload("PrimarySongs").Where("library_id = ?", state.Config.ActiveLibraryID).Find(&allArtists).Error; err != nil {
+			return fmt.Errorf("failed to find all artists: %w", err)
+		}
+
+		for _, artist := range allArtists {
+			// TODO: make this a config option
+			// Hide all artists that don't have any songs (except for collabs)
+
+			if len(artist.PrimarySongs) != 0 {
+				artistState := &mediastate.ArtistState{
+					ID:         artist.ID,
+					ArtistName: artist.Name,
+					ShouldHide: true,
+				}
+
+				// Fetch records for the artist, and disable visibility for all records
+				records, err := DynLoadRecords(state, artistState)
+
+				if err != nil {
+					return fmt.Errorf("failed to fetch records for artist '%s': %w", artistState.ArtistName, err)
+				}
+
+				for _, record := range records {
+					record.ShouldHide = true
+
+					// Load songs, but keep visibility enabled for all songs. We don't use the granularity of specific songs.
+					songs, err := DynLoadSongs(state, record)
+
+					if err != nil {
+						return fmt.Errorf("failed to fetch songs for record '%s': %w", record.Title, err)
+					}
+
+					record.Songs = songs
+				}
+
+				artistState.Records = records
+				state.PageStates.MediaManagement.Artists = append(state.PageStates.MediaManagement.Artists, artistState)
+			}
+		}
+
+		endTime := time.Now()
+		state.Logger.Debugf("Loaded everything in %s", endTime.Sub(startTime))
 	}
 
 	return nil
@@ -143,9 +196,10 @@ func DynLoadRecords(state *stateStructs.ApplicationState, artist *mediastate.Art
 
 		// Don't populate songs here in order to lazy load later (to save memory)
 		allUIRepresentedRecords[recordIndex] = &mediastate.RecordState{
-			ID:    record.ID,
-			Title: record.Name,
-			Image: loadedImage,
+			ID:              record.ID,
+			Title:           record.Name,
+			Image:           loadedImage,
+			AuthoringArtist: artist,
 		}
 	}
 
