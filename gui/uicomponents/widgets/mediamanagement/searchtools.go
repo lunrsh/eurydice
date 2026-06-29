@@ -186,7 +186,7 @@ func SearchMedia(state *stateStructs.ApplicationState) error {
 		return a.LevenshteinDifference - b.LevenshteinDifference
 	})
 
-	state.Logger.Debug("Top results:")
+	state.Logger.Debug("All results:")
 
 	bestArtists := make([]*mediastate.ArtistState, 0, maxArtistsToShow)
 	bestRecords := map[*mediastate.ArtistState][]*mediastate.RecordState{}
@@ -217,10 +217,8 @@ func SearchMedia(state *stateStructs.ApplicationState) error {
 			bestRecordsFromArtist := bestRecords[result.Song.Artists[0]]
 
 			if slices.Index(bestRecordsFromArtist, result.Song.OnRecord) == -1 {
-				bestRecordsFromArtist = append(bestRecordsFromArtist, result.Song.OnRecord)
+				bestRecords[result.Song.Artists[0]] = append(bestRecordsFromArtist, result.Song.OnRecord)
 			}
-
-			bestRecordsFromArtist = append(bestRecordsFromArtist, result.Song.OnRecord)
 		} else if result.Record != nil {
 			state.Logger.Debugf("- Record: %s (distance: %d)", result.Record.Title, result.LevenshteinDifference)
 
@@ -236,10 +234,8 @@ func SearchMedia(state *stateStructs.ApplicationState) error {
 			bestRecordsFromArtist := bestRecords[result.Record.AuthoringArtist]
 
 			if slices.Index(bestRecordsFromArtist, result.Record) == -1 {
-				bestRecordsFromArtist = append(bestRecordsFromArtist, result.Record)
+				bestRecords[result.Record.AuthoringArtist] = append(bestRecordsFromArtist, result.Record)
 			}
-
-			bestRecords[result.Record.AuthoringArtist] = bestRecordsFromArtist
 		}
 
 		if result.LevenshteinDifference == 0 {
@@ -258,15 +254,22 @@ func SearchMedia(state *stateStructs.ApplicationState) error {
 		state.PageStates.MediaManagement.Artists[currentArtistIndexInUI] = currentArtistInTargetPosition
 		state.PageStates.MediaManagement.Artists[artistPositionInBestArtists] = artist
 
-		// Now sort records
-		for recordIndex, record := range bestRecords[artist] {
-			currentRecordIndexInUI := slices.Index(state.PageStates.MediaManagement.Artists[artistPositionInBestArtists].Records, record)
-			currentRecordInTargetPosition := state.PageStates.MediaManagement.Artists[artistPositionInBestArtists].Records[recordIndex]
+		if len(bestRecords[artist]) == 0 {
+			for _, record := range artist.Records {
+				record.ShouldHide = false
+			}
+		} else {
+			// Now sort records
+			for recordIndex, record := range bestRecords[artist] {
+				state.Logger.Debugf("  - %s", record.Title)
+				currentRecordIndexInUI := slices.Index(state.PageStates.MediaManagement.Artists[artistPositionInBestArtists].Records, record)
+				currentRecordInTargetPosition := state.PageStates.MediaManagement.Artists[artistPositionInBestArtists].Records[recordIndex]
 
-			state.PageStates.MediaManagement.Artists[artistPositionInBestArtists].Records[currentRecordIndexInUI] = currentRecordInTargetPosition
-			state.PageStates.MediaManagement.Artists[artistPositionInBestArtists].Records[recordIndex] = record
+				state.PageStates.MediaManagement.Artists[artistPositionInBestArtists].Records[currentRecordIndexInUI] = currentRecordInTargetPosition
+				state.PageStates.MediaManagement.Artists[artistPositionInBestArtists].Records[recordIndex] = record
 
-			record.ShouldHide = false
+				record.ShouldHide = false
+			}
 		}
 
 		artist.ShouldHide = false

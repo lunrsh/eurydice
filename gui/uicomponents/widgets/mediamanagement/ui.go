@@ -22,8 +22,6 @@ func Render(state *stateStructs.ApplicationState) {
 	imgui.SetNextItemWidth(imgui.ContentRegionAvail().X + 2)
 
 	if imgui.InputTextWithHint("##SearchInput", "Search...", &state.PageStates.MediaManagement.SearchQuery, 0, nil) {
-		fmt.Printf("text: %s\n", state.PageStates.MediaManagement.SearchQuery)
-
 		if state.PageStates.MediaManagement.SearchQuery == "" {
 			// Reset the sort state to whatever the user has selected
 			if *state.PageStates.MediaManagement.SortDropDownState == 0 {
