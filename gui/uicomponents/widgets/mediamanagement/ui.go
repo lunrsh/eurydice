@@ -2,6 +2,7 @@ package mediamanagement
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/AllenDang/cimgui-go/imgui"
@@ -9,6 +10,21 @@ import (
 	stateStructs "git.lunr.sh/luna/eurydice/gui/state"
 	"git.lunr.sh/luna/eurydice/gui/state/widgetstate/mediastate"
 )
+
+func wrapText(text string) string {
+	freeWidth := (imgui.ContentRegionAvail().X) - 20 // offset it to make it look better and not have horizontal scrolling
+	newText := text
+
+	for imgui.CalcTextSize(newText).X > freeWidth {
+		if len(newText)-4 < 0 {
+			break // We're too tiny! Abort so we don't crash
+		}
+
+		newText = text[:len(newText)-4] + "..."
+	}
+
+	return newText
+}
 
 func Render(state *stateStructs.ApplicationState) {
 	if state.PageStates.MediaManagement.SortDropDownState == nil {
@@ -82,12 +98,12 @@ func Render(state *stateStructs.ApplicationState) {
 	// TODO: this is a good refactor canidate! there's LOTS of shared rendering code here between Sorts.
 	switch state.PageStates.MediaManagement.SortMethod {
 	case mediastate.SortArtistThenAlbum:
-		for _, artist := range state.PageStates.MediaManagement.Artists {
+		for artistIndex, artist := range state.PageStates.MediaManagement.Artists {
 			if artist.ShouldHide {
 				continue
 			}
 
-			if imgui.TreeNodeExStrV(artist.ArtistName+"##ArtistName", imgui.TreeNodeFlagsFramePadding) {
+			if imgui.TreeNodeExStrStr("##ArtistName"+strconv.Itoa(artistIndex), imgui.TreeNodeFlagsFramePadding, wrapText(artist.ArtistName)) {
 				if len(artist.Records) == 0 {
 					records, err := DynLoadRecords(state, artist)
 
@@ -98,7 +114,7 @@ func Render(state *stateStructs.ApplicationState) {
 					artist.Records = records
 				}
 
-				for _, record := range artist.Records {
+				for recordIndex, record := range artist.Records {
 					if record.ShouldHide {
 						continue
 					}
@@ -109,7 +125,8 @@ func Render(state *stateStructs.ApplicationState) {
 						imgui.SetCursorPosY(imgui.CursorPosY() + (32 - (imgui.FrameHeight() * 0.5)))
 					}
 
-					if imgui.TreeNodeExStrV(record.Title+"##RecordName", imgui.TreeNodeFlagsFramePadding) {
+					// Make them have somewhat-unique ideas incase collisions, especially if we're resized
+					if imgui.TreeNodeExStrStr("##RecordName"+strconv.Itoa(recordIndex), imgui.TreeNodeFlagsFramePadding, wrapText(record.Title)) {
 						if len(record.Songs) == 0 {
 							songs, err := DynLoadSongs(state, record)
 
@@ -120,7 +137,7 @@ func Render(state *stateStructs.ApplicationState) {
 							record.Songs = songs
 						}
 
-						for _, song := range record.Songs {
+						for songIndex, song := range record.Songs {
 							if song.ShouldHide {
 								continue
 							}
@@ -131,7 +148,7 @@ func Render(state *stateStructs.ApplicationState) {
 								imgui.SetCursorPosY(imgui.CursorPosY() + (16 - (imgui.FrameHeight() * 0.5)))
 							}
 
-							if imgui.TreeNodeExStrV(song.Title+"##SongName", imgui.TreeNodeFlagsFramePadding) {
+							if imgui.TreeNodeExStrStr("##SongName"+strconv.Itoa(songIndex), imgui.TreeNodeFlagsFramePadding, wrapText(song.Title)) {
 								imgui.TreePop()
 							}
 						}
@@ -169,7 +186,7 @@ func Render(state *stateStructs.ApplicationState) {
 		imgui.EndChild()
 		return
 	case mediastate.SortAlbum:
-		for _, record := range state.PageStates.MediaManagement.Records {
+		for recordIndex, record := range state.PageStates.MediaManagement.Records {
 			if record.ShouldHide {
 				continue
 			}
@@ -180,7 +197,7 @@ func Render(state *stateStructs.ApplicationState) {
 				imgui.SetCursorPosY(imgui.CursorPosY() + (32 - (imgui.FrameHeight() * 0.5)))
 			}
 
-			if imgui.TreeNodeExStrV(record.Title+"##RecordName", imgui.TreeNodeFlagsFramePadding) {
+			if imgui.TreeNodeExStrV(wrapText(record.Title)+"##RecordName"+strconv.Itoa(recordIndex), imgui.TreeNodeFlagsFramePadding) {
 				if len(record.Songs) == 0 {
 					songs, err := DynLoadSongs(state, record)
 
@@ -191,7 +208,7 @@ func Render(state *stateStructs.ApplicationState) {
 					record.Songs = songs
 				}
 
-				for _, song := range record.Songs {
+				for songIndex, song := range record.Songs {
 					if song.ShouldHide {
 						continue
 					}
@@ -202,7 +219,7 @@ func Render(state *stateStructs.ApplicationState) {
 						imgui.SetCursorPosY(imgui.CursorPosY() + (16 - (imgui.FrameHeight() * 0.5)))
 					}
 
-					if imgui.TreeNodeExStrV(song.Title+"##SongName", imgui.TreeNodeFlagsFramePadding) {
+					if imgui.TreeNodeExStrStr("##SongName"+strconv.Itoa(songIndex), imgui.TreeNodeFlagsFramePadding, wrapText(song.Title)) {
 						imgui.TreePop()
 					}
 				}
@@ -236,7 +253,7 @@ func Render(state *stateStructs.ApplicationState) {
 				artistAdditionalFlags = imgui.TreeNodeFlagsDefaultOpen
 			}
 
-			if imgui.TreeNodeExStrV(artist.ArtistName+"##SearchModeArtistName", imgui.TreeNodeFlagsFramePadding|artistAdditionalFlags) {
+			if imgui.TreeNodeExStrStr("##SearchModeArtistName"+strconv.Itoa(artistIndex), imgui.TreeNodeFlagsFramePadding|artistAdditionalFlags, wrapText(artist.ArtistName)) {
 				for recordIndex, record := range artist.Records {
 					if record.ShouldHide {
 						continue
@@ -263,8 +280,8 @@ func Render(state *stateStructs.ApplicationState) {
 						recordAdditionalFlags = imgui.TreeNodeFlagsDefaultOpen
 					}
 
-					if imgui.TreeNodeExStrV(record.Title+"##SearchModeRecordName", imgui.TreeNodeFlagsFramePadding|recordAdditionalFlags) {
-						for _, song := range record.Songs {
+					if imgui.TreeNodeExStrStr("##SearchModeRecordName"+strconv.Itoa(recordIndex), imgui.TreeNodeFlagsFramePadding|recordAdditionalFlags, wrapText(record.Title)) {
+						for songIndex, song := range record.Songs {
 							if song.ShouldHide {
 								continue
 							}
@@ -284,7 +301,7 @@ func Render(state *stateStructs.ApplicationState) {
 								imgui.SetCursorPosY(imgui.CursorPosY() + (16 - (imgui.FrameHeight() * 0.5)))
 							}
 
-							if imgui.TreeNodeExStrV(song.Title+"##SearchModeSongName", imgui.TreeNodeFlagsFramePadding) {
+							if imgui.TreeNodeExStrV(wrapText(song.Title)+"##SearchModeSongName"+strconv.Itoa(songIndex), imgui.TreeNodeFlagsFramePadding) {
 								imgui.TreePop()
 							}
 						}
@@ -300,5 +317,4 @@ func Render(state *stateStructs.ApplicationState) {
 		imgui.EndChild()
 		return
 	}
-
 }
