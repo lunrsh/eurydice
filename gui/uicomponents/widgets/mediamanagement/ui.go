@@ -77,6 +77,8 @@ func Render(state *stateStructs.ApplicationState) {
 	imgui.Separator()
 	imgui.Spacing()
 
+	imgui.BeginChildStrV("##MediaManagementScrollArea", imgui.ContentRegionAvail(), 0, imgui.WindowFlagsNoTitleBar)
+
 	// TODO: this is a good refactor canidate! there's LOTS of shared rendering code here between Sorts.
 	switch state.PageStates.MediaManagement.SortMethod {
 	case mediastate.SortArtistThenAlbum:
@@ -164,6 +166,7 @@ func Render(state *stateStructs.ApplicationState) {
 			}
 		}
 
+		imgui.EndChild()
 		return
 	case mediastate.SortAlbum:
 		for _, record := range state.PageStates.MediaManagement.Records {
@@ -219,6 +222,7 @@ func Render(state *stateStructs.ApplicationState) {
 			}
 		}
 
+		imgui.EndChild()
 		return
 	case mediastate.SortSearch:
 		for artistIndex, artist := range state.PageStates.MediaManagement.Artists {
@@ -292,5 +296,9 @@ func Render(state *stateStructs.ApplicationState) {
 				imgui.TreePop()
 			}
 		}
+
+		imgui.EndChild()
+		return
 	}
+
 }
