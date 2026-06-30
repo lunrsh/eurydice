@@ -2,33 +2,289 @@ package mediamanagement
 
 import (
 	"fmt"
-	"strconv"
+	"slices"
 	"time"
 
 	"github.com/AllenDang/cimgui-go/imgui"
 
 	stateStructs "git.lunr.sh/luna/eurydice/gui/state"
 	"git.lunr.sh/luna/eurydice/gui/state/widgetstate/mediastate"
+	"git.lunr.sh/luna/eurydice/gui/utilities"
 )
 
-func wrapText(text string) string {
-	freeWidth := (imgui.ContentRegionAvail().X) - 20 // offset it to make it look better and not have horizontal scrolling
-	newText := text
+var multiSelectFlags = imgui.MultiSelectFlagsClearOnEscape | imgui.MultiSelectFlagsBoxSelect2d
 
-	for imgui.CalcTextSize(newText).X > freeWidth {
-		if len(newText)-4 < 0 {
-			break // We're too tiny! Abort so we don't crash
+const (
+	stateIDArtist = 1
+	stateIDRecord = 2
+	stateIDSong   = 3
+)
+
+// Recursively opens or closes items in the media management tree, given a node to start from, and a selection state.
+func recursivelyOpenOrCloseItems(state *stateStructs.ApplicationState, node interface{}, selected bool) error {
+	switch node := node.(type) {
+	case *mediastate.ArtistState:
+		state.PageStates.MediaManagement.SelectionStorage.SetItemSelected(node.ImguiID, selected)
+
+		// Only recurse into opened artists
+		if imgui.InternalTreeNodeGetOpen(node.ImguiID) {
+			for _, record := range node.Records {
+				if err := recursivelyOpenOrCloseItems(state, record, selected); err != nil {
+					return err
+				}
+			}
 		}
 
-		newText = text[:len(newText)-4] + "..."
+	case *mediastate.RecordState:
+		state.PageStates.MediaManagement.SelectionStorage.SetItemSelected(node.ImguiID, selected)
+
+		// Only recurse into opened records
+		if imgui.InternalTreeNodeGetOpen(node.ImguiID) {
+			for _, song := range node.Songs {
+				if err := recursivelyOpenOrCloseItems(state, song, selected); err != nil {
+					return err
+				}
+			}
+		}
+
+	case *mediastate.SongState:
+		state.PageStates.MediaManagement.SelectionStorage.SetItemSelected(node.ImguiID, selected)
+
+	default:
+		return fmt.Errorf("unsupported node type: %T", node)
 	}
 
-	return newText
+	return nil
+}
+
+// Gets the next currently visible item in the media management tree, given the current node and the last node to search from.
+func getNextItemInVisibleOrder(state *stateStructs.ApplicationState, currentNode interface{}, lastNode interface{}) (interface{}, error) {
+	if currentNode == lastNode {
+		return nil, nil
+	}
+
+	switch node := currentNode.(type) {
+	case *mediastate.ArtistState:
+		artistIndex := slices.Index(state.PageStates.MediaManagement.Artists, node)
+
+		// Recurse into children if parent node is currently opened
+		if len(node.Records) > 0 && imgui.InternalTreeNodeGetOpen(node.ImguiID) {
+			return node.Records[0], nil
+		}
+
+		// Return our sibling if not open
+		// Our next sibling is the artist after this one, if it exists, so we don't need to "climb up"
+		if len(state.PageStates.MediaManagement.Artists) > artistIndex+1 {
+			return state.PageStates.MediaManagement.Artists[artistIndex+1], nil
+		}
+	case *mediastate.RecordState:
+		artist := node.AuthoringArtist
+
+		recordIndex := slices.Index(artist.Records, node)
+
+		// Recurse into children if parent node is currently opened
+		if len(node.Songs) > 0 && imgui.InternalTreeNodeGetOpen(node.ImguiID) {
+			return node.Songs[0], nil
+		}
+
+		if _, ok := lastNode.(*mediastate.RecordState); ok {
+			if recordIndex+1 < len(artist.Records) {
+				return artist.Records[recordIndex+1], nil
+			}
+		}
+
+		// Climb up to artist level
+		return getNextItemInVisibleOrder(state, artist, lastNode)
+	case *mediastate.SongState:
+		record := node.OnRecord
+		songIndex := slices.Index(record.Songs, node)
+
+		if _, ok := lastNode.(*mediastate.SongState); ok {
+			if songIndex+1 < len(record.Songs) {
+				return record.Songs[songIndex+1], nil
+			}
+		}
+
+		// Climb to next record
+		return getNextItemInVisibleOrder(state, record, lastNode)
+	default:
+		return nil, fmt.Errorf("unsupported node type: %T", node)
+	}
+
+	return nil, nil
+}
+
+// From a given interface, assuming that we're an element that we're currently displaying, return an imgui.ID
+// that can be used to identify the element
+func getIDFromInterface(state *stateStructs.ApplicationState, node interface{}) (imgui.ID, error) {
+	switch node := node.(type) {
+	case *mediastate.ArtistState:
+		return node.ImguiID, nil
+	case *mediastate.RecordState:
+		return node.ImguiID, nil
+	case *mediastate.SongState:
+		return node.ImguiID, nil
+	default:
+		return imgui.ID(0), fmt.Errorf("unsupported node type: %T", node)
+	}
+}
+
+// From a given request item data, figure out which node it refers to and return it as an interface
+func getNodeFromRequestItem(state *stateStructs.ApplicationState, data int64) interface{} {
+	// Assume that if it's selected, it's visible, and thus, in our tree
+	kind := data >> 32
+	id := data & 0xffffffff
+
+	switch kind {
+	case stateIDArtist:
+		for _, artist := range state.PageStates.MediaManagement.Artists {
+			if artist.ShouldHide {
+				continue // Optimization: skip hidden artists, because they're impossible to select otherwise
+			}
+
+			if artist.ID == uint(id) {
+				return artist
+			}
+		}
+
+		return nil
+	case stateIDRecord:
+		// If the sort method is SortAlbum, search through the records directly
+		// Otherwise, search through the artists and their records
+		if state.PageStates.MediaManagement.SortMethod == mediastate.SortAlbum {
+			for _, record := range state.PageStates.MediaManagement.Records {
+				if record.ShouldHide {
+					continue // Optimization: skip hidden records, because they're impossible to select otherwise
+				}
+
+				if record.ID == uint(id) {
+					return record
+				}
+			}
+		} else {
+			for _, artist := range state.PageStates.MediaManagement.Artists {
+				if artist.ShouldHide {
+					continue // Optimization: skip hidden artists, because they're impossible to select otherwise
+				}
+
+				for _, record := range artist.Records {
+					if record.ShouldHide {
+						continue // Optimization: skip hidden records, because they're impossible to select otherwise
+					}
+
+					if record.ID == uint(id) {
+						return record
+					}
+				}
+			}
+		}
+
+		return nil
+	case stateIDSong:
+		// If the sort method is SortAlbum, search through the records, then songs directly
+		// Otherwise, search through the artists first
+		if state.PageStates.MediaManagement.SortMethod == mediastate.SortAlbum {
+			for _, record := range state.PageStates.MediaManagement.Records {
+				if record.ShouldHide {
+					continue // Optimization: skip hidden records, because they're impossible to select otherwise
+				}
+
+				for _, song := range record.Songs {
+					if song.ID == uint(id) {
+						return song
+					}
+				}
+			}
+		} else {
+			for _, artist := range state.PageStates.MediaManagement.Artists {
+				if artist.ShouldHide {
+					continue // Optimization: skip hidden artists, because they're impossible to select otherwise
+				}
+
+				for _, record := range artist.Records {
+					if record.ShouldHide {
+						continue // Optimization: skip hidden records, because they're impossible to select otherwise
+					}
+
+					for _, song := range record.Songs {
+						if song.ID == uint(id) {
+							return song
+						}
+					}
+				}
+			}
+		}
+
+		return nil
+	default:
+		return nil
+	}
+}
+
+// Apply pending selection requests from the multi-select IO, and sync them to the application state
+func applySelectionRequests(multiSelectIO *imgui.MultiSelectIO, state *stateStructs.ApplicationState) error {
+	requests := multiSelectIO.Requests()
+
+	var (
+		request *imgui.SelectionRequest
+		err     error
+	)
+
+	for i := 0; i < requests.Size; i++ {
+		request, err = utilities.GetRequestAtSelectionRequest(requests, i)
+
+		if err != nil {
+			return fmt.Errorf("failed to get request at index %d: %w", i, err)
+		}
+
+		if request.Type() == imgui.SelectionRequestTypeSetAll {
+			if request.Selected() {
+				if state.PageStates.MediaManagement.SortMethod == mediastate.SortAlbum {
+					for _, record := range state.PageStates.MediaManagement.Records {
+						if err := recursivelyOpenOrCloseItems(state, record, true); err != nil {
+							return fmt.Errorf("failed to open record %d: %w", record.ID, err)
+						}
+					}
+				} else {
+					for _, artist := range state.PageStates.MediaManagement.Artists {
+						if err := recursivelyOpenOrCloseItems(state, artist, true); err != nil {
+							return fmt.Errorf("failed to open artist %d: %w", artist.ID, err)
+						}
+					}
+				}
+			} else {
+				state.PageStates.MediaManagement.SelectionStorage.Clear()
+			}
+		} else if request.Type() == imgui.SelectionRequestTypeSetRange {
+			firstNode := getNodeFromRequestItem(state, int64(request.RangeFirstItem()))
+			lastNode := getNodeFromRequestItem(state, int64(request.RangeLastItem()))
+
+			node := firstNode
+			var nodeID imgui.ID
+
+			for node != nil && err == nil {
+				nodeID, err = getIDFromInterface(state, node)
+
+				if err != nil {
+					return fmt.Errorf("failed to get ID from node: %w", err)
+				}
+
+				state.PageStates.MediaManagement.SelectionStorage.SetItemSelected(nodeID, request.Selected())
+				node, err = getNextItemInVisibleOrder(state, node, lastNode)
+			}
+		}
+	}
+
+	return nil
 }
 
 func Render(state *stateStructs.ApplicationState) {
 	if state.PageStates.MediaManagement.SortDropDownState == nil {
 		state.PageStates.MediaManagement.SortDropDownState = new(int32)
+	}
+
+	if state.PageStates.MediaManagement.SelectionStorage == nil {
+		state.PageStates.MediaManagement.SelectionStorage = imgui.NewSelectionBasicStorage()
 	}
 
 	imgui.AlignTextToFramePadding()
@@ -95,226 +351,34 @@ func Render(state *stateStructs.ApplicationState) {
 
 	imgui.BeginChildStrV("##MediaManagementScrollArea", imgui.ContentRegionAvail(), 0, imgui.WindowFlagsNoTitleBar)
 
-	// TODO: this is a good refactor canidate! there's LOTS of shared rendering code here between Sorts.
-	switch state.PageStates.MediaManagement.SortMethod {
-	case mediastate.SortArtistThenAlbum:
-		for artistIndex, artist := range state.PageStates.MediaManagement.Artists {
-			if artist.ShouldHide {
-				continue
-			}
+	// Initialize multiselection
+	multiSelectIO := imgui.BeginMultiSelectV(multiSelectFlags, state.PageStates.MediaManagement.SelectionStorage.Size(), -1)
 
-			if imgui.TreeNodeExStrStr("##ArtistName"+strconv.Itoa(artistIndex), imgui.TreeNodeFlagsFramePadding, wrapText(artist.ArtistName)) {
-				if len(artist.Records) == 0 {
-					records, err := DynLoadRecords(state, artist)
-
-					if err != nil {
-						panic(fmt.Sprintf("failed to load records for %s: %v\n", artist.ArtistName, err))
-					}
-
-					artist.Records = records
-				}
-
-				for recordIndex, record := range artist.Records {
-					if record.ShouldHide {
-						continue
-					}
-
-					if record.Image != nil {
-						imgui.Image(*record.Image, imgui.Vec2{X: 64, Y: 64})
-						imgui.SameLine()
-						imgui.SetCursorPosY(imgui.CursorPosY() + (32 - (imgui.FrameHeight() * 0.5)))
-					}
-
-					// Make them have somewhat-unique ideas incase collisions, especially if we're resized
-					if imgui.TreeNodeExStrStr("##RecordName"+strconv.Itoa(recordIndex), imgui.TreeNodeFlagsFramePadding, wrapText(record.Title)) {
-						if len(record.Songs) == 0 {
-							songs, err := DynLoadSongs(state, record)
-
-							if err != nil {
-								panic(fmt.Sprintf("failed to load songs for %s: %v\n", record.Title, err))
-							}
-
-							record.Songs = songs
-						}
-
-						for songIndex, song := range record.Songs {
-							if song.ShouldHide {
-								continue
-							}
-
-							if song.Image != nil {
-								imgui.Image(*song.Image, imgui.Vec2{X: 32, Y: 32})
-								imgui.SameLine()
-								imgui.SetCursorPosY(imgui.CursorPosY() + (16 - (imgui.FrameHeight() * 0.5)))
-							}
-
-							if imgui.TreeNodeExStrStr("##SongName"+strconv.Itoa(songIndex), imgui.TreeNodeFlagsFramePadding, wrapText(song.Title)) {
-								imgui.TreePop()
-							}
-						}
-
-						imgui.TreePop()
-					} else {
-						if len(record.Songs) != 0 {
-							// Clean up songs for collapsed record
-							for _, song := range record.Songs {
-								if song.Image != nil {
-									state.CurrentImguiBackend.DeleteTexture(*song.Image)
-								}
-							}
-
-							record.Songs = []*mediastate.SongState{}
-						}
-					}
-				}
-
-				imgui.TreePop()
-			} else {
-				if len(artist.Records) != 0 {
-					// Clean up records for collapsed artist
-					for _, record := range artist.Records {
-						if record.Image != nil {
-							state.CurrentImguiBackend.DeleteTexture(*record.Image)
-						}
-					}
-
-					artist.Records = []*mediastate.RecordState{}
-				}
-			}
-		}
-
-		imgui.EndChild()
-		return
-	case mediastate.SortAlbum:
-		for recordIndex, record := range state.PageStates.MediaManagement.Records {
-			if record.ShouldHide {
-				continue
-			}
-
-			if record.Image != nil {
-				imgui.Image(*record.Image, imgui.Vec2{X: 64, Y: 64})
-				imgui.SameLine()
-				imgui.SetCursorPosY(imgui.CursorPosY() + (32 - (imgui.FrameHeight() * 0.5)))
-			}
-
-			if imgui.TreeNodeExStrV(wrapText(record.Title)+"##RecordName"+strconv.Itoa(recordIndex), imgui.TreeNodeFlagsFramePadding) {
-				if len(record.Songs) == 0 {
-					songs, err := DynLoadSongs(state, record)
-
-					if err != nil {
-						panic(fmt.Sprintf("failed to load songs for %s: %v\n", record.Title, err))
-					}
-
-					record.Songs = songs
-				}
-
-				for songIndex, song := range record.Songs {
-					if song.ShouldHide {
-						continue
-					}
-
-					if song.Image != nil {
-						imgui.Image(*song.Image, imgui.Vec2{X: 32, Y: 32})
-						imgui.SameLine()
-						imgui.SetCursorPosY(imgui.CursorPosY() + (16 - (imgui.FrameHeight() * 0.5)))
-					}
-
-					if imgui.TreeNodeExStrStr("##SongName"+strconv.Itoa(songIndex), imgui.TreeNodeFlagsFramePadding, wrapText(song.Title)) {
-						imgui.TreePop()
-					}
-				}
-
-				imgui.TreePop()
-			} else {
-				if len(record.Songs) != 0 {
-					// Clean up songs for collapsed record
-					for _, song := range record.Songs {
-						if song.Image != nil {
-							state.CurrentImguiBackend.DeleteTexture(*song.Image)
-						}
-					}
-
-					record.Songs = []*mediastate.SongState{}
-				}
-			}
-		}
-
-		imgui.EndChild()
-		return
-	case mediastate.SortSearch:
-		for artistIndex, artist := range state.PageStates.MediaManagement.Artists {
-			if artist.ShouldHide {
-				continue
-			}
-
-			var artistAdditionalFlags imgui.TreeNodeFlags
-
-			if artistIndex == 0 {
-				artistAdditionalFlags = imgui.TreeNodeFlagsDefaultOpen
-			}
-
-			if imgui.TreeNodeExStrStr("##SearchModeArtistName"+strconv.Itoa(artistIndex), imgui.TreeNodeFlagsFramePadding|artistAdditionalFlags, wrapText(artist.ArtistName)) {
-				for recordIndex, record := range artist.Records {
-					if record.ShouldHide {
-						continue
-					}
-
-					if record.ArtID != "" && record.Image == nil {
-						var err error
-						record.Image, err = loadImage(state, record.ArtID)
-
-						if err != nil {
-							state.Logger.Error("Failed to load image for record %s: %s", record.Title, err.Error())
-						}
-					}
-
-					if record.Image != nil {
-						imgui.Image(*record.Image, imgui.Vec2{X: 64, Y: 64})
-						imgui.SameLine()
-						imgui.SetCursorPosY(imgui.CursorPosY() + (32 - (imgui.FrameHeight() * 0.5)))
-					}
-
-					var recordAdditionalFlags imgui.TreeNodeFlags
-
-					if recordIndex == 0 {
-						recordAdditionalFlags = imgui.TreeNodeFlagsDefaultOpen
-					}
-
-					if imgui.TreeNodeExStrStr("##SearchModeRecordName"+strconv.Itoa(recordIndex), imgui.TreeNodeFlagsFramePadding|recordAdditionalFlags, wrapText(record.Title)) {
-						for songIndex, song := range record.Songs {
-							if song.ShouldHide {
-								continue
-							}
-
-							if song.ArtID != "" && song.Image == nil {
-								var err error
-								song.Image, err = loadImage(state, record.ArtID)
-
-								if err != nil {
-									state.Logger.Error("Failed to load image for song %s: %s", song.Title, err.Error())
-								}
-							}
-
-							if song.Image != nil {
-								imgui.Image(*song.Image, imgui.Vec2{X: 32, Y: 32})
-								imgui.SameLine()
-								imgui.SetCursorPosY(imgui.CursorPosY() + (16 - (imgui.FrameHeight() * 0.5)))
-							}
-
-							if imgui.TreeNodeExStrV(wrapText(song.Title)+"##SearchModeSongName"+strconv.Itoa(songIndex), imgui.TreeNodeFlagsFramePadding) {
-								imgui.TreePop()
-							}
-						}
-
-						imgui.TreePop()
-					}
-				}
-
-				imgui.TreePop()
-			}
-		}
-
-		imgui.EndChild()
-		return
+	if err := applySelectionRequests(multiSelectIO, state); err != nil {
+		state.Logger.Error("Failed to apply selection requests: %s", err.Error())
 	}
+
+	// Render UI elements
+	if state.PageStates.MediaManagement.SortMethod == mediastate.SortAlbum {
+		for recordIndex, record := range state.PageStates.MediaManagement.Records {
+			if err := renderRecord(state, record, recordIndex); err != nil {
+				state.Logger.Error("Failed to render record %s: %s", record.Title, err.Error())
+			}
+		}
+	} else {
+		for artistIndex, artist := range state.PageStates.MediaManagement.Artists {
+			if err := renderArtist(state, artist, artistIndex); err != nil {
+				state.Logger.Error("Failed to render artist %s: %s", artist.ArtistName, err.Error())
+			}
+		}
+	}
+
+	// Finish up multiselection
+	multiSelectIO = imgui.EndMultiSelect()
+
+	if err := applySelectionRequests(multiSelectIO, state); err != nil {
+		state.Logger.Error("Failed to apply selection requests: %s", err.Error())
+	}
+
+	imgui.EndChild()
 }

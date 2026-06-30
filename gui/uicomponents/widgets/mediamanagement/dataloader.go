@@ -59,6 +59,9 @@ func BootstrapIndex(state *stateStructs.ApplicationState) error {
 
 		// Put the unknown artists at the bottom
 		state.PageStates.MediaManagement.Artists = append(state.PageStates.MediaManagement.Artists, unknownArtists...)
+
+		// Clear selection storage
+		state.PageStates.MediaManagement.SelectionStorage.Clear()
 	case mediastate.SortAlbum:
 		// Bootstrap the sort-by-album by fetching all the artists first
 		allArtists := []stateStructs.Artist{}
@@ -96,6 +99,9 @@ func BootstrapIndex(state *stateStructs.ApplicationState) error {
 
 		// Put the unknown records at the bottom
 		state.PageStates.MediaManagement.Records = append(state.PageStates.MediaManagement.Records, unknownRecords...)
+
+		// Clear selection storage
+		state.PageStates.MediaManagement.SelectionStorage.Clear()
 	case mediastate.SortSearch:
 		// Bootstrap the sort-by-artist by preloading everything.
 		//
@@ -104,7 +110,6 @@ func BootstrapIndex(state *stateStructs.ApplicationState) error {
 		//
 		// So, for simplicity, and for long-term RAM usage (as each search is re-calculated), we load everything upfront.
 
-		state.Logger.Debug("STARTING UP AN EXPENSIVE OPERATION - please wait")
 		state.Logger.Debug("Starting to load all artists, records, and songs, for SortSearch initialization...")
 		startTime := time.Now() // used for debug logs
 
@@ -150,6 +155,9 @@ func BootstrapIndex(state *stateStructs.ApplicationState) error {
 			}
 		}
 
+		// Clear selection storage
+		state.PageStates.MediaManagement.SelectionStorage.Clear()
+
 		endTime := time.Now()
 		state.Logger.Debugf("Loaded everything in %s", endTime.Sub(startTime))
 	}
@@ -191,7 +199,7 @@ func DynLoadRecords(state *stateStructs.ApplicationState, artist *mediastate.Art
 			loadedImage, err = loadImage(state, mostPopularArtID)
 
 			if err != nil {
-				state.Logger.Errorf("Failed to load image for record '%s': %v", record.Name, err)
+				state.Logger.Errorf("Failed to load image for record '%s': %s", record.Name, err.Error())
 			}
 		}
 
@@ -245,17 +253,19 @@ func DynLoadSongs(state *stateStructs.ApplicationState, record *mediastate.Recor
 			loadedImage, err = loadImage(state, song.ArtID)
 
 			if err != nil {
-				state.Logger.Errorf("Failed to load image for song '%s' from record '%s': %v", song.Title, record.Title, err)
+				state.Logger.Errorf("Failed to load image for song '%s' from record '%s': %s", song.Title, record.Title, err.Error())
 			}
 		}
 
 		allUIRepresentedSongs[songIndex] = &mediastate.SongState{
+			ID:    song.ID,
+			ArtID: song.ArtID,
+
 			OnRecord: record,
 			Artists:  mediaCompatibleArtists,
 			Title:    song.Title,
 
 			Image: loadedImage,
-			ArtID: song.ArtID,
 		}
 	}
 
