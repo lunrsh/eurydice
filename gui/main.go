@@ -15,7 +15,6 @@ import (
 	"git.lunr.sh/luna/eurydice/gui/uicomponents/popups/firstboot"
 	"git.lunr.sh/luna/eurydice/gui/uicomponents/popups/scanlibrary"
 	"git.lunr.sh/luna/eurydice/gui/uicomponents/widgets/mediamanagement"
-	"git.lunr.sh/luna/eurydice/gui/uicomponents/widgets/playlistmanagement"
 	"github.com/AllenDang/cimgui-go/backend"
 	"github.com/AllenDang/cimgui-go/backend/glfwbackend"
 	"github.com/AllenDang/cimgui-go/imgui"
@@ -99,11 +98,15 @@ func mainLoop() {
 		imgui.InternalDockBuilderSetNodePos(docking.DockID, workPos)
 
 		remainder := docking.DockID // preserve root
-		docking.LeftSideDock = imgui.InternalDockBuilderSplitNode(remainder, imgui.DirLeft, 0.33, nil, &remainder)
+		docking.LeftSideDock = imgui.InternalDockBuilderSplitNode(remainder, imgui.DirLeft, 0.25, nil, &remainder)
 		docking.RightSideDock = imgui.InternalDockBuilderSplitNode(remainder, imgui.DirRight, 0.5, nil, &remainder)
 
+		docking.PlaylistDock = imgui.InternalDockBuilderSplitNode(docking.RightSideDock, imgui.DirLeft, 0.33, nil, &docking.RightSideDock)
+		docking.ContentsDock = imgui.InternalDockBuilderSplitNode(docking.RightSideDock, imgui.DirRight, 0.5, nil, &docking.RightSideDock)
+
 		imgui.InternalDockBuilderDockWindow("One", docking.LeftSideDock)
-		imgui.InternalDockBuilderDockWindow("Two", docking.RightSideDock)
+		imgui.InternalDockBuilderDockWindow("Two", docking.ContentsDock)
+		imgui.InternalDockBuilderDockWindow("Three", docking.PlaylistDock)
 
 		imgui.InternalDockBuilderFinish(docking.DockID)
 	}
@@ -111,17 +114,18 @@ func mainLoop() {
 	imgui.DockSpaceV(docking.DockID, imgui.Vec2{}, imgui.DockNodeFlagsNone, imgui.NewWindowClass())
 	imgui.End()
 
-	// Now define the windows with matching titles
-	imgui.SetNextWindowDockID(docking.LeftSideDock)
-	imgui.BeginV("Media", nil, imgui.WindowFlagsNoMove)
-	imgui.SetNextWindowViewport(imgui.MainViewport().ID()) // Hack to disable viewport seperation
-	mediamanagement.Render(appState)
+	// Now we define the windows with matching titles
+	imgui.SetNextWindowDockID(docking.ContentsDock)
+	imgui.BeginV("Playlist Contents", nil, imgui.WindowFlagsNoMove|imgui.WindowFlagsNoBackground)
 	imgui.End()
 
-	imgui.SetNextWindowDockID(docking.RightSideDock)
-	imgui.BeginV("Playlist Manager", nil, imgui.WindowFlagsNoMove)
-	imgui.SetNextWindowViewport(imgui.MainViewport().ID()) // Hack to disable viewport seperation
-	playlistmanagement.Render(appState)
+	imgui.SetNextWindowDockID(docking.PlaylistDock)
+	imgui.BeginV("Playlist Manager", nil, imgui.WindowFlagsNoMove|imgui.WindowFlagsNoBackground)
+	imgui.End()
+
+	imgui.SetNextWindowDockID(docking.LeftSideDock)
+	imgui.BeginV("Media", nil, imgui.WindowFlagsNoMove|imgui.WindowFlagsNoBackground)
+	mediamanagement.Render(appState)
 	imgui.End()
 
 	// TODO: needs refactoring

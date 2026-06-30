@@ -37,8 +37,9 @@ type ConfigState struct {
 // scan windows), so we use single structs per each page type to hold the state of that page. Of course, if needed,
 // we can do arrays, but we don't need that extra overhead and flexibility.
 type IndividualPageStates struct {
-	FirstBoot       setupstate.SetupState
-	LibraryScan     scanstate.ScanState
+	FirstBoot   setupstate.SetupState
+	LibraryScan scanstate.ScanState
+
 	MediaManagement mediastate.MediaState
 }
 
