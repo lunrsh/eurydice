@@ -29,8 +29,7 @@ type SongState struct {
 
 	ShouldHide bool
 
-	OnRecord      *RecordState
-	IndexInParent int
+	OnRecord *RecordState
 }
 
 // Individual record entries in the media management pane.
@@ -55,7 +54,6 @@ type RecordState struct {
 	ShouldHide bool
 
 	AuthoringArtist *ArtistState
-	IndexInParent   int
 }
 
 // Individual artist entries in the media management pane.

@@ -71,7 +71,7 @@ func BootstrapIndex(state *stateStructs.ApplicationState) error {
 			return fmt.Errorf("failed to find all artists: %w", err)
 		}
 
-		for artistIndex, artist := range allArtists {
+		for _, artist := range allArtists {
 			if len(artist.PrimarySongs) != 0 {
 				records, err := DynLoadRecords(state, &mediastate.ArtistState{
 					ID:         artist.ID,
@@ -87,7 +87,6 @@ func BootstrapIndex(state *stateStructs.ApplicationState) error {
 						record.Title = fmt.Sprintf("%s - %s", artist.Name, record.Title)
 						unknownRecords = append(unknownRecords, record)
 					} else {
-						record.IndexInParent = artistIndex
 						state.PageStates.MediaManagement.Records = append(state.PageStates.MediaManagement.Records, record)
 					}
 				}
@@ -138,7 +137,7 @@ func BootstrapIndex(state *stateStructs.ApplicationState) error {
 					return fmt.Errorf("failed to fetch records for artist '%s': %w", artistState.ArtistName, err)
 				}
 
-				for recordIndex, record := range records {
+				for _, record := range records {
 					record.ShouldHide = true
 
 					// Load songs, but keep visibility enabled for all songs. We don't use the granularity of specific songs.
@@ -146,10 +145,6 @@ func BootstrapIndex(state *stateStructs.ApplicationState) error {
 
 					if err != nil {
 						return fmt.Errorf("failed to fetch songs for record '%s': %w", record.Title, err)
-					}
-
-					for _, song := range songs {
-						song.IndexInParent = recordIndex
 					}
 
 					record.Songs = songs
@@ -263,12 +258,14 @@ func DynLoadSongs(state *stateStructs.ApplicationState, record *mediastate.Recor
 		}
 
 		allUIRepresentedSongs[songIndex] = &mediastate.SongState{
+			ID:    song.ID,
+			ArtID: song.ArtID,
+
 			OnRecord: record,
 			Artists:  mediaCompatibleArtists,
 			Title:    song.Title,
 
 			Image: loadedImage,
-			ArtID: song.ArtID,
 		}
 	}
 

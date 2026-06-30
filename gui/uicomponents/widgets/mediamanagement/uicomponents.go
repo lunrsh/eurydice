@@ -158,7 +158,6 @@ func renderRecord(state *stateStructs.ApplicationState, record *mediastate.Recor
 			}
 
 			for _, song := range songs {
-				song.IndexInParent = recordIndex
 				record.Songs = append(record.Songs, song)
 			}
 		}
@@ -186,8 +185,6 @@ func renderRecord(state *stateStructs.ApplicationState, record *mediastate.Recor
 				record.Songs = []*mediastate.SongState{}
 			}
 		}
-
-		closeRecordAndUnselect(state, record)
 	}
 
 	imgui.PopID()
