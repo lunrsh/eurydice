@@ -18,7 +18,8 @@ import (
 //
 // Don't break everything, please! ~ Luna
 type SongState struct {
-	ID uint // ID from the database
+	ID      uint // ID from the database
+	ImguiID imgui.ID
 
 	Artists []*ArtistState
 	Title   string
@@ -28,7 +29,8 @@ type SongState struct {
 
 	ShouldHide bool
 
-	OnRecord *RecordState
+	OnRecord      *RecordState
+	IndexInParent int
 }
 
 // Individual record entries in the media management pane.
@@ -41,7 +43,8 @@ type SongState struct {
 //
 // Don't break everything, please! ~ Luna
 type RecordState struct {
-	ID uint // ID from the database
+	ID      uint // ID from the database
+	ImguiID imgui.ID
 
 	Title string // title of the record
 	Songs []*SongState
@@ -52,6 +55,7 @@ type RecordState struct {
 	ShouldHide bool
 
 	AuthoringArtist *ArtistState
+	IndexInParent   int
 }
 
 // Individual artist entries in the media management pane.
@@ -64,7 +68,9 @@ type RecordState struct {
 //
 // Don't break everything, please! ~ Luna
 type ArtistState struct {
-	ID         uint // ID from the database
+	ID      uint // ID from the database
+	ImguiID imgui.ID
+
 	ArtistName string
 
 	ShouldHide bool
@@ -89,6 +95,7 @@ type MediaState struct {
 	SortMethod  int
 
 	SortDropDownState *int32
+	SelectionStorage  *imgui.SelectionBasicStorage // used to store selection state in imgui
 
 	IntentToSearch         bool // Whether the user has requested a search. Gets set to false after the search is completed
 	TimeSinceSearchRequest time.Time

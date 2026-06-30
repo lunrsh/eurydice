@@ -300,6 +300,9 @@ func SearchMedia(state *stateStructs.ApplicationState) {
 		artist.ShouldHide = false
 	}
 
+	// Clear selection storage
+	state.PageStates.MediaManagement.SelectionStorage.Clear()
+
 	endTime := time.Now()
 	state.Logger.Debugf("Search query '%s' completed with %d results in %s", searchQuery, len(sortResults), endTime.Sub(startTime))
 }
