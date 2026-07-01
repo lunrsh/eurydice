@@ -132,7 +132,7 @@ func checkAndExecuteDragAndDrop(state *stateStructs.ApplicationState) {
 	}
 }
 
-func renderArtist(state *stateStructs.ApplicationState, artist *mediastate.ArtistState, artistIndex int) error {
+func renderArtist(state *stateStructs.ApplicationState, artist *mediastate.ArtistState) error {
 	if artist.ShouldHide {
 		return nil
 	}
@@ -166,8 +166,8 @@ func renderArtist(state *stateStructs.ApplicationState, artist *mediastate.Artis
 			artist.Records = records
 		}
 
-		for recordIndex, record := range artist.Records {
-			if err := renderRecord(state, record, recordIndex); err != nil {
+		for _, record := range artist.Records {
+			if err := renderRecord(state, record); err != nil {
 				return fmt.Errorf("failed to render record: %w", err)
 			}
 		}
@@ -197,7 +197,7 @@ func renderArtist(state *stateStructs.ApplicationState, artist *mediastate.Artis
 	return nil
 }
 
-func renderRecord(state *stateStructs.ApplicationState, record *mediastate.RecordState, recordIndex int) error {
+func renderRecord(state *stateStructs.ApplicationState, record *mediastate.RecordState) error {
 	if record.ShouldHide {
 		return nil
 	}
@@ -249,8 +249,8 @@ func renderRecord(state *stateStructs.ApplicationState, record *mediastate.Recor
 			}
 		}
 
-		for songIndex, song := range record.Songs {
-			if err := renderSong(state, song, songIndex); err != nil {
+		for _, song := range record.Songs {
+			if err := renderSong(state, song); err != nil {
 				return err
 			}
 		}
@@ -280,7 +280,7 @@ func renderRecord(state *stateStructs.ApplicationState, record *mediastate.Recor
 	return nil
 }
 
-func renderSong(state *stateStructs.ApplicationState, song *mediastate.SongState, songIndex int) error {
+func renderSong(state *stateStructs.ApplicationState, song *mediastate.SongState) error {
 	if song.ShouldHide {
 		return nil
 	}

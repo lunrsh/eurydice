@@ -74,33 +74,50 @@ func getNextItemInVisibleOrder(state *stateStructs.ApplicationState, currentNode
 	case *mediastate.RecordState:
 		artist := node.AuthoringArtist
 
-		recordIndex := slices.Index(artist.Records, node)
-
 		// Recurse into children if parent node is currently opened
 		if len(node.Songs) > 0 && imgui.InternalTreeNodeGetOpen(node.ImguiID) {
 			return node.Songs[0], nil
 		}
 
-		if _, ok := lastNode.(*mediastate.RecordState); ok {
-			if recordIndex+1 < len(artist.Records) {
-				return artist.Records[recordIndex+1], nil
-			}
+		recordIndex := slices.Index(artist.Records, node)
+
+		if recordIndex+1 < len(artist.Records) {
+			return artist.Records[recordIndex+1], nil
 		}
 
-		// Climb up to artist level
-		return getNextItemInVisibleOrder(state, artist, lastNode)
+		// Try to find the next Artist sibling, if possible
+		artistIndex := slices.Index(state.PageStates.MediaManagement.Artists, artist)
+
+		if artistIndex+1 < len(state.PageStates.MediaManagement.Artists) {
+			return state.PageStates.MediaManagement.Artists[artistIndex+1], nil
+		}
+
+		// If there are no more artists, return
+		return nil, nil
 	case *mediastate.SongState:
 		record := node.OnRecord
 		songIndex := slices.Index(record.Songs, node)
 
-		if _, ok := lastNode.(*mediastate.SongState); ok {
-			if songIndex+1 < len(record.Songs) {
-				return record.Songs[songIndex+1], nil
-			}
+		if songIndex+1 < len(record.Songs) {
+			return record.Songs[songIndex+1], nil
 		}
 
-		// Climb to next record
-		return getNextItemInVisibleOrder(state, record, lastNode)
+		// Instead of climbing to its own record, find the next Record sibling
+		recordIndex := slices.Index(record.AuthoringArtist.Records, record)
+
+		if recordIndex+1 < len(record.AuthoringArtist.Records) {
+			return record.AuthoringArtist.Records[recordIndex+1], nil
+		}
+
+		// If this was the last record of the artist, move to the next Artist entirely
+		artistIndex := slices.Index(state.PageStates.MediaManagement.Artists, record.AuthoringArtist)
+
+		if artistIndex+1 < len(state.PageStates.MediaManagement.Artists) {
+			return state.PageStates.MediaManagement.Artists[artistIndex+1], nil
+		}
+
+		// If there are no more records or artists, return
+		return nil, nil
 	default:
 		return nil, fmt.Errorf("unsupported node type: %T", node)
 	}
@@ -110,7 +127,7 @@ func getNextItemInVisibleOrder(state *stateStructs.ApplicationState, currentNode
 
 // From a given interface, assuming that we're an element that we're currently displaying, return an imgui.ID
 // that can be used to identify the element
-func getIDFromInterface(state *stateStructs.ApplicationState, node any) (imgui.ID, error) {
+func getIDFromInterface(node any) (imgui.ID, error) {
 	switch node := node.(type) {
 	case *mediastate.ArtistState:
 		return node.ImguiID, nil
@@ -258,7 +275,7 @@ func applySelectionRequests(multiSelectIO *imgui.MultiSelectIO, state *stateStru
 			var nodeID imgui.ID
 
 			for node != nil && err == nil {
-				nodeID, err = getIDFromInterface(state, node)
+				nodeID, err = getIDFromInterface(node)
 
 				if err != nil {
 					return fmt.Errorf("failed to get ID from node: %w", err)
@@ -355,14 +372,14 @@ func Render(state *stateStructs.ApplicationState) {
 
 	// Render UI elements
 	if state.PageStates.MediaManagement.SortMethod == mediastate.SortAlbum {
-		for recordIndex, record := range state.PageStates.MediaManagement.Records {
-			if err := renderRecord(state, record, recordIndex); err != nil {
+		for _, record := range state.PageStates.MediaManagement.Records {
+			if err := renderRecord(state, record); err != nil {
 				state.Logger.Error("Failed to render record %s: %s", record.Title, err.Error())
 			}
 		}
 	} else {
-		for artistIndex, artist := range state.PageStates.MediaManagement.Artists {
-			if err := renderArtist(state, artist, artistIndex); err != nil {
+		for _, artist := range state.PageStates.MediaManagement.Artists {
+			if err := renderArtist(state, artist); err != nil {
 				state.Logger.Error("Failed to render artist %s: %s", artist.ArtistName, err.Error())
 			}
 		}
