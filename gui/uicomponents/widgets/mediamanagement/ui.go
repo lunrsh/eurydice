@@ -14,14 +14,8 @@ import (
 
 var multiSelectFlags = imgui.MultiSelectFlagsClearOnEscape | imgui.MultiSelectFlagsBoxSelect2d
 
-const (
-	stateIDArtist = 1
-	stateIDRecord = 2
-	stateIDSong   = 3
-)
-
 // Recursively opens or closes items in the media management tree, given a node to start from, and a selection state.
-func recursivelyOpenOrCloseItems(state *stateStructs.ApplicationState, node interface{}, selected bool) error {
+func recursivelyOpenOrCloseItems(state *stateStructs.ApplicationState, node any, selected bool) error {
 	switch node := node.(type) {
 	case *mediastate.ArtistState:
 		state.PageStates.MediaManagement.SelectionStorage.SetItemSelected(node.ImguiID, selected)
@@ -58,7 +52,7 @@ func recursivelyOpenOrCloseItems(state *stateStructs.ApplicationState, node inte
 }
 
 // Gets the next currently visible item in the media management tree, given the current node and the last node to search from.
-func getNextItemInVisibleOrder(state *stateStructs.ApplicationState, currentNode interface{}, lastNode interface{}) (interface{}, error) {
+func getNextItemInVisibleOrder(state *stateStructs.ApplicationState, currentNode any, lastNode any) (any, error) {
 	if currentNode == lastNode {
 		return nil, nil
 	}
@@ -116,7 +110,7 @@ func getNextItemInVisibleOrder(state *stateStructs.ApplicationState, currentNode
 
 // From a given interface, assuming that we're an element that we're currently displaying, return an imgui.ID
 // that can be used to identify the element
-func getIDFromInterface(state *stateStructs.ApplicationState, node interface{}) (imgui.ID, error) {
+func getIDFromInterface(state *stateStructs.ApplicationState, node any) (imgui.ID, error) {
 	switch node := node.(type) {
 	case *mediastate.ArtistState:
 		return node.ImguiID, nil
@@ -130,16 +124,17 @@ func getIDFromInterface(state *stateStructs.ApplicationState, node interface{}) 
 }
 
 // From a given request item data, figure out which node it refers to and return it as an interface
-func getNodeFromRequestItem(state *stateStructs.ApplicationState, data int64) interface{} {
-	// Assume that if it's selected, it's visible, and thus, in our tree
+func getNodeFromRequestItem(state *stateStructs.ApplicationState, data int64) any {
 	kind := data >> 32
 	id := data & 0xffffffff
 
 	switch kind {
-	case stateIDArtist:
+	case mediastate.StateIDArtist:
 		for _, artist := range state.PageStates.MediaManagement.Artists {
+			// Assume that if it's selected, it's visible, and thus, in our tree
+
 			if artist.ShouldHide {
-				continue // Optimization: skip hidden artists, because they're impossible to select otherwise
+				continue
 			}
 
 			if artist.ID == uint(id) {
@@ -148,13 +143,13 @@ func getNodeFromRequestItem(state *stateStructs.ApplicationState, data int64) in
 		}
 
 		return nil
-	case stateIDRecord:
+	case mediastate.StateIDRecord:
 		// If the sort method is SortAlbum, search through the records directly
 		// Otherwise, search through the artists and their records
 		if state.PageStates.MediaManagement.SortMethod == mediastate.SortAlbum {
 			for _, record := range state.PageStates.MediaManagement.Records {
 				if record.ShouldHide {
-					continue // Optimization: skip hidden records, because they're impossible to select otherwise
+					continue
 				}
 
 				if record.ID == uint(id) {
@@ -164,12 +159,12 @@ func getNodeFromRequestItem(state *stateStructs.ApplicationState, data int64) in
 		} else {
 			for _, artist := range state.PageStates.MediaManagement.Artists {
 				if artist.ShouldHide {
-					continue // Optimization: skip hidden artists, because they're impossible to select otherwise
+					continue
 				}
 
 				for _, record := range artist.Records {
 					if record.ShouldHide {
-						continue // Optimization: skip hidden records, because they're impossible to select otherwise
+						continue
 					}
 
 					if record.ID == uint(id) {
@@ -180,7 +175,7 @@ func getNodeFromRequestItem(state *stateStructs.ApplicationState, data int64) in
 		}
 
 		return nil
-	case stateIDSong:
+	case mediastate.StateIDSong:
 		// If the sort method is SortAlbum, search through the records, then songs directly
 		// Otherwise, search through the artists first
 		if state.PageStates.MediaManagement.SortMethod == mediastate.SortAlbum {

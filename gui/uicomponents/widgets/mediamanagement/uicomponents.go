@@ -1,8 +1,10 @@
 package mediamanagement
 
 import (
+	"C"
 	"fmt"
 	"strconv"
+	"unsafe"
 
 	stateStructs "git.lunr.sh/luna/eurydice/gui/state"
 	"git.lunr.sh/luna/eurydice/gui/state/widgetstate/mediastate"
@@ -46,6 +48,90 @@ func closeArtistAndUnselect(state *stateStructs.ApplicationState, artist *medias
 	}
 }
 
+func checkAndExecuteDragAndDrop(state *stateStructs.ApplicationState) {
+	if imgui.BeginDragDropSource() {
+		dragDropPayload := imgui.DragDropPayload()
+		var dragDropWrapper *mediastate.DragDropWrapper
+
+		if dragDropPayload.CData == nil {
+			dragDropSize := unsafe.Sizeof(mediastate.DragDropWrapper{})
+
+			dragDropMemory := C.malloc(C.size_t(dragDropSize))
+			dragDropWrapper = (*mediastate.DragDropWrapper)(dragDropMemory)
+
+			// I don't feel like fighting this library, and plus, we need to walk through visible items ANYWAYS to get their database IDs,
+			// so we just loop through all the visible items. Sorry!
+
+			if state.PageStates.MediaManagement.SortMethod == mediastate.SortAlbum {
+				for _, record := range state.PageStates.MediaManagement.Records {
+					if record.ShouldHide {
+						continue // can't select hidden things!
+					}
+
+					if state.PageStates.MediaManagement.SelectionStorage.Contains(record.ImguiID) {
+						dragDropWrapper.Markers = append(dragDropWrapper.Markers, mediastate.ConvertNodeInformationToIntMarker(record))
+					}
+
+					for _, song := range record.Songs {
+						if state.PageStates.MediaManagement.SelectionStorage.Contains(song.ImguiID) {
+							dragDropWrapper.Markers = append(dragDropWrapper.Markers, mediastate.ConvertNodeInformationToIntMarker(song))
+						}
+					}
+				}
+			} else {
+				for _, artist := range state.PageStates.MediaManagement.Artists {
+					if artist.ShouldHide {
+						continue // can't select hidden things!
+					}
+
+					if state.PageStates.MediaManagement.SelectionStorage.Contains(artist.ImguiID) {
+						dragDropWrapper.Markers = append(dragDropWrapper.Markers, mediastate.ConvertNodeInformationToIntMarker(artist))
+					}
+
+					for _, record := range artist.Records {
+						if record.ShouldHide {
+							continue
+						}
+
+						if state.PageStates.MediaManagement.SelectionStorage.Contains(record.ImguiID) {
+							dragDropWrapper.Markers = append(dragDropWrapper.Markers, mediastate.ConvertNodeInformationToIntMarker(record))
+						}
+
+						for _, song := range record.Songs {
+							if state.PageStates.MediaManagement.SelectionStorage.Contains(song.ImguiID) {
+								dragDropWrapper.Markers = append(dragDropWrapper.Markers, mediastate.ConvertNodeInformationToIntMarker(song))
+							}
+						}
+					}
+				}
+			}
+
+			imgui.SetDragDropPayload("media_browser_item", uintptr(dragDropMemory), uint64(dragDropSize))
+		} else {
+			dragDropWrapper = (*mediastate.DragDropWrapper)(dragDropPayload.CData.Data)
+		}
+
+		if len(dragDropWrapper.Markers) == 1 {
+			kind := dragDropWrapper.Markers[0] >> 32
+			switch kind {
+			case mediastate.StateIDArtist:
+				imgui.Text("Dragging 1 artist")
+			case mediastate.StateIDSong:
+				imgui.Text("Dragging 1 song")
+			case mediastate.StateIDRecord:
+				imgui.Text("Dragging 1 record")
+			default:
+				state.Logger.Errorf("Unknown drag drop kind: %d", kind)
+				imgui.Text("Dragging 1 item")
+			}
+		} else {
+			imgui.Text(strconv.Itoa(len(dragDropWrapper.Markers)) + " items selected")
+		}
+
+		imgui.EndDragDropSource()
+	}
+}
+
 func renderArtist(state *stateStructs.ApplicationState, artist *mediastate.ArtistState, artistIndex int) error {
 	if artist.ShouldHide {
 		return nil
@@ -65,7 +151,7 @@ func renderArtist(state *stateStructs.ApplicationState, artist *mediastate.Artis
 		flags |= imgui.TreeNodeFlagsSelected
 	}
 
-	imgui.SetNextItemSelectionUserData(imgui.SelectionUserData((stateIDArtist << 32) | int(artist.ID)))
+	imgui.SetNextItemSelectionUserData(imgui.SelectionUserData(mediastate.ConvertNodeInformationToIntMarker(artist)))
 	imgui.SetNextItemStorageID(artist.ImguiID)
 	imgui.InternalPushOverrideID(artist.ImguiID) // Manually set the ID to ensure consistency
 
@@ -106,6 +192,7 @@ func renderArtist(state *stateStructs.ApplicationState, artist *mediastate.Artis
 	}
 
 	imgui.PopID()
+	checkAndExecuteDragAndDrop(state)
 
 	return nil
 }
@@ -144,7 +231,7 @@ func renderRecord(state *stateStructs.ApplicationState, record *mediastate.Recor
 		flags |= imgui.TreeNodeFlagsSelected
 	}
 
-	imgui.SetNextItemSelectionUserData(imgui.SelectionUserData((stateIDRecord << 32) | int(record.ID)))
+	imgui.SetNextItemSelectionUserData(imgui.SelectionUserData(mediastate.ConvertNodeInformationToIntMarker(record)))
 	imgui.SetNextItemStorageID(record.ImguiID)
 	imgui.InternalPushOverrideID(record.ImguiID) // Manually set the ID to ensure consistency
 
@@ -188,6 +275,7 @@ func renderRecord(state *stateStructs.ApplicationState, record *mediastate.Recor
 	}
 
 	imgui.PopID()
+	checkAndExecuteDragAndDrop(state)
 
 	return nil
 }
@@ -219,10 +307,12 @@ func renderSong(state *stateStructs.ApplicationState, song *mediastate.SongState
 	isSongSelected := state.PageStates.MediaManagement.SelectionStorage.Contains(song.ImguiID)
 
 	imgui.InternalPushOverrideID(song.ImguiID)
-	imgui.SetNextItemSelectionUserData(imgui.SelectionUserData((stateIDSong << 32) | int(song.ID)))
+	imgui.SetNextItemSelectionUserData(imgui.SelectionUserData(mediastate.ConvertNodeInformationToIntMarker(song)))
 	imgui.SetNextItemStorageID(song.ImguiID)
 	imgui.SelectableBoolV(wrapText(song.Title), isSongSelected, imgui.SelectableFlags(imgui.SelectableFlagsSpanAvailWidth), imgui.Vec2{})
 	imgui.PopID()
+
+	checkAndExecuteDragAndDrop(state)
 
 	return nil
 }

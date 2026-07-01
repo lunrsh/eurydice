@@ -364,6 +364,7 @@ func main() {
 		&state.Song{},
 		&state.Artist{},
 		&state.Record{},
+		&state.Playlist{},
 		&state.Library{},
 	); err != nil {
 		panic(fmt.Sprintf("Failed to migrate database: %s (Database is definitely corrupt! Try deleting the config directory?)", err.Error()))
