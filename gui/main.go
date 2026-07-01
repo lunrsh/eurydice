@@ -292,6 +292,7 @@ func main() {
 	defer func() {
 		if err := recover(); err != nil {
 			oncrash.Panic("Eurydice has crashed", fmt.Sprintf("Uncaught exception: %s", err), logger, logFilePath)
+			os.Exit(1)
 		}
 	}()
 

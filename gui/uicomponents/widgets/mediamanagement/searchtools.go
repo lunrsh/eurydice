@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"git.lunr.sh/luna/eurydice/gui/oncrash"
 	stateStructs "git.lunr.sh/luna/eurydice/gui/state"
 	"git.lunr.sh/luna/eurydice/gui/state/widgetstate/mediastate"
 	"github.com/agnivade/levenshtein"
@@ -23,6 +24,13 @@ type sortContainer struct {
 }
 
 func backgroundSearchDaemon(state *stateStructs.ApplicationState) {
+	// Set up crash handler
+	defer func() {
+		if err := recover(); err != nil {
+			oncrash.Panic("Eurydice has crashed", fmt.Sprintf("Uncaught exception in background task: %s", err), state.Logger, state.LogFilePath)
+		}
+	}()
+
 	err := BootstrapIndex(state)
 
 	if err != nil {

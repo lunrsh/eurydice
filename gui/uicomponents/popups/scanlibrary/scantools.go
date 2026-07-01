@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 
+	"git.lunr.sh/luna/eurydice/gui/oncrash"
 	stateStructs "git.lunr.sh/luna/eurydice/gui/state"
 	"git.lunr.sh/luna/eurydice/gui/state/popupstate/scanstate"
 	"git.lunr.sh/luna/eurydice/gui/uicomponents/widgets/mediamanagement"
@@ -389,6 +390,13 @@ func cleanupDatabase(state *stateStructs.ApplicationState, musicFound []string) 
 }
 
 func backingThread(state *stateStructs.ApplicationState) {
+	// Set up crash handler
+	defer func() {
+		if err := recover(); err != nil {
+			oncrash.Panic("Eurydice has crashed", fmt.Sprintf("Uncaught exception in background task: %s", err), state.Logger, state.LogFilePath)
+		}
+	}()
+
 	// Step 1: scan the filesystem
 	state.Logger.Debugf("ScanLibrary->backingThread: scanning library path '%s'", state.Config.JSONConfig.LibraryPath)
 	state.PageStates.LibraryScan.StepNo = scanstate.StepScanningFilesystem
@@ -396,7 +404,10 @@ func backingThread(state *stateStructs.ApplicationState) {
 	allMusicFound, err := walkToFindAllMusic(state)
 
 	if err != nil {
-		panic(fmt.Sprintf("Failed to scan library directories: %s", err.Error()))
+		// Special case: if we failed to scan the filesystem, it's more of an easy fix that needs less visible.
+		// So, we call Panic directly.
+		state.Logger.Errorf("ScanLibrary->backingThread: We are about to crash! Failed to scan library path '%s': %s", state.Config.JSONConfig.LibraryPath, err.Error())
+		oncrash.Panic("Eurydice has crashed", fmt.Sprintf("Failed to read the current library path (%s). Is it readable and accessible?", state.Config.JSONConfig.LibraryPath), state.Logger, state.LogFilePath)
 	}
 
 	if len(allMusicFound) == 0 {
@@ -440,6 +451,12 @@ func backingThread(state *stateStructs.ApplicationState) {
 
 	// Step 5: Startup the media management indexer
 	go func() {
+		defer func() {
+			if err := recover(); err != nil {
+				oncrash.Panic("Eurydice has crashed", fmt.Sprintf("Uncaught exception in background task: %s", err), state.Logger, state.LogFilePath)
+			}
+		}()
+
 		if err = mediamanagement.BootstrapIndex(state); err != nil {
 			panic(fmt.Sprintf("Failed to bootstrap media management index: %s", err.Error()))
 		}
