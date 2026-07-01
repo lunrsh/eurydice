@@ -12,6 +12,7 @@ type Song struct {
 	PrimaryArtist   Artist
 
 	CollabArtists []*Artist `gorm:"many2many:song_other_artists;"`
+	Songs         []*Song   `gorm:"many2many:playlist_songs;"`
 
 	RecordID uint
 	Record   Record
@@ -50,12 +51,23 @@ type Record struct {
 	Library   Library
 }
 
+type Playlist struct {
+	gorm.Model
+
+	Name  string
+	Songs []*Song `gorm:"many2many:playlist_songs;"`
+
+	LibraryID uint
+	Library   Library
+}
+
 type Library struct {
 	gorm.Model
 
 	LibraryPath string
 
-	Artists []Artist
-	Songs   []Song
-	Records []Record
+	Artists   []Artist
+	Songs     []Song
+	Records   []Record
+	Playlists []Playlist
 }
