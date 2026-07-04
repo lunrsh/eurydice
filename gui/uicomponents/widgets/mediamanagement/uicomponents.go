@@ -49,7 +49,7 @@ func closeArtistAndUnselect(state *stateStructs.ApplicationState, artist *medias
 }
 
 func checkAndExecuteDragAndDrop(state *stateStructs.ApplicationState) {
-	if imgui.BeginDragDropSource() {
+	if imgui.BeginDragDropSourceV(imgui.DragDropFlagsSourceNoHoldToOpenOthers) {
 		dragDropPayload := imgui.DragDropPayload()
 		var dragDropWrapper *mediastate.DragDropWrapper
 
