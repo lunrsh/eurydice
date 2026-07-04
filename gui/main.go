@@ -15,6 +15,8 @@ import (
 	"git.lunr.sh/luna/eurydice/gui/uicomponents/popups/firstboot"
 	"git.lunr.sh/luna/eurydice/gui/uicomponents/popups/scanlibrary"
 	"git.lunr.sh/luna/eurydice/gui/uicomponents/widgets/mediamanagement"
+	"git.lunr.sh/luna/eurydice/gui/uicomponents/widgets/playlistmanagement"
+	"git.lunr.sh/luna/eurydice/gui/uicomponents/widgets/playlistselector"
 	"github.com/AllenDang/cimgui-go/backend"
 	"github.com/AllenDang/cimgui-go/backend/glfwbackend"
 	"github.com/AllenDang/cimgui-go/imgui"
@@ -116,11 +118,13 @@ func mainLoop() {
 
 	// Now we define the windows with matching titles
 	imgui.SetNextWindowDockID(docking.ContentsDock)
-	imgui.BeginV("Playlist Contents", nil, imgui.WindowFlagsNoMove|imgui.WindowFlagsNoBackground)
+	imgui.BeginV("Playlist Selector", nil, imgui.WindowFlagsNoMove|imgui.WindowFlagsNoBackground)
+	playlistselector.Render(appState)
 	imgui.End()
 
 	imgui.SetNextWindowDockID(docking.PlaylistDock)
 	imgui.BeginV("Playlist Manager", nil, imgui.WindowFlagsNoMove|imgui.WindowFlagsNoBackground)
+	playlistmanagement.Render(appState)
 	imgui.End()
 
 	imgui.SetNextWindowDockID(docking.LeftSideDock)
@@ -203,6 +207,7 @@ func mainLoop() {
 	}
 
 	// "inline" this because it's so simple
+	// TODO: imgui supports nested modals, but we don't utilize it
 	if imgui.BeginPopupModalV("Error | First Launch Wizard", nil, imgui.WindowFlagsAlwaysAutoResize) ||
 		imgui.BeginPopupModalV("Library Initialization Error | Eurydice Startup", nil, imgui.WindowFlagsAlwaysAutoResize) {
 		imgui.Text(appState.PageStates.FirstBoot.ErrHint + "\n")
