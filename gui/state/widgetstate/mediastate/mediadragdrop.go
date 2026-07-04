@@ -1,5 +1,7 @@
 package mediastate
 
+import "unsafe"
+
 const (
 	StateIDArtist = 1
 	StateIDRecord = 2
@@ -40,5 +42,6 @@ func ConvertNodeInformationToIntMarker(node any) int {
 // Wrapper used as a holder for the IntMarkers used in drag-and-drop operations.
 // Done this way so we can manually allocate everything to ensure it doesn't get GC-ed during use (a real possibility)
 type DragDropWrapper struct {
-	Markers []int
+	Markers      []int
+	MarkerMemPtr unsafe.Pointer
 }

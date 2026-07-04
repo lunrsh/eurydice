@@ -59,6 +59,8 @@ func checkAndExecuteDragAndDrop(state *stateStructs.ApplicationState) {
 			dragDropMemory := C.malloc(C.size_t(dragDropSize))
 			dragDropWrapper = (*mediastate.DragDropWrapper)(dragDropMemory)
 
+			originalMarkerSlice := []int{}
+
 			// I don't feel like fighting this library, and plus, we need to walk through visible items ANYWAYS to get their database IDs,
 			// so we just loop through all the visible items. Sorry!
 
@@ -69,12 +71,12 @@ func checkAndExecuteDragAndDrop(state *stateStructs.ApplicationState) {
 					}
 
 					if state.PageStates.MediaManagement.SelectionStorage.Contains(record.ImguiID) {
-						dragDropWrapper.Markers = append(dragDropWrapper.Markers, mediastate.ConvertNodeInformationToIntMarker(record))
+						originalMarkerSlice = append(originalMarkerSlice, mediastate.ConvertNodeInformationToIntMarker(record))
 					}
 
 					for _, song := range record.Songs {
 						if state.PageStates.MediaManagement.SelectionStorage.Contains(song.ImguiID) {
-							dragDropWrapper.Markers = append(dragDropWrapper.Markers, mediastate.ConvertNodeInformationToIntMarker(song))
+							originalMarkerSlice = append(originalMarkerSlice, mediastate.ConvertNodeInformationToIntMarker(song))
 						}
 					}
 				}
@@ -85,7 +87,7 @@ func checkAndExecuteDragAndDrop(state *stateStructs.ApplicationState) {
 					}
 
 					if state.PageStates.MediaManagement.SelectionStorage.Contains(artist.ImguiID) {
-						dragDropWrapper.Markers = append(dragDropWrapper.Markers, mediastate.ConvertNodeInformationToIntMarker(artist))
+						originalMarkerSlice = append(originalMarkerSlice, mediastate.ConvertNodeInformationToIntMarker(artist))
 					}
 
 					for _, record := range artist.Records {
@@ -94,17 +96,23 @@ func checkAndExecuteDragAndDrop(state *stateStructs.ApplicationState) {
 						}
 
 						if state.PageStates.MediaManagement.SelectionStorage.Contains(record.ImguiID) {
-							dragDropWrapper.Markers = append(dragDropWrapper.Markers, mediastate.ConvertNodeInformationToIntMarker(record))
+							originalMarkerSlice = append(originalMarkerSlice, mediastate.ConvertNodeInformationToIntMarker(record))
 						}
 
 						for _, song := range record.Songs {
 							if state.PageStates.MediaManagement.SelectionStorage.Contains(song.ImguiID) {
-								dragDropWrapper.Markers = append(dragDropWrapper.Markers, mediastate.ConvertNodeInformationToIntMarker(song))
+								originalMarkerSlice = append(originalMarkerSlice, mediastate.ConvertNodeInformationToIntMarker(song))
 							}
 						}
 					}
 				}
 			}
+
+			// Manually allocate memory for the marker slice and copy the original slice into it so the slice doesn't get GCed
+			// This code is NASTY, but it works
+			dragDropWrapper.MarkerMemPtr = C.malloc(C.size_t(unsafe.Sizeof(int(0)) * uintptr(len(originalMarkerSlice))))
+			dragDropWrapper.Markers = unsafe.Slice((*int)(dragDropWrapper.MarkerMemPtr), len(originalMarkerSlice))
+			copy(dragDropWrapper.Markers, originalMarkerSlice)
 
 			imgui.SetDragDropPayload("media_browser_item", uintptr(dragDropMemory), uint64(dragDropSize))
 		} else {
@@ -156,6 +164,21 @@ func renderArtist(state *stateStructs.ApplicationState, artist *mediastate.Artis
 	imgui.InternalPushOverrideID(artist.ImguiID) // Manually set the ID to ensure consistency
 
 	if imgui.TreeNodeExStrStr(artistID, flags, wrapText(artist.ArtistName)) {
+		// If the caller is open, we know BeginDragDropSource() is going to error out, because it's *apparently*
+		// not a valid drag-drop source, as the function doesn't execute at all if we have nested things...
+		//
+		// This is a hack, but it works. If there's a fix for this, please let me know, but I'm lazy.
+		if imgui.IsItemHovered() && imgui.BeginTooltip() {
+			imgui.Text("Activating drag and drop on this artist is not available, because this artist")
+			imgui.Text("has items inside it!")
+
+			imgui.Text("\nHowever, you can still activate it manually by selecting records or songs instead")
+			imgui.Text("and activating drag and drop from there, or just by closing the artist, if you")
+			imgui.Text("don't need specific songs or records from them!")
+
+			imgui.EndTooltip()
+		}
+
 		if len(artist.Records) == 0 {
 			records, err := DynLoadRecords(state, artist)
 
@@ -189,10 +212,11 @@ func renderArtist(state *stateStructs.ApplicationState, artist *mediastate.Artis
 				artist.Records = []*mediastate.RecordState{}
 			}
 		}
+
+		checkAndExecuteDragAndDrop(state)
 	}
 
 	imgui.PopID()
-	checkAndExecuteDragAndDrop(state)
 
 	return nil
 }
@@ -235,8 +259,18 @@ func renderRecord(state *stateStructs.ApplicationState, record *mediastate.Recor
 	imgui.SetNextItemStorageID(record.ImguiID)
 	imgui.InternalPushOverrideID(record.ImguiID) // Manually set the ID to ensure consistency
 
-	// Make them have somewhat-unique ideas incase collisions, especially if we're resized
 	if imgui.TreeNodeExStrStr(recordID, flags, wrapText(record.Title)) {
+		if imgui.IsItemHovered() && imgui.BeginTooltip() {
+			imgui.Text("Activating drag and drop on this record is not available, because this record")
+			imgui.Text("has items inside it!")
+
+			imgui.Text("\nHowever, you can still activate it manually by selecting songs instead and")
+			imgui.Text("activating drag and drop from there, or just by closing the record, if you")
+			imgui.Text("don't need specific songs from it!")
+
+			imgui.EndTooltip()
+		}
+
 		if len(record.Songs) == 0 {
 			songs, err := DynLoadSongs(state, record)
 
@@ -272,10 +306,11 @@ func renderRecord(state *stateStructs.ApplicationState, record *mediastate.Recor
 				record.Songs = []*mediastate.SongState{}
 			}
 		}
+
+		checkAndExecuteDragAndDrop(state)
 	}
 
 	imgui.PopID()
-	checkAndExecuteDragAndDrop(state)
 
 	return nil
 }
