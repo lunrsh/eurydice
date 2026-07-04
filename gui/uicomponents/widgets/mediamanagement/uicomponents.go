@@ -165,10 +165,11 @@ func renderArtist(state *stateStructs.ApplicationState, artist *mediastate.Artis
 
 	if imgui.TreeNodeExStrStr(artistID, flags, wrapText(artist.ArtistName)) {
 		// If the caller is open, we know BeginDragDropSource() is going to error out, because it's *apparently*
-		// not a valid drag-drop source, as the function doesn't execute at all if we have nested things...
+		// not a valid drag-drop source, as said function doesn't execute at all if we have nested things...
 		//
-		// This is a hack, but it works. If there's a fix for this, please let me know, but I'm lazy.
-		if imgui.IsItemHovered() && imgui.BeginTooltip() {
+		// This is a hack, but it works, and from a user's perspective, this is very likely a rare occurence.
+		// If there's a fix for this, please let me know, but dear imgui is seemingly forcing my hand.
+		if imgui.IsItemHovered() && state.PageStates.MediaManagement.SelectionStorage.Contains(artist.ImguiID) && imgui.BeginTooltip() {
 			imgui.Text("Activating drag and drop on this artist is not available, because this artist")
 			imgui.Text("has items inside it!")
 
@@ -260,7 +261,7 @@ func renderRecord(state *stateStructs.ApplicationState, record *mediastate.Recor
 	imgui.InternalPushOverrideID(record.ImguiID) // Manually set the ID to ensure consistency
 
 	if imgui.TreeNodeExStrStr(recordID, flags, wrapText(record.Title)) {
-		if imgui.IsItemHovered() && imgui.BeginTooltip() {
+		if imgui.IsItemHovered() && state.PageStates.MediaManagement.SelectionStorage.Contains(record.ImguiID) && imgui.BeginTooltip() {
 			imgui.Text("Activating drag and drop on this record is not available, because this record")
 			imgui.Text("has items inside it!")
 
