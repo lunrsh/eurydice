@@ -16,7 +16,7 @@ import (
 	"git.lunr.sh/luna/eurydice/gui/uicomponents/popups/scanlibrary"
 	"git.lunr.sh/luna/eurydice/gui/uicomponents/widgets/mediamanagement"
 	"git.lunr.sh/luna/eurydice/gui/uicomponents/widgets/playlistmanagement"
-	"git.lunr.sh/luna/eurydice/gui/uicomponents/widgets/playlistselector"
+	"git.lunr.sh/luna/eurydice/gui/uicomponents/widgets/songmanagement"
 	"github.com/AllenDang/cimgui-go/backend"
 	"github.com/AllenDang/cimgui-go/backend/glfwbackend"
 	"github.com/AllenDang/cimgui-go/imgui"
@@ -118,12 +118,12 @@ func mainLoop() {
 
 	// Now we define the windows with matching titles
 	imgui.SetNextWindowDockID(docking.ContentsDock)
-	imgui.BeginV("Playlist Selector", nil, imgui.WindowFlagsNoMove|imgui.WindowFlagsNoBackground)
-	playlistselector.Render(appState)
+	imgui.BeginV("Playlist Contents", nil, imgui.WindowFlagsNoMove|imgui.WindowFlagsNoBackground)
+	songmanagement.Render(appState)
 	imgui.End()
 
 	imgui.SetNextWindowDockID(docking.PlaylistDock)
-	imgui.BeginV("Playlist Manager", nil, imgui.WindowFlagsNoMove|imgui.WindowFlagsNoBackground)
+	imgui.BeginV("Playlist Selector", nil, imgui.WindowFlagsNoMove|imgui.WindowFlagsNoBackground)
 	playlistmanagement.Render(appState)
 	imgui.End()
 

@@ -1,4 +1,4 @@
-package playlistselector
+package songmanagement
 
 import (
 	stateStructs "git.lunr.sh/luna/eurydice/gui/state"
@@ -6,5 +6,5 @@ import (
 )
 
 func Render(state *stateStructs.ApplicationState) {
-	imgui.Text("PlaylistSelector")
+	imgui.Text("SongManagement")
 }

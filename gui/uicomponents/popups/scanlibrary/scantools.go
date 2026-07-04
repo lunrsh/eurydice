@@ -19,6 +19,7 @@ import (
 	stateStructs "git.lunr.sh/luna/eurydice/gui/state"
 	"git.lunr.sh/luna/eurydice/gui/state/popupstate/scanstate"
 	"git.lunr.sh/luna/eurydice/gui/uicomponents/widgets/mediamanagement"
+	"git.lunr.sh/luna/eurydice/gui/uicomponents/widgets/playlistmanagement"
 
 	"go.senan.xyz/taglib"
 	"golang.org/x/image/draw"
@@ -449,16 +450,28 @@ func backingThread(state *stateStructs.ApplicationState) {
 		panic(fmt.Sprintf("Failed to cleanup database: %s", err.Error()))
 	}
 
-	// Step 5: Startup the media management indexer
+	// Step 5: Startup the various indexers
 	go func() {
 		defer func() {
 			if err := recover(); err != nil {
-				oncrash.Panic("Eurydice has crashed", fmt.Sprintf("Uncaught exception in background task: %s", err), state.Logger, state.LogFilePath)
+				oncrash.Panic("Eurydice has crashed", fmt.Sprintf("Uncaught exception in media pane initalization: %s", err), state.Logger, state.LogFilePath)
 			}
 		}()
 
 		if err = mediamanagement.BootstrapIndex(state); err != nil {
 			panic(fmt.Sprintf("Failed to bootstrap media management index: %s", err.Error()))
+		}
+	}()
+
+	go func() {
+		defer func() {
+			if err := recover(); err != nil {
+				oncrash.Panic("Eurydice has crashed", fmt.Sprintf("Uncaught exception in playlist selector initialization: %s", err), state.Logger, state.LogFilePath)
+			}
+		}()
+
+		if err = playlistmanagement.BootstrapIndex(state); err != nil {
+			panic(fmt.Sprintf("Failed to bootstrap playlist management index: %s", err.Error()))
 		}
 	}()
 

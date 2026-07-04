@@ -7,6 +7,7 @@ import (
 	"git.lunr.sh/luna/eurydice/gui/state/popupstate/scanstate"
 	"git.lunr.sh/luna/eurydice/gui/state/popupstate/setupstate"
 	"git.lunr.sh/luna/eurydice/gui/state/widgetstate/mediastate"
+	"git.lunr.sh/luna/eurydice/gui/state/widgetstate/playlistselectionstate"
 	"github.com/AllenDang/cimgui-go/backend"
 	"github.com/AllenDang/cimgui-go/backend/glfwbackend"
 	_ "github.com/AllenDang/cimgui-go/impl/glfw"
@@ -40,7 +41,8 @@ type IndividualPageStates struct {
 	FirstBoot   setupstate.SetupState
 	LibraryScan scanstate.ScanState
 
-	MediaManagement mediastate.MediaState
+	MediaManagement   mediastate.MediaState
+	PlaylistSelection playlistselectionstate.PlaylistSelectionState
 }
 
 type ApplicationState struct {
