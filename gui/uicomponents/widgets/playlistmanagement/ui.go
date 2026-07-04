@@ -40,10 +40,6 @@ func DeleteModalRender(state *stateStructs.ApplicationState) {
 }
 
 func Render(state *stateStructs.ApplicationState) {
-	if imgui.BeginPopupModalV("Delete Playlist?", nil, imgui.WindowFlagsAlwaysAutoResize) {
-		DeleteModalRender(state)
-	}
-
 	contentRegion := imgui.ContentRegionAvail()
 	contentRegion.X += 2
 	contentRegion.Y = 0
@@ -70,6 +66,11 @@ func Render(state *stateStructs.ApplicationState) {
 	imgui.Spacing()
 
 	imgui.BeginChildStrV("##PlaylistListScrollArea", imgui.ContentRegionAvail(), 0, imgui.WindowFlagsNoTitleBar)
+
+	// Render the delete playlist modal
+	if imgui.BeginPopupModalV("Delete Playlist?", nil, imgui.WindowFlagsAlwaysAutoResize) {
+		DeleteModalRender(state)
+	}
 
 	for _, playlist := range state.PageStates.PlaylistSelection.Playlists {
 		imgui.AlignTextToFramePadding()
@@ -132,8 +133,6 @@ func Render(state *stateStructs.ApplicationState) {
 				}
 			} else {
 				state.PageStates.PlaylistSelection.PlaylistToDelete = playlist
-
-				fmt.Println("opening popup")
 				imgui.OpenPopupStr("Delete Playlist?")
 			}
 		}
