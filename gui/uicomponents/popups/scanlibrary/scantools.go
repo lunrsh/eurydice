@@ -425,13 +425,9 @@ func backingThread(state *stateStructs.ApplicationState) {
 		panic(fmt.Sprintf("Failed to find unique music library directories: %s", err.Error()))
 	}
 
-	// If we have no unique music found, we "cleanup" the database (remove entries that are no longer in the filesystem)
+	// If we have no unique music found, we jump to the code that cleans up the database (remove entries that are no longer in the filesystem)
 	if len(uniqueMusicFound) == 0 {
-		if err = cleanupDatabase(state, allMusicFound); err != nil {
-			panic(fmt.Sprintf("Failed to cleanup database: %s", err.Error()))
-		}
-
-		return
+		goto cleanupDatabaseStep
 	}
 
 	// Step 3: add songs (process metadata)
@@ -445,6 +441,7 @@ func backingThread(state *stateStructs.ApplicationState) {
 	}
 
 	// Step 4: cleanup database (remove entries that are no longer in the filesystem)
+cleanupDatabaseStep:
 	state.PageStates.LibraryScan.StepNo = scanstate.StepCleaningUp
 
 	if err = cleanupDatabase(state, allMusicFound); err != nil {
