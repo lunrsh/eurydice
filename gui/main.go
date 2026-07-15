@@ -12,6 +12,7 @@ import (
 
 	"git.lunr.sh/luna/eurydice/gui/oncrash"
 	"git.lunr.sh/luna/eurydice/gui/state"
+	"git.lunr.sh/luna/eurydice/gui/state/database"
 	"git.lunr.sh/luna/eurydice/gui/uicomponents/popups/firstboot"
 	"git.lunr.sh/luna/eurydice/gui/uicomponents/popups/scanlibrary"
 	"git.lunr.sh/luna/eurydice/gui/uicomponents/widgets/mediamanagement"
@@ -118,9 +119,11 @@ func mainLoop() {
 
 	// Now we define the windows with matching titles
 	imgui.SetNextWindowDockID(docking.ContentsDock)
+	imgui.PushStyleVarVec2(imgui.StyleVarWindowPadding, imgui.Vec2{X: 0, Y: 0})
 	imgui.BeginV("Playlist Contents", nil, imgui.WindowFlagsNoMove|imgui.WindowFlagsNoBackground)
 	songmanagement.Render(appState)
 	imgui.End()
+	imgui.PopStyleVar()
 
 	imgui.SetNextWindowDockID(docking.PlaylistDock)
 	imgui.BeginV("Playlist Selector", nil, imgui.WindowFlagsNoMove|imgui.WindowFlagsNoBackground)
@@ -142,7 +145,7 @@ func mainLoop() {
 
 	// set up the active library ID if it hasn't been set yet, but only if we're not in setup
 	if !appState.Config.ActiveLibraryIDSetYet && !appState.PageStates.FirstBoot.HasFirstbootPageOpenedAlready {
-		libraryInformation := &state.Library{}
+		libraryInformation := &database.Library{}
 		libraryRequest := appState.Config.Database.Where("library_path = ?", appState.Config.JSONConfig.LibraryPath).First(libraryInformation)
 
 		if libraryRequest.Error != nil {
@@ -173,7 +176,7 @@ func mainLoop() {
 					}
 				}
 
-				libraryInformation = &state.Library{
+				libraryInformation = &database.Library{
 					LibraryPath: appState.Config.JSONConfig.LibraryPath,
 				}
 
@@ -366,11 +369,12 @@ func main() {
 	}
 
 	if err = songDatabase.AutoMigrate(
-		&state.Song{},
-		&state.Artist{},
-		&state.Record{},
-		&state.Playlist{},
-		&state.Library{},
+		&database.Song{},
+		&database.Artist{},
+		&database.Record{},
+		&database.Playlist{},
+		&database.PlaylistSong{},
+		&database.Library{},
 	); err != nil {
 		panic(fmt.Sprintf("Failed to migrate database: %s (Database is definitely corrupt! Try deleting the config directory?)", err.Error()))
 	}

@@ -7,6 +7,7 @@ import (
 	"path"
 
 	stateStructs "git.lunr.sh/luna/eurydice/gui/state"
+	"git.lunr.sh/luna/eurydice/gui/state/database"
 	"github.com/AllenDang/cimgui-go/imgui"
 	"github.com/sqweek/dialog"
 )
@@ -138,7 +139,7 @@ func Render(state *stateStructs.ApplicationState) {
 		}
 
 		// Initialize core database
-		state.Config.Database.Create(&stateStructs.Library{
+		state.Config.Database.Create(&database.Library{
 			LibraryPath: state.Config.JSONConfig.LibraryPath,
 		})
 

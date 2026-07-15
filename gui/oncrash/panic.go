@@ -114,7 +114,7 @@ func ICanHazPanicDisplay() {
 
 		// Position text in bottom left corner with 10px padding
 		crashLogText := "Crash log stored in " + string(crashFileBuf)
-		crashLogTextHeight := imgui.CalcTextSize(crashLogText).Y
+		crashLogTextHeight := imgui.TextLineHeight()
 
 		imgui.SetCursorScreenPos(imgui.Vec2{
 			X: windowPosition.X + 10,

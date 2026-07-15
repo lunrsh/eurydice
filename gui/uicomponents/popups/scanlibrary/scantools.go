@@ -17,6 +17,7 @@ import (
 
 	"git.lunr.sh/luna/eurydice/gui/oncrash"
 	stateStructs "git.lunr.sh/luna/eurydice/gui/state"
+	"git.lunr.sh/luna/eurydice/gui/state/database"
 	"git.lunr.sh/luna/eurydice/gui/state/popupstate/scanstate"
 	"git.lunr.sh/luna/eurydice/gui/uicomponents/widgets/mediamanagement"
 	"git.lunr.sh/luna/eurydice/gui/uicomponents/widgets/playlistmanagement"
@@ -75,7 +76,7 @@ func findNonindexedMusic(state *stateStructs.ApplicationState, allMusicFound []s
 
 	for _, musicPath := range allMusicFound {
 		relativeMusicPath := strings.TrimPrefix(musicPath, state.Config.JSONConfig.LibraryPath)
-		attemptingToMatchEntry := &stateStructs.Song{}
+		attemptingToMatchEntry := &database.Song{}
 
 		state.PageStates.LibraryScan.CurrentSongPath = relativeMusicPath
 
@@ -148,7 +149,7 @@ func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 					songArtists []string
 				)
 
-				songInformation := &stateStructs.Song{
+				songInformation := &database.Song{
 					LibraryID:               state.Config.ActiveLibraryID,
 					RelativePathFromLibrary: strings.TrimPrefix(songPath, state.Config.JSONConfig.LibraryPath),
 				}
@@ -193,7 +194,7 @@ func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 					songArtists = append(songArtists, "Unknown Artist")
 				}
 
-				foundArtists := make([]*stateStructs.Artist, len(songArtists))
+				foundArtists := make([]*database.Artist, len(songArtists))
 
 				// Add artists (if they don't exist) into the database
 				for i, artistName := range songArtists {
@@ -204,7 +205,7 @@ func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 						if err == gorm.ErrRecordNotFound {
 							// Create a new artist!
 							state.Logger.Debugf("ScanLibrary->backingThread->indexNewMusic: Creating new artist '%s'\n", artistName)
-							foundArtists[i] = &stateStructs.Artist{Name: artistName, LibraryID: state.Config.ActiveLibraryID}
+							foundArtists[i] = &database.Artist{Name: artistName, LibraryID: state.Config.ActiveLibraryID}
 
 							state.Config.Database.Create(&foundArtists[i])
 						} else {
@@ -215,7 +216,7 @@ func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 					databaseLockMutex.Unlock()
 				}
 
-				foundRecord := &stateStructs.Record{}
+				foundRecord := &database.Record{}
 
 				// Add records (defined as LPs and EPs) into the database
 				// Lock now so we don't have a TOCTOU condition
@@ -314,7 +315,7 @@ func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 //
 // Used internally for scanning the library and cleaning up the database (backingThread, step 4).
 func cleanupDatabase(state *stateStructs.ApplicationState, musicFound []string) error {
-	allSongs := []stateStructs.Song{}
+	allSongs := []database.Song{}
 
 	if err := state.Config.Database.Find(&allSongs).Error; err != nil {
 		return fmt.Errorf("failed to find all songs: %w", err)
@@ -337,7 +338,7 @@ func cleanupDatabase(state *stateStructs.ApplicationState, musicFound []string) 
 			state.Logger.Debugf("ScanLibrary->backingThread->cleanupDatabase: Deleted song '%s'", song.Title)
 
 			// Check to see if there are any songs still using the thumbnail, and if not, delete it
-			songsWithThumbnail := []stateStructs.Song{}
+			songsWithThumbnail := []database.Song{}
 
 			if err := state.Config.Database.Where("art_id = ?", song.ArtID).Find(&songsWithThumbnail).Error; err != nil {
 				return fmt.Errorf("failed to find songs with thumbnail: %w", err)
@@ -354,7 +355,7 @@ func cleanupDatabase(state *stateStructs.ApplicationState, musicFound []string) 
 	}
 
 	// Then, clean up empty records
-	allRecords := []stateStructs.Record{}
+	allRecords := []database.Record{}
 
 	if err := state.Config.Database.Preload("Songs").Find(&allRecords).Error; err != nil {
 		return fmt.Errorf("failed to find all records: %w", err)
@@ -371,7 +372,7 @@ func cleanupDatabase(state *stateStructs.ApplicationState, musicFound []string) 
 	}
 
 	// Finally, clean up artists that have no songs anymore
-	allArtists := []stateStructs.Artist{}
+	allArtists := []database.Artist{}
 
 	if err := state.Config.Database.Preload("PrimarySongs").Preload("CollabSongs").Find(&allArtists).Error; err != nil {
 		return fmt.Errorf("failed to find all artists: %w", err)

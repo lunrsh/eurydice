@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	stateStructs "git.lunr.sh/luna/eurydice/gui/state"
+	"git.lunr.sh/luna/eurydice/gui/state/database"
+	"git.lunr.sh/luna/eurydice/gui/uicomponents/widgets/songmanagement"
 	"github.com/AllenDang/cimgui-go/imgui"
 )
 
@@ -19,7 +21,7 @@ func DeleteModalRender(state *stateStructs.ApplicationState) {
 	imgui.Spacing()
 
 	if imgui.Button("Delete") {
-		if err := state.Config.Database.Where("id = ?", state.PageStates.PlaylistSelection.PlaylistToDelete.ID).Delete(&stateStructs.Playlist{}).Error; err != nil {
+		if err := state.Config.Database.Where("id = ?", state.PageStates.PlaylistSelection.PlaylistToDelete.ID).Delete(&database.Playlist{}).Error; err != nil {
 			panic(fmt.Sprintf("Failed to delete playlist: %v", err))
 		}
 
@@ -48,7 +50,7 @@ func Render(state *stateStructs.ApplicationState) {
 
 	if imgui.ButtonV("Create Playlist", contentRegion) {
 		// Oh what the hell. Inline this because the code is so simple
-		if err := state.Config.Database.Create(&stateStructs.Playlist{
+		if err := state.Config.Database.Create(&database.Playlist{
 			LibraryID: state.Config.ActiveLibraryID,
 		}).Error; err != nil {
 			panic(fmt.Sprintf("Failed to create playlist: %v", err))
@@ -92,7 +94,7 @@ func Render(state *stateStructs.ApplicationState) {
 				state.PageStates.PlaylistSelection.IsRenamingAPlaylist = false
 
 				if playlist.RenameBuf != "" && playlist.RenameBuf != playlist.Name {
-					if err := state.Config.Database.Model(&stateStructs.Playlist{}).Where("id = ?", playlist.ID).Update("name", playlist.RenameBuf).Error; err != nil {
+					if err := state.Config.Database.Model(&database.Playlist{}).Where("id = ?", playlist.ID).Update("name", playlist.RenameBuf).Error; err != nil {
 						panic(fmt.Sprintf("Failed to update playlist name: %v", err))
 					}
 
@@ -109,7 +111,9 @@ func Render(state *stateStructs.ApplicationState) {
 			}
 		} else {
 			if imgui.SelectableBoolV(playlist.Name, false, 0, selectableSize) {
-				// not implemented -- depends on songmanagement
+				if err := songmanagement.BootstrapIndex(state, playlist.ID); err != nil {
+					panic(fmt.Sprintf("Failed to bootstrap song index: %v", err))
+				}
 			}
 		}
 
@@ -124,7 +128,7 @@ func Render(state *stateStructs.ApplicationState) {
 
 		if imgui.ButtonV("X##"+playlist.Name, imgui.Vec2{X: remainderSize / 2, Y: 0}) {
 			if state.PageStates.PlaylistSelection.PlaylistDeleteModalDisabled {
-				if err := state.Config.Database.Where("id = ?", playlist.ID).Delete(&stateStructs.Playlist{}).Error; err != nil {
+				if err := state.Config.Database.Where("id = ?", playlist.ID).Delete(&database.Playlist{}).Error; err != nil {
 					panic(fmt.Sprintf("Failed to delete playlist: %v", err))
 				}
 

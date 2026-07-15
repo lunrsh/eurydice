@@ -6,11 +6,12 @@ import (
 	"strings"
 
 	stateStructs "git.lunr.sh/luna/eurydice/gui/state"
+	"git.lunr.sh/luna/eurydice/gui/state/database"
 	"git.lunr.sh/luna/eurydice/gui/state/widgetstate/playlistselectionstate"
 )
 
 func BootstrapIndex(state *stateStructs.ApplicationState) error {
-	allPlaylists := []stateStructs.Playlist{}
+	allPlaylists := []database.Playlist{}
 
 	allVisibleNamedPlaylists := []*playlistselectionstate.PlaylistState{}
 	unnamedPlaylists := []*playlistselectionstate.PlaylistState{}

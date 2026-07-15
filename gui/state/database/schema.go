@@ -1,4 +1,4 @@
-package state
+package database
 
 import "gorm.io/gorm"
 
@@ -12,7 +12,7 @@ type Song struct {
 	PrimaryArtist   Artist
 
 	CollabArtists []*Artist `gorm:"many2many:song_other_artists;"`
-	Songs         []*Song   `gorm:"many2many:playlist_songs;"`
+	PlaylistSongs []PlaylistSong
 
 	RecordID uint
 	Record   Record
@@ -51,11 +51,27 @@ type Record struct {
 	Library   Library
 }
 
+// We don't use many2many relationships here because sort order is indeterminate
+type PlaylistSong struct {
+	gorm.Model
+
+	SortIndex int
+
+	LibraryID uint
+	Library   Library
+
+	SongID uint
+	Song   Song
+
+	PlaylistID uint
+	Playlist   Playlist
+}
+
 type Playlist struct {
 	gorm.Model
 
 	Name  string
-	Songs []*Song `gorm:"many2many:playlist_songs;"`
+	Songs []PlaylistSong
 
 	LibraryID uint
 	Library   Library
