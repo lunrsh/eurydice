@@ -39,14 +39,19 @@ func GetSongListFromMarkers(state *stateStructs.ApplicationState, markerList []i
 				songList = append(songList, &song)
 			}
 		case mediastate.StateIDArtist:
-			var artist *database.Artist
+			// Get all records, then songs from said records
+			// This is to add songs in order, which is more visually appealing when drag+dropping
 
-			if err := state.Config.Database.Preload("PrimarySongs").Where("id = ?", markerID).First(&artist).Error; err != nil {
-				return nil, fmt.Errorf("failed to get artist with id %d: %w", markerID, err)
+			records := []database.Record{}
+
+			if err := state.Config.Database.Preload("Songs").Where("artist_id = ?", markerID).Find(&records).Error; err != nil {
+				return nil, fmt.Errorf("failed to get records for artist with id %d: %w", markerID, err)
 			}
 
-			for _, song := range artist.PrimarySongs {
-				songList = append(songList, &song)
+			for _, record := range records {
+				for _, song := range record.Songs {
+					songList = append(songList, &song)
+				}
 			}
 		default:
 			return nil, fmt.Errorf("unknown marker kind recieved: %d", markerKind)
