@@ -5,12 +5,14 @@ import "C"
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
 	stateStructs "git.lunr.sh/luna/eurydice/gui/state"
 	"git.lunr.sh/luna/eurydice/gui/state/database"
 	"git.lunr.sh/luna/eurydice/gui/state/widgetstate/mediastate"
+	"git.lunr.sh/luna/eurydice/gui/state/widgetstate/songmanagementstate"
 	"git.lunr.sh/luna/eurydice/gui/utilities"
 	"github.com/AllenDang/cimgui-go/imgui"
 )
@@ -54,7 +56,7 @@ func Render(state *stateStructs.ApplicationState) {
 				}
 
 				currentIndex := len(state.PageStates.SongManagement.Songs) + songIndex
-				fmt.Printf("Adding song with index %d: %s\n", currentIndex, song.Title)
+				state.Logger.Debugf("Adding song (with index %d, in sorting) to the current playlist: %s\n", currentIndex, song.Title)
 
 				// Add song to the list
 				if err := state.Config.Database.Create(&database.PlaylistSong{
@@ -85,6 +87,50 @@ func Render(state *stateStructs.ApplicationState) {
 		imgui.TableSetupColumnV("Album", imgui.TableColumnFlagsWidthStretch, 0, imgui.IDStr("##Album"))
 		imgui.TableHeadersRow()
 
+		// Sort the songs based on the current sort specs
+		sortSpecs := imgui.TableGetSortSpecs()
+
+		if sortSpecs.CData != nil && sortSpecs.SpecsDirty() {
+			defer sortSpecs.SetSpecsDirty(false)
+
+			switch sortSpecs.Specs().ColumnIndex() {
+			case 0: // Index
+				if sortSpecs.Specs().SortDirection() == imgui.SortDirectionAscending {
+					slices.SortStableFunc(state.PageStates.SongManagement.Songs, func(i, j *songmanagementstate.SongInList) int {
+						return i.Index - j.Index
+					})
+				} else {
+					slices.SortStableFunc(state.PageStates.SongManagement.Songs, func(i, j *songmanagementstate.SongInList) int {
+						return j.Index - i.Index
+					})
+				}
+			case 1: // Title
+				if sortSpecs.Specs().SortDirection() == imgui.SortDirectionAscending {
+					slices.SortStableFunc(state.PageStates.SongManagement.Songs, func(a, b *songmanagementstate.SongInList) int {
+						return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
+					})
+				} else {
+					slices.SortStableFunc(state.PageStates.SongManagement.Songs, func(a, b *songmanagementstate.SongInList) int {
+						return strings.Compare(strings.ToLower(b.Name), strings.ToLower(a.Name))
+					})
+				}
+			case 2: // Album
+				if sortSpecs.Specs().SortDirection() == imgui.SortDirectionAscending {
+					slices.SortStableFunc(state.PageStates.SongManagement.Songs, func(a, b *songmanagementstate.SongInList) int {
+						return strings.Compare(strings.ToLower(a.Record), strings.ToLower(b.Record))
+					})
+				} else {
+					slices.SortStableFunc(state.PageStates.SongManagement.Songs, func(a, b *songmanagementstate.SongInList) int {
+						return strings.Compare(strings.ToLower(b.Record), strings.ToLower(a.Record))
+					})
+				}
+			}
+
+			// Reset scroll
+			imgui.SetScrollXFloat(0)
+			imgui.SetScrollYFloat(0)
+		}
+
 		for _, song := range state.PageStates.SongManagement.Songs {
 			imgui.TableNextRow()
 
@@ -107,10 +153,8 @@ func Render(state *stateStructs.ApplicationState) {
 			startSongSize := imgui.CursorPosY()
 
 			// I hope that I'm never allowed to write UI code ever again.
-			var (
-				cursorX float32
-				cursorY float32
-			)
+			var cursorX float32
+			var cursorY float32
 
 			if song.Image != nil {
 				imgui.Image(*song.Image, imgui.Vec2{X: 32, Y: 32})
