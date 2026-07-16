@@ -23,4 +23,6 @@ type SongManagementState struct {
 	IsCurrentlyDisplayingPlaylist bool
 
 	Songs []*SongInList
+
+	SelectionStorage *imgui.SelectionBasicStorage
 }

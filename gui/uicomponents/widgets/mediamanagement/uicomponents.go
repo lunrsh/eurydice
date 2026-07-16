@@ -8,9 +8,9 @@ import (
 
 	stateStructs "git.lunr.sh/luna/eurydice/gui/state"
 	"git.lunr.sh/luna/eurydice/gui/state/widgetstate/mediastate"
+	"git.lunr.sh/luna/eurydice/gui/utilities"
 	"github.com/AllenDang/cimgui-go/imgui"
 )
-import "git.lunr.sh/luna/eurydice/gui/utilities"
 
 var commonTreeNodeFlags = imgui.TreeNodeFlagsFramePadding |
 	imgui.TreeNodeFlagsSpanAvailWidth |

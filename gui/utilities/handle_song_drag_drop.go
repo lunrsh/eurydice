@@ -20,13 +20,6 @@ func HandleSongDragDrop(state *stateStructs.ApplicationState, dragDropPayload *i
 		return fmt.Errorf("failed to get song list from markers: %w", err)
 	}
 
-	// Make the existing songList a map so we can efficiently check if a song is already in the list
-	existingSongListAsMap := make(map[uint]bool)
-
-	for _, song := range state.PageStates.SongManagement.Songs {
-		existingSongListAsMap[song.SongID] = true
-	}
-
 	// Get the current song count in the playlist to determine where to insert new songs
 	var currentSongCount int64
 	state.Config.Database.Model(&database.PlaylistSong{}).Where("playlist_id = ?", activePlaylist).Count(&currentSongCount)
@@ -34,7 +27,11 @@ func HandleSongDragDrop(state *stateStructs.ApplicationState, dragDropPayload *i
 	failCount := 0
 
 	for songIndex, song := range songList {
-		if existingSongListAsMap[song.ID] {
+		// Check if the song is already in the playlist
+		var existingSongCount int64
+		state.Config.Database.Model(&database.PlaylistSong{}).Where("song_id = ? AND playlist_id = ?", song.ID, activePlaylist).Count(&existingSongCount)
+
+		if existingSongCount != 0 {
 			continue
 		}
 

@@ -11,14 +11,6 @@ import (
 )
 
 func BootstrapIndex(state *stateStructs.ApplicationState, playlistID uint) error {
-	// Fetch all the songs in this playlist
-	playlist := &database.Playlist{}
-
-	// Get all required details about the song, incl. collaborators, main artist, and what record we're on
-	if err := state.Config.Database.Preload("Songs.Song.CollabArtists").Preload("Songs.Song.PrimaryArtist").Preload("Songs.Song.Record").Where("library_id = ? AND id = ?", state.Config.ActiveLibraryID, playlistID).First(playlist).Error; err != nil {
-		return fmt.Errorf("failed to fetch songs in playlist: %w", err)
-	}
-
 	// Clear out the existing songs in the state
 	for _, song := range state.PageStates.SongManagement.Songs {
 		if song.Image != nil {
@@ -27,6 +19,14 @@ func BootstrapIndex(state *stateStructs.ApplicationState, playlistID uint) error
 	}
 
 	state.PageStates.SongManagement.Songs = []*songmanagementstate.SongInList{}
+
+	// Fetch all the songs in this playlist
+	playlist := &database.Playlist{}
+
+	// Get all required details about the song, incl. collaborators, main artist, and what record we're on
+	if err := state.Config.Database.Preload("Songs.Song.CollabArtists").Preload("Songs.Song.PrimaryArtist").Preload("Songs.Song.Record").Where("library_id = ? AND id = ?", state.Config.ActiveLibraryID, playlistID).First(playlist).Error; err != nil {
+		return fmt.Errorf("failed to fetch songs in playlist: %w", err)
+	}
 
 	for _, songInPlaylist := range playlist.Songs {
 		// Build string list of all the artists
@@ -55,6 +55,8 @@ func BootstrapIndex(state *stateStructs.ApplicationState, playlistID uint) error
 
 	imgui.SetScrollXFloat(0)
 	imgui.SetScrollYFloat(0)
+
+	state.PageStates.SongManagement.SelectionStorage.Clear()
 
 	return nil
 }

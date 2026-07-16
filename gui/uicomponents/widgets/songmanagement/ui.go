@@ -8,8 +8,10 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unsafe"
 
 	stateStructs "git.lunr.sh/luna/eurydice/gui/state"
+	"git.lunr.sh/luna/eurydice/gui/state/widgetstate/mediastate"
 	"git.lunr.sh/luna/eurydice/gui/state/widgetstate/songmanagementstate"
 	"git.lunr.sh/luna/eurydice/gui/utilities"
 	"github.com/AllenDang/cimgui-go/imgui"
@@ -23,13 +25,64 @@ const tableFlags = imgui.TableFlagsSizingFixedFit |
 	imgui.TableFlagsHideable |
 	imgui.TableFlagsScrollY
 
+const multiSelectFlags = imgui.MultiSelectFlagsClearOnEscape | imgui.MultiSelectFlagsBoxSelect1d
+
+func checkAndExecuteDragAndDrop(state *stateStructs.ApplicationState) {
+	if imgui.BeginDragDropSourceV(imgui.DragDropFlagsSourceNoHoldToOpenOthers) {
+		dragDropPayload := imgui.DragDropPayload()
+		var dragDropWrapper *mediastate.DragDropWrapper
+
+		if dragDropPayload.CData == nil {
+			dragDropSize := unsafe.Sizeof(mediastate.DragDropWrapper{})
+
+			dragDropMemory := C.malloc(C.size_t(dragDropSize))
+			dragDropWrapper = (*mediastate.DragDropWrapper)(dragDropMemory)
+
+			originalMarkerSlice := []int{}
+
+			// I don't feel like fighting this library, and plus, we need to walk through visible items ANYWAYS to get their database IDs,
+			// so we just loop through all the visible items. Sorry!
+
+			for _, song := range state.PageStates.SongManagement.Songs {
+				if state.PageStates.SongManagement.SelectionStorage.Contains(imgui.ID(song.Index)) {
+					originalMarkerSlice = append(originalMarkerSlice, (mediastate.StateIDSong<<32)|int(song.SongID))
+				}
+			}
+
+			// Manually allocate memory for the marker slice and copy the original slice into it so the slice doesn't get GCed
+			// This code is NASTY, but it works
+			dragDropWrapper.MarkerMemPtr = C.malloc(C.size_t(unsafe.Sizeof(int(0)) * uintptr(len(originalMarkerSlice))))
+			dragDropWrapper.Markers = unsafe.Slice((*int)(dragDropWrapper.MarkerMemPtr), len(originalMarkerSlice))
+			copy(dragDropWrapper.Markers, originalMarkerSlice)
+
+			imgui.SetDragDropPayload("media_browser_item", uintptr(dragDropMemory), uint64(dragDropSize))
+		} else {
+			dragDropWrapper = (*mediastate.DragDropWrapper)(dragDropPayload.CData.Data)
+		}
+
+		imgui.PushStyleVarVec2(imgui.StyleVarWindowPadding, imgui.CurrentStyle().FramePadding())
+
+		if len(dragDropWrapper.Markers) == 1 {
+			imgui.Text("Dragging 1 song")
+		} else {
+			imgui.Text(strconv.Itoa(len(dragDropWrapper.Markers)) + " songs selected")
+		}
+
+		imgui.PopStyleVar()
+		imgui.EndDragDropSource()
+	}
+}
+
 func Render(state *stateStructs.ApplicationState) {
+	if state.PageStates.SongManagement.SelectionStorage == nil {
+		state.PageStates.SongManagement.SelectionStorage = imgui.NewSelectionBasicStorage()
+	}
+
 	imgui.BeginChildStr("##SongManagement") // needed for drag and drop
 
 	// Handle drag and drop for adding songs to the playlist from the media browser
 	// See https://github.com/ocornut/imgui/issues/5539.
 	if state.PageStates.SongManagement.IsCurrentlyDisplayingPlaylist && imgui.InternalBeginDragDropTargetCustom(imgui.InternalCurrentWindow().InnerRect(), imgui.IDStr("##SongManagement")) {
-		defer imgui.EndDragDropTarget()
 		dragDropPayload := imgui.AcceptDragDropPayload("media_browser_item")
 
 		if dragDropPayload.CData != nil && dragDropPayload.Delivery() {
@@ -43,6 +96,8 @@ func Render(state *stateStructs.ApplicationState) {
 				panic(fmt.Sprintf("Failed to re-bootstrap song index: %s", err.Error()))
 			}
 		}
+
+		imgui.EndDragDropTarget()
 	}
 
 	if imgui.BeginTableV("##SongList", 3, tableFlags, imgui.Vec2{}, 0) {
@@ -94,7 +149,13 @@ func Render(state *stateStructs.ApplicationState) {
 			// Reset scroll
 			imgui.SetScrollXFloat(0)
 			imgui.SetScrollYFloat(0)
+
+			// Reset selection storage
+			state.PageStates.SongManagement.SelectionStorage.Clear()
 		}
+
+		multiSelectIO := imgui.BeginMultiSelectV(multiSelectFlags, state.PageStates.SongManagement.SelectionStorage.Size(), int32(len(state.PageStates.SongManagement.Songs)))
+		state.PageStates.SongManagement.SelectionStorage.ApplyRequests(multiSelectIO)
 
 		for _, song := range state.PageStates.SongManagement.Songs {
 			imgui.TableNextRow()
@@ -118,6 +179,7 @@ func Render(state *stateStructs.ApplicationState) {
 			startSongSize := imgui.CursorPosY()
 
 			// I hope that I'm never allowed to write UI code ever again.
+			// Used to align the album art descriptor
 			var cursorX float32
 			var cursorY float32
 
@@ -140,12 +202,24 @@ func Render(state *stateStructs.ApplicationState) {
 				imgui.SetCursorPosY(cursorY + imgui.TextLineHeight() + 2) // Add some pixels for padding
 			}
 
-			imgui.TextColored(imgui.Vec4{X: 128.0 / 255, Y: 128.0 / 255, Z: 128.0 / 255, W: 255.0 / 255}, utilities.WrapText(strings.Join(song.Artists, ", ")))
-
+			imgui.TextColored(imgui.Vec4{X: 172.0 / 255, Y: 172.0 / 255, Z: 172.0 / 255, W: 255.0 / 255}, utilities.WrapText(strings.Join(song.Artists, ", ")))
 			endSongSize := imgui.CursorPosY()
 
 			// Render the index column next
 			imgui.TableSetColumnIndex(0)
+
+			// We use a dummy selectable to span all columns in a given row, for any selection/multi-selection actions
+			beforeSelectableCursorPos := imgui.CursorPos()
+
+			isSelected := state.PageStates.SongManagement.SelectionStorage.Contains(imgui.ID(song.Index))
+			imgui.SetNextItemSelectionUserData(imgui.SelectionUserData(song.Index))
+			imgui.PushIDInt(int32(song.Index))
+
+			imgui.SelectableBoolV("##", isSelected, imgui.SelectableFlagsSpanAllColumns|imgui.SelectableFlagsAllowOverlap, imgui.Vec2{X: 0, Y: endSongSize - startSongSize - 2})
+			checkAndExecuteDragAndDrop(state)
+
+			imgui.PopID()
+			imgui.SetCursorPos(beforeSelectableCursorPos)
 
 			// Align vertically centered
 			imgui.SetCursorPosY(imgui.CursorPosY() + 5 + ((endSongSize - startSongSize) / 2) - imgui.TextLineHeight())
@@ -162,6 +236,8 @@ func Render(state *stateStructs.ApplicationState) {
 			imgui.Text(utilities.WrapText(song.Record))
 		}
 
+		multiSelectIO = imgui.EndMultiSelect()
+		state.PageStates.SongManagement.SelectionStorage.ApplyRequests(multiSelectIO)
 		imgui.EndTable()
 	}
 
