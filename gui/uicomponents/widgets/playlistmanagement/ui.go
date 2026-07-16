@@ -30,6 +30,10 @@ func DeleteModalRender(state *stateStructs.ApplicationState) {
 		}
 
 		state.PageStates.PlaylistSelection.PlaylistToDelete = nil
+		state.PageStates.SongManagement.IsCurrentlyDisplayingPlaylist = false
+		state.PageStates.SongManagement.PlaylistID = 0
+		state.PageStates.SongManagement.Songs = nil
+
 		imgui.CloseCurrentPopup()
 	}
 
@@ -49,7 +53,6 @@ func Render(state *stateStructs.ApplicationState) {
 	imgui.PushStyleVarVec2(imgui.StyleVarButtonTextAlign, imgui.Vec2{X: 0, Y: 0.5})
 
 	if imgui.ButtonV("Create Playlist", contentRegion) {
-		// Oh what the hell. Inline this because the code is so simple
 		if err := state.Config.Database.Create(&database.Playlist{
 			LibraryID: state.Config.ActiveLibraryID,
 		}).Error; err != nil {
@@ -111,8 +114,10 @@ func Render(state *stateStructs.ApplicationState) {
 			}
 		} else {
 			if imgui.SelectableBoolV(playlist.Name, false, 0, selectableSize) {
-				if err := songmanagement.BootstrapIndex(state, playlist.ID); err != nil {
-					panic(fmt.Sprintf("Failed to bootstrap song index: %v", err))
+				if state.PageStates.SongManagement.PlaylistID != playlist.ID {
+					if err := songmanagement.BootstrapIndex(state, playlist.ID); err != nil {
+						panic(fmt.Sprintf("Failed to bootstrap song index: %v", err))
+					}
 				}
 			}
 		}
@@ -145,6 +150,10 @@ func Render(state *stateStructs.ApplicationState) {
 			if imgui.BeginTooltip() {
 				imgui.Text("Delete")
 				imgui.EndTooltip()
+
+				state.PageStates.SongManagement.IsCurrentlyDisplayingPlaylist = false
+				state.PageStates.SongManagement.PlaylistID = 0
+				state.PageStates.SongManagement.Songs = nil
 			}
 		}
 

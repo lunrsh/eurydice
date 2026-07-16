@@ -4,7 +4,7 @@ import "github.com/AllenDang/cimgui-go/imgui"
 
 // FIXME: THIS IS UNSAFE! This does NOT use runes currently, and only works with ASCII characters, NOT unicode!
 func WrapText(text string) string {
-	freeWidth := (imgui.ContentRegionAvail().X) - 20 // offset it to make it look better and not have horizontal scrolling
+	freeWidth := (imgui.ContentRegionAvail().X) // offset it to make it look better and not have horizontal scrolling
 	newText := text
 
 	for imgui.CalcTextSize(newText).X > freeWidth {
