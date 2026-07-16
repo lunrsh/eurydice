@@ -6,6 +6,7 @@ import (
 	stateStructs "git.lunr.sh/luna/eurydice/gui/state"
 	"git.lunr.sh/luna/eurydice/gui/state/database"
 	"git.lunr.sh/luna/eurydice/gui/uicomponents/widgets/songmanagement"
+	"git.lunr.sh/luna/eurydice/gui/utilities"
 	"github.com/AllenDang/cimgui-go/imgui"
 )
 
@@ -29,10 +30,13 @@ func DeleteModalRender(state *stateStructs.ApplicationState) {
 			panic(fmt.Sprintf("Failed to re-bootstrap index: %v", err))
 		}
 
-		state.PageStates.PlaylistSelection.PlaylistToDelete = nil
-		state.PageStates.SongManagement.IsCurrentlyDisplayingPlaylist = false
-		state.PageStates.SongManagement.PlaylistID = 0
-		state.PageStates.SongManagement.Songs = nil
+		// Make ourselves not open anymore because we don't exist
+		if state.PageStates.SongManagement.PlaylistID == state.PageStates.PlaylistSelection.PlaylistToDelete.ID {
+			state.PageStates.PlaylistSelection.PlaylistToDelete = nil
+			state.PageStates.SongManagement.IsCurrentlyDisplayingPlaylist = false
+			state.PageStates.SongManagement.PlaylistID = 0
+			state.PageStates.SongManagement.Songs = nil
+		}
 
 		imgui.CloseCurrentPopup()
 	}
@@ -120,6 +124,25 @@ func Render(state *stateStructs.ApplicationState) {
 					}
 				}
 			}
+
+			if imgui.BeginDragDropTarget() {
+				defer imgui.EndDragDropTarget()
+				dragDropPayload := imgui.AcceptDragDropPayload("media_browser_item")
+
+				if dragDropPayload.CData != nil && dragDropPayload.Delivery() {
+					// Add songs to playlist
+					if err := utilities.HandleSongDragDrop(state, dragDropPayload, playlist.ID); err != nil {
+						state.Logger.Errorf("Failed to handle song drag drop: %s", err.Error())
+					}
+
+					if state.PageStates.SongManagement.PlaylistID == playlist.ID {
+						// Reinitialize the index, since we're active right now
+						if err := songmanagement.BootstrapIndex(state, playlist.ID); err != nil {
+							panic(fmt.Sprintf("Failed to re-bootstrap song index: %s", err.Error()))
+						}
+					}
+				}
+			}
 		}
 
 		wasRenamingAPlaylist := state.PageStates.PlaylistSelection.IsRenamingAPlaylist // this can change during the ButtonV press, which is bad, so we use prior values
@@ -139,6 +162,14 @@ func Render(state *stateStructs.ApplicationState) {
 
 				if err := BootstrapIndex(state); err != nil {
 					panic(fmt.Sprintf("Failed to re-bootstrap index: %v", err))
+				}
+
+				// Make ourselves not open anymore because we don't exist
+				if state.PageStates.SongManagement.PlaylistID == state.PageStates.PlaylistSelection.PlaylistToDelete.ID {
+					state.PageStates.PlaylistSelection.PlaylistToDelete = nil
+					state.PageStates.SongManagement.IsCurrentlyDisplayingPlaylist = false
+					state.PageStates.SongManagement.PlaylistID = 0
+					state.PageStates.SongManagement.Songs = nil
 				}
 			} else {
 				state.PageStates.PlaylistSelection.PlaylistToDelete = playlist

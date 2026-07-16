@@ -10,8 +10,6 @@ import (
 	"strings"
 
 	stateStructs "git.lunr.sh/luna/eurydice/gui/state"
-	"git.lunr.sh/luna/eurydice/gui/state/database"
-	"git.lunr.sh/luna/eurydice/gui/state/widgetstate/mediastate"
 	"git.lunr.sh/luna/eurydice/gui/state/widgetstate/songmanagementstate"
 	"git.lunr.sh/luna/eurydice/gui/utilities"
 	"github.com/AllenDang/cimgui-go/imgui"
@@ -35,43 +33,10 @@ func Render(state *stateStructs.ApplicationState) {
 		dragDropPayload := imgui.AcceptDragDropPayload("media_browser_item")
 
 		if dragDropPayload.CData != nil && dragDropPayload.Delivery() {
-			dragDropWrapper := (*mediastate.DragDropWrapper)(dragDropPayload.CData.Data)
-			songList, err := utilities.GetSongListFromMarkers(state, dragDropWrapper.Markers)
-
-			if err != nil {
-				state.Logger.Errorf("Failed to get song list from markers: %s", err.Error())
-				return
+			// Add songs to playlist
+			if err := utilities.HandleSongDragDrop(state, dragDropPayload, state.PageStates.SongManagement.PlaylistID); err != nil {
+				state.Logger.Errorf("Failed to handle song drag drop: %s", err.Error())
 			}
-
-			// Make the existing songList a map so we can efficiently check if a song is already in the list
-			existingSongListAsMap := make(map[uint]bool)
-
-			for _, song := range state.PageStates.SongManagement.Songs {
-				existingSongListAsMap[song.SongID] = true
-			}
-
-			for songIndex, song := range songList {
-				if existingSongListAsMap[song.ID] {
-					continue
-				}
-
-				currentIndex := len(state.PageStates.SongManagement.Songs) + songIndex
-				state.Logger.Debugf("Adding song (with index %d, in sorting) to the current playlist: %s\n", currentIndex, song.Title)
-
-				// Add song to the list
-				if err := state.Config.Database.Create(&database.PlaylistSong{
-					SortIndex:  currentIndex,
-					SongID:     song.ID,
-					PlaylistID: state.PageStates.SongManagement.PlaylistID,
-					LibraryID:  state.Config.ActiveLibraryID,
-				}).Error; err != nil {
-					state.Logger.Errorf("Failed to add song (%s) to playlist: %s", song.Title, err.Error())
-				}
-			}
-
-			// Clean up our manual memory allocations, except for dragDropPayload.CData.Data, as that is managed by
-			// the drag and drop system in imgui itself
-			C.free(dragDropWrapper.MarkerMemPtr)
 
 			// Reinitialize the index
 			if err := BootstrapIndex(state, state.PageStates.SongManagement.PlaylistID); err != nil {
