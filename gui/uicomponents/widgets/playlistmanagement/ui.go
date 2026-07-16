@@ -113,7 +113,7 @@ func Render(state *stateStructs.ApplicationState) {
 				state.PageStates.PlaylistSelection.IsRenamingAPlaylist = false
 			}
 		} else {
-			if imgui.SelectableBoolV(playlist.Name, false, 0, selectableSize) {
+			if imgui.SelectableBoolV(playlist.Name, state.PageStates.SongManagement.PlaylistID == playlist.ID, 0, selectableSize) {
 				if state.PageStates.SongManagement.PlaylistID != playlist.ID {
 					if err := songmanagement.BootstrapIndex(state, playlist.ID); err != nil {
 						panic(fmt.Sprintf("Failed to bootstrap song index: %v", err))
