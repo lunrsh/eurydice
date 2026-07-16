@@ -7,6 +7,7 @@ import (
 	"git.lunr.sh/luna/eurydice/gui/state/database"
 	"git.lunr.sh/luna/eurydice/gui/state/widgetstate/songmanagementstate"
 	"git.lunr.sh/luna/eurydice/gui/utilities"
+	"github.com/AllenDang/cimgui-go/imgui"
 )
 
 func BootstrapIndex(state *stateStructs.ApplicationState, playlistID uint) error {
@@ -51,6 +52,9 @@ func BootstrapIndex(state *stateStructs.ApplicationState, playlistID uint) error
 
 	state.PageStates.SongManagement.PlaylistID = playlistID
 	state.PageStates.SongManagement.IsCurrentlyDisplayingPlaylist = true
+
+	imgui.SetScrollXFloat(0)
+	imgui.SetScrollYFloat(0)
 
 	return nil
 }
