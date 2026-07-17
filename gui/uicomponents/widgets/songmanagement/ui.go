@@ -111,7 +111,7 @@ func DeleteModalRender(state *stateStructs.ApplicationState) {
 
 	if imgui.BeginTableV("##DeletionList", 1, tableFlags&^imgui.TableFlagsSortable, imgui.Vec2{X: 0, Y: 300}, 0) {
 		imgui.TableSetupScrollFreeze(0, 1)
-		imgui.TableSetupColumnV("Title", imgui.TableColumnFlagsWidthStretch, 0, imgui.IDStr("##Title"))
+		imgui.TableSetupColumnV("Song", imgui.TableColumnFlagsWidthStretch, 0, imgui.IDStr("##Song"))
 		imgui.TableHeadersRow()
 
 		for _, song := range state.PageStates.SongManagement.SongsToDelete {
@@ -289,7 +289,7 @@ func Render(state *stateStructs.ApplicationState) {
 			imgui.TableSetupColumnV("Playlist", imgui.TableColumnFlagsWidthStretch, 0, imgui.IDStr("##Playlist"))
 		}
 
-		imgui.TableSetupColumnV("Title", imgui.TableColumnFlagsWidthStretch, 0, imgui.IDStr("##Title"))
+		imgui.TableSetupColumnV("Song", imgui.TableColumnFlagsWidthStretch, 0, imgui.IDStr("##Song"))
 		imgui.TableSetupColumnV("Album", imgui.TableColumnFlagsWidthStretch, 0, imgui.IDStr("##Album"))
 		imgui.TableHeadersRow()
 
@@ -333,7 +333,7 @@ func Render(state *stateStructs.ApplicationState) {
 						})
 					}
 				}
-			case 1: // Title
+			case 1: // Song
 				if sortSpecs.Specs().SortDirection() == imgui.SortDirectionAscending {
 					slices.SortStableFunc(state.PageStates.SongManagement.Songs, func(a, b *songmanagementstate.SongInList) int {
 						return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
