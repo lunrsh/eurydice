@@ -99,6 +99,11 @@ func deleteSongs(state *stateStructs.ApplicationState) error {
 		}
 	}
 
+	// Sync the UI by re-bootstrapping the index
+	if err := BootstrapIndex(state, state.PageStates.SongManagement.PlaylistID); err != nil {
+		panic(fmt.Sprintf("Failed to bootstrap index: %v", err))
+	}
+
 	return nil
 }
 
@@ -177,10 +182,6 @@ func DeleteModalRender(state *stateStructs.ApplicationState) {
 			panic(fmt.Sprintf("Failed to delete songs: %v", err))
 		}
 
-		if err := BootstrapIndex(state, state.PageStates.SongManagement.PlaylistID); err != nil {
-			panic(fmt.Sprintf("Failed to bootstrap index: %v", err))
-		}
-
 		imgui.CloseCurrentPopup()
 	}
 
@@ -205,8 +206,6 @@ func OpenDeleteModal(state *stateStructs.ApplicationState) error {
 		if err := deleteSongs(state); err != nil {
 			return err
 		}
-
-		state.PageStates.SongManagement.DisableDeleteModal = false
 	} else {
 		imgui.OpenPopupStr("Delete Song?")
 	}
