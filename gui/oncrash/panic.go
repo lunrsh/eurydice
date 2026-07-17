@@ -15,9 +15,7 @@ import (
 )
 
 func Panic(title, error string, logger *log.Logger, logFile string) {
-	defer func() {
-		os.Exit(1)
-	}()
+	defer os.Exit(1)
 
 	// Get the stack trace
 	stackTraceBuf := make([]byte, 1<<16)
