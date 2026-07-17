@@ -12,14 +12,14 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 
 	"git.lunr.sh/luna/eurydice/gui/oncrash"
 	stateStructs "git.lunr.sh/luna/eurydice/gui/state"
+	"git.lunr.sh/luna/eurydice/gui/state/database"
 	"git.lunr.sh/luna/eurydice/gui/state/popupstate/scanstate"
-	"git.lunr.sh/luna/eurydice/gui/uicomponents/widgets/mediamanagement"
-	"git.lunr.sh/luna/eurydice/gui/uicomponents/widgets/playlistmanagement"
 
 	"go.senan.xyz/taglib"
 	"golang.org/x/image/draw"
@@ -75,7 +75,7 @@ func findNonindexedMusic(state *stateStructs.ApplicationState, allMusicFound []s
 
 	for _, musicPath := range allMusicFound {
 		relativeMusicPath := strings.TrimPrefix(musicPath, state.Config.JSONConfig.LibraryPath)
-		attemptingToMatchEntry := &stateStructs.Song{}
+		attemptingToMatchEntry := &database.Song{}
 
 		state.PageStates.LibraryScan.CurrentSongPath = relativeMusicPath
 
@@ -100,7 +100,7 @@ func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 
 	delegatedSongsPerThread := make([][]string, cpuThreadCount)
 	waitGroup := sync.WaitGroup{}
-	databaseLockMutex := sync.Mutex{} // Used when we're initializing artists and records
+	databaseLockMutex := sync.Mutex{} // Used when we're touching the database
 
 	// Divide songs evenly
 	maxSongsPerThread := len(uniqueMusicFound) / cpuThreadCount
@@ -128,6 +128,14 @@ func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 		}
 	}
 
+	// Create a processing queue of all the playlist entries (if AutoAddToPlaylists is enabled), so we can
+	// sort the new ones by record, so it's not *completely* out of order. We could just make it sort by
+	// default on the frontend, but that might be confusing to the user, so we sort it in the database instead.
+	//
+	// We don't sort existing entries in the auto-sync playlist, because I really doubt that users care about
+	// that.
+	songsInAutoSyncPlaylist := make([]*database.PlaylistSong, 0, len(uniqueMusicFound))
+
 	// Start execution now!
 	for i := 0; i < cpuThreadCount; i++ {
 		waitGroup.Go(func() {
@@ -148,7 +156,7 @@ func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 					songArtists []string
 				)
 
-				songInformation := &stateStructs.Song{
+				songInformation := &database.Song{
 					LibraryID:               state.Config.ActiveLibraryID,
 					RelativePathFromLibrary: strings.TrimPrefix(songPath, state.Config.JSONConfig.LibraryPath),
 				}
@@ -193,7 +201,7 @@ func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 					songArtists = append(songArtists, "Unknown Artist")
 				}
 
-				foundArtists := make([]*stateStructs.Artist, len(songArtists))
+				foundArtists := make([]*database.Artist, len(songArtists))
 
 				// Add artists (if they don't exist) into the database
 				for i, artistName := range songArtists {
@@ -204,7 +212,7 @@ func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 						if err == gorm.ErrRecordNotFound {
 							// Create a new artist!
 							state.Logger.Debugf("ScanLibrary->backingThread->indexNewMusic: Creating new artist '%s'\n", artistName)
-							foundArtists[i] = &stateStructs.Artist{Name: artistName, LibraryID: state.Config.ActiveLibraryID}
+							foundArtists[i] = &database.Artist{Name: artistName, LibraryID: state.Config.ActiveLibraryID}
 
 							state.Config.Database.Create(&foundArtists[i])
 						} else {
@@ -215,7 +223,7 @@ func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 					databaseLockMutex.Unlock()
 				}
 
-				foundRecord := &stateStructs.Record{}
+				foundRecord := &database.Record{}
 
 				// Add records (defined as LPs and EPs) into the database
 				// Lock now so we don't have a TOCTOU condition
@@ -294,9 +302,23 @@ func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 				songInformation.PrimaryArtistID = foundArtists[0].ID
 				songInformation.CollabArtists = foundArtists[1:]
 
+				songInformation.Record = *foundRecord
 				songInformation.RecordID = foundRecord.ID
 
+				databaseLockMutex.Lock()
 				state.Config.Database.Create(songInformation)
+
+				// Automatically add to the playlist if AutoAddToPlaylists is enabled
+				if state.Config.JSONConfig.AutoAddToPlaylists {
+					songsInAutoSyncPlaylist = append(songsInAutoSyncPlaylist, &database.PlaylistSong{
+						PlaylistID: state.Config.JSONConfig.AutoAddToPlaylistID,
+						SongID:     songInformation.ID,
+						Song:       *songInformation,
+						LibraryID:  state.Config.ActiveLibraryID,
+					})
+				}
+
+				databaseLockMutex.Unlock()
 
 				state.Logger.Debugf("ScanLibrary->backingThread->indexNewMusic: Successfully processed '%s' (%s)", songPath, songInformation.Title)
 				state.PageStates.LibraryScan.TotalSongsScanned++
@@ -306,6 +328,27 @@ func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 	}
 
 	waitGroup.Wait()
+
+	// Used when adding songs to the auto-sync playlist
+	var currentIndexInAutoSyncPlaylist int64
+
+	// Get the highest index in the auto-sync playlist
+	if state.Config.JSONConfig.AutoAddToPlaylists {
+		state.Config.Database.Model(&database.PlaylistSong{}).Where("playlist_id = ?", state.Config.JSONConfig.AutoAddToPlaylistID).Count(&currentIndexInAutoSyncPlaylist)
+	}
+
+	// Sort by record, then add
+	slices.SortStableFunc(songsInAutoSyncPlaylist, func(i, j *database.PlaylistSong) int {
+		return strings.Compare(strings.ToLower(i.Song.Record.Name), strings.ToLower(j.Song.Record.Name))
+	})
+
+	for _, song := range songsInAutoSyncPlaylist {
+		song.SortIndex = int(currentIndexInAutoSyncPlaylist)
+		state.Config.Database.Create(song)
+		currentIndexInAutoSyncPlaylist++
+	}
+
+	// Now, sort the auto-sync playlist by record
 	return nil
 }
 
@@ -314,7 +357,7 @@ func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 //
 // Used internally for scanning the library and cleaning up the database (backingThread, step 4).
 func cleanupDatabase(state *stateStructs.ApplicationState, musicFound []string) error {
-	allSongs := []stateStructs.Song{}
+	allSongs := []database.Song{}
 
 	if err := state.Config.Database.Find(&allSongs).Error; err != nil {
 		return fmt.Errorf("failed to find all songs: %w", err)
@@ -337,7 +380,7 @@ func cleanupDatabase(state *stateStructs.ApplicationState, musicFound []string) 
 			state.Logger.Debugf("ScanLibrary->backingThread->cleanupDatabase: Deleted song '%s'", song.Title)
 
 			// Check to see if there are any songs still using the thumbnail, and if not, delete it
-			songsWithThumbnail := []stateStructs.Song{}
+			songsWithThumbnail := []database.Song{}
 
 			if err := state.Config.Database.Where("art_id = ?", song.ArtID).Find(&songsWithThumbnail).Error; err != nil {
 				return fmt.Errorf("failed to find songs with thumbnail: %w", err)
@@ -354,7 +397,7 @@ func cleanupDatabase(state *stateStructs.ApplicationState, musicFound []string) 
 	}
 
 	// Then, clean up empty records
-	allRecords := []stateStructs.Record{}
+	allRecords := []database.Record{}
 
 	if err := state.Config.Database.Preload("Songs").Find(&allRecords).Error; err != nil {
 		return fmt.Errorf("failed to find all records: %w", err)
@@ -371,7 +414,7 @@ func cleanupDatabase(state *stateStructs.ApplicationState, musicFound []string) 
 	}
 
 	// Finally, clean up artists that have no songs anymore
-	allArtists := []stateStructs.Artist{}
+	allArtists := []database.Artist{}
 
 	if err := state.Config.Database.Preload("PrimarySongs").Preload("CollabSongs").Find(&allArtists).Error; err != nil {
 		return fmt.Errorf("failed to find all artists: %w", err)
@@ -424,13 +467,9 @@ func backingThread(state *stateStructs.ApplicationState) {
 		panic(fmt.Sprintf("Failed to find unique music library directories: %s", err.Error()))
 	}
 
-	// If we have no unique music found, we "cleanup" the database (remove entries that are no longer in the filesystem)
+	// If we have no unique music found, we jump to the code that cleans up the database (remove entries that are no longer in the filesystem)
 	if len(uniqueMusicFound) == 0 {
-		if err = cleanupDatabase(state, allMusicFound); err != nil {
-			panic(fmt.Sprintf("Failed to cleanup database: %s", err.Error()))
-		}
-
-		return
+		goto cleanupDatabaseStep
 	}
 
 	// Step 3: add songs (process metadata)
@@ -444,36 +483,12 @@ func backingThread(state *stateStructs.ApplicationState) {
 	}
 
 	// Step 4: cleanup database (remove entries that are no longer in the filesystem)
+cleanupDatabaseStep:
 	state.PageStates.LibraryScan.StepNo = scanstate.StepCleaningUp
 
 	if err = cleanupDatabase(state, allMusicFound); err != nil {
 		panic(fmt.Sprintf("Failed to cleanup database: %s", err.Error()))
 	}
-
-	// Step 5: Startup the various indexers
-	go func() {
-		defer func() {
-			if err := recover(); err != nil {
-				oncrash.Panic("Eurydice has crashed", fmt.Sprintf("Uncaught exception in media pane initalization: %s", err), state.Logger, state.LogFilePath)
-			}
-		}()
-
-		if err = mediamanagement.BootstrapIndex(state); err != nil {
-			panic(fmt.Sprintf("Failed to bootstrap media management index: %s", err.Error()))
-		}
-	}()
-
-	go func() {
-		defer func() {
-			if err := recover(); err != nil {
-				oncrash.Panic("Eurydice has crashed", fmt.Sprintf("Uncaught exception in playlist selector initialization: %s", err), state.Logger, state.LogFilePath)
-			}
-		}()
-
-		if err = playlistmanagement.BootstrapIndex(state); err != nil {
-			panic(fmt.Sprintf("Failed to bootstrap playlist management index: %s", err.Error()))
-		}
-	}()
 
 	// Show that we're done!
 	state.PageStates.LibraryScan.StepNo = scanstate.StepFinished

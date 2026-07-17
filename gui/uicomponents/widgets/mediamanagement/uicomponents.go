@@ -8,27 +8,13 @@ import (
 
 	stateStructs "git.lunr.sh/luna/eurydice/gui/state"
 	"git.lunr.sh/luna/eurydice/gui/state/widgetstate/mediastate"
+	"git.lunr.sh/luna/eurydice/gui/utilities"
 	"github.com/AllenDang/cimgui-go/imgui"
 )
 
 var commonTreeNodeFlags = imgui.TreeNodeFlagsFramePadding |
 	imgui.TreeNodeFlagsSpanAvailWidth |
 	imgui.TreeNodeFlagsNavLeftJumpsToParent
-
-func wrapText(text string) string {
-	freeWidth := (imgui.ContentRegionAvail().X) - 20 // offset it to make it look better and not have horizontal scrolling
-	newText := text
-
-	for imgui.CalcTextSize(newText).X > freeWidth {
-		if len(newText)-4 < 0 {
-			break // We're too tiny! Abort so we don't crash
-		}
-
-		newText = text[:len(newText)-4] + "..."
-	}
-
-	return newText
-}
 
 func closeRecordAndUnselect(state *stateStructs.ApplicationState, record *mediastate.RecordState) {
 	imgui.InternalTreeNodeSetOpen(record.ImguiID, false)
@@ -163,7 +149,7 @@ func renderArtist(state *stateStructs.ApplicationState, artist *mediastate.Artis
 	imgui.SetNextItemStorageID(artist.ImguiID)
 	imgui.InternalPushOverrideID(artist.ImguiID) // Manually set the ID to ensure consistency
 
-	if imgui.TreeNodeExStrStr(artistID, flags, wrapText(artist.ArtistName)) {
+	if imgui.TreeNodeExStrStr(artistID, flags, utilities.WrapText(artist.ArtistName)) {
 		// If the caller is open, we know BeginDragDropSource() is going to error out, because it's *apparently*
 		// not a valid drag-drop source, as said function doesn't execute at all if we have nested things...
 		//
@@ -206,7 +192,7 @@ func renderArtist(state *stateStructs.ApplicationState, artist *mediastate.Artis
 				// Clean up records for collapsed artist
 				for _, record := range artist.Records {
 					if record.Image != nil {
-						state.CurrentImguiBackend.DeleteTexture(*record.Image)
+						utilities.UnloadImageFromArtID(state, record.ArtID)
 					}
 				}
 
@@ -236,7 +222,7 @@ func renderRecord(state *stateStructs.ApplicationState, record *mediastate.Recor
 
 	if record.ArtID != "" && record.Image == nil {
 		var err error
-		record.Image, err = loadImage(state, record.ArtID)
+		record.Image, err = utilities.LoadImageFromArtID(state, record.ArtID)
 
 		if err != nil {
 			return fmt.Errorf("failed to load image for record %s: %w", record.Title, err)
@@ -260,7 +246,7 @@ func renderRecord(state *stateStructs.ApplicationState, record *mediastate.Recor
 	imgui.SetNextItemStorageID(record.ImguiID)
 	imgui.InternalPushOverrideID(record.ImguiID) // Manually set the ID to ensure consistency
 
-	if imgui.TreeNodeExStrStr(recordID, flags, wrapText(record.Title)) {
+	if imgui.TreeNodeExStrStr(recordID, flags, utilities.WrapText(record.Title)) {
 		if imgui.IsItemHovered() && state.PageStates.MediaManagement.SelectionStorage.Contains(record.ImguiID) && imgui.BeginTooltip() {
 			imgui.Text("Activating drag and drop on this record is not available, because this record")
 			imgui.Text("has items inside it!")
@@ -276,7 +262,7 @@ func renderRecord(state *stateStructs.ApplicationState, record *mediastate.Recor
 			songs, err := DynLoadSongs(state, record)
 
 			if err != nil {
-				panic(fmt.Sprintf("failed to load songs for %s: %s\n", record.Title, err.Error()))
+				panic(fmt.Sprintf("failed to load songs for %s: %s", record.Title, err.Error()))
 			}
 
 			for _, song := range songs {
@@ -300,7 +286,7 @@ func renderRecord(state *stateStructs.ApplicationState, record *mediastate.Recor
 				// Clean up songs for collapsed record
 				for _, song := range record.Songs {
 					if song.Image != nil {
-						state.CurrentImguiBackend.DeleteTexture(*song.Image)
+						utilities.UnloadImageFromArtID(state, song.ArtID)
 					}
 				}
 
@@ -327,7 +313,7 @@ func renderSong(state *stateStructs.ApplicationState, song *mediastate.SongState
 
 	if song.ArtID != "" && song.Image == nil {
 		var err error
-		song.Image, err = loadImage(state, song.ArtID)
+		song.Image, err = utilities.LoadImageFromArtID(state, song.ArtID)
 
 		if err != nil {
 			return fmt.Errorf("failed to load image for song %s: %w", song.Title, err)
@@ -345,7 +331,7 @@ func renderSong(state *stateStructs.ApplicationState, song *mediastate.SongState
 	imgui.InternalPushOverrideID(song.ImguiID)
 	imgui.SetNextItemSelectionUserData(imgui.SelectionUserData(mediastate.ConvertNodeInformationToIntMarker(song)))
 	imgui.SetNextItemStorageID(song.ImguiID)
-	imgui.SelectableBoolV(wrapText(song.Title), isSongSelected, imgui.SelectableFlags(imgui.SelectableFlagsSpanAvailWidth), imgui.Vec2{})
+	imgui.SelectableBoolV(utilities.WrapText(song.Title), isSongSelected, imgui.SelectableFlags(imgui.SelectableFlagsSpanAvailWidth), imgui.Vec2{})
 	imgui.PopID()
 
 	checkAndExecuteDragAndDrop(state)

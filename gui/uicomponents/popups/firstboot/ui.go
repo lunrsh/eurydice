@@ -7,6 +7,7 @@ import (
 	"path"
 
 	stateStructs "git.lunr.sh/luna/eurydice/gui/state"
+	"git.lunr.sh/luna/eurydice/gui/state/database"
 	"github.com/AllenDang/cimgui-go/imgui"
 	"github.com/sqweek/dialog"
 )
@@ -18,7 +19,7 @@ func Render(state *stateStructs.ApplicationState) {
 		imgui.CloseCurrentPopup()
 		imgui.EndPopup()
 	case 0:
-		imgui.Text("Welcome to the Eurydice Rockbox management tool, made by Luna, et al.\n\nFirst, you need to tell me where your song library is, before I get started:\n\n")
+		imgui.Text("Welcome to the Eurydice Rockbox management tool, made by Luna, et al.\n\nYou are using a pre-alpha version! Be wary of any bugs that may lurk beneath the surface.\n\nFirst, you need to tell me where your song library is, before I get started:\n\n")
 		textCursorPosition := imgui.CursorScreenPos()
 
 		imgui.SetCursorScreenPos(imgui.Vec2{
@@ -101,6 +102,17 @@ func Render(state *stateStructs.ApplicationState) {
 
 		imgui.Checkbox("##UpdateLocalLibraryOnOpen", &state.Config.JSONConfig.UpdateLocalLibraryOnOpen)
 
+		imgui.Text("Should I automatically add new songs to a new playlist for syncing?")
+		imgui.SameLine()
+		checkBoxCursorPosition = imgui.CursorScreenPos()
+
+		imgui.SetCursorScreenPos(imgui.Vec2{
+			X: checkBoxCursorPosition.X,
+			Y: checkBoxCursorPosition.Y - 3.5,
+		})
+
+		imgui.Checkbox("##AutoAddToPlaylists", &state.Config.JSONConfig.AutoAddToPlaylists)
+
 		textCursorPosition := imgui.CursorScreenPos()
 
 		imgui.SetCursorScreenPos(imgui.Vec2{
@@ -121,8 +133,25 @@ func Render(state *stateStructs.ApplicationState) {
 		imgui.CloseCurrentPopup()
 		imgui.EndPopup()
 
-		// Sync configuration
+		// Initialize core database
+		library := &database.Library{
+			LibraryPath: state.Config.JSONConfig.LibraryPath,
+		}
 
+		state.Config.Database.Create(library)
+
+		// Create holding playlist, if enabled
+		if state.Config.JSONConfig.AutoAddToPlaylists {
+			playlist := &database.Playlist{
+				Name:      "Automatically Synced Songs",
+				LibraryID: library.ID,
+			}
+
+			state.Config.Database.Create(playlist)
+			state.Config.JSONConfig.AutoAddToPlaylistID = playlist.ID
+		}
+
+		// Sync configuration
 		state.Config.JSONConfig.HasOOBEFinished = true
 		state.PageStates.FirstBoot.HasFirstbootPageOpenedAlready = false
 		state.PageStates.FirstBoot.PageNo = 0 // incase the user finds a way to run this again?
@@ -136,11 +165,6 @@ func Render(state *stateStructs.ApplicationState) {
 		if err := os.WriteFile(state.Config.JSONConfigPath, updatedConfiguration, 0644); err != nil {
 			panic(fmt.Sprintf("Failed to write configuration: %v", err))
 		}
-
-		// Initialize core database
-		state.Config.Database.Create(&stateStructs.Library{
-			LibraryPath: state.Config.JSONConfig.LibraryPath,
-		})
 
 		return
 	}

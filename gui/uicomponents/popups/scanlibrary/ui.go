@@ -5,6 +5,9 @@ import (
 
 	stateStructs "git.lunr.sh/luna/eurydice/gui/state"
 	"git.lunr.sh/luna/eurydice/gui/state/popupstate/scanstate"
+	"git.lunr.sh/luna/eurydice/gui/uicomponents/widgets/mediamanagement"
+	"git.lunr.sh/luna/eurydice/gui/uicomponents/widgets/playlistmanagement"
+	"git.lunr.sh/luna/eurydice/gui/uicomponents/widgets/songmanagement"
 	"github.com/AllenDang/cimgui-go/imgui"
 )
 
@@ -13,6 +16,20 @@ func Render(state *stateStructs.ApplicationState) {
 	// so it'd call twice, and break things (crash).
 
 	if state.PageStates.LibraryScan.StepNo == scanstate.StepFinished {
+		// Step 5 needs to run on the main thread, so a bit of a hack, but once we reach StepFinished, initialize the indexers
+		if err := mediamanagement.BootstrapIndex(state); err != nil {
+			panic(fmt.Sprintf("Failed to bootstrap media management index: %s", err.Error()))
+		}
+
+		if err := playlistmanagement.BootstrapIndex(state); err != nil {
+			panic(fmt.Sprintf("Failed to bootstrap playlist management index: %s", err.Error()))
+		}
+
+		if err := songmanagement.LoadAllSongs(state); err != nil {
+			panic(fmt.Sprintf("Failed to bootstrap song management index: %s", err.Error()))
+		}
+
+		// Now we're done!
 		state.PageStates.LibraryScan.StepNo = scanstate.StepIdle
 		imgui.CloseCurrentPopup()
 		imgui.EndPopup()

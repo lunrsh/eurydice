@@ -8,6 +8,7 @@ import (
 	"git.lunr.sh/luna/eurydice/gui/state/popupstate/setupstate"
 	"git.lunr.sh/luna/eurydice/gui/state/widgetstate/mediastate"
 	"git.lunr.sh/luna/eurydice/gui/state/widgetstate/playlistselectionstate"
+	"git.lunr.sh/luna/eurydice/gui/state/widgetstate/songmanagementstate"
 	"github.com/AllenDang/cimgui-go/backend"
 	"github.com/AllenDang/cimgui-go/backend/glfwbackend"
 	_ "github.com/AllenDang/cimgui-go/impl/glfw"
@@ -19,6 +20,11 @@ type JSONConfig struct {
 	LibraryPath              string
 	HasOOBEFinished          bool
 	UpdateLocalLibraryOnOpen bool
+
+	// Compromise: Just creating an all songs playlist and adding/removing dynamically is easier than
+	// making a system to delete songs within all songs. It'd also be confusing to the user.
+	AutoAddToPlaylistID uint
+	AutoAddToPlaylists  bool
 }
 
 type ConfigState struct {
@@ -41,8 +47,9 @@ type IndividualPageStates struct {
 	FirstBoot   setupstate.SetupState
 	LibraryScan scanstate.ScanState
 
-	MediaManagement   mediastate.MediaState
 	PlaylistSelection playlistselectionstate.PlaylistSelectionState
+	MediaManagement   mediastate.MediaState
+	SongManagement    songmanagementstate.SongManagementState
 }
 
 type ApplicationState struct {

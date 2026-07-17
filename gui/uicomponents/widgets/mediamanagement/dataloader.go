@@ -1,18 +1,15 @@
 package mediamanagement
 
 import (
-	"bytes"
 	"fmt"
-	"image"
-	"image/draw"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"time"
 
 	stateStructs "git.lunr.sh/luna/eurydice/gui/state"
+	"git.lunr.sh/luna/eurydice/gui/state/database"
 	"git.lunr.sh/luna/eurydice/gui/state/widgetstate/mediastate"
+	"git.lunr.sh/luna/eurydice/gui/utilities"
 	"github.com/AllenDang/cimgui-go/imgui"
 )
 
@@ -26,7 +23,7 @@ func BootstrapIndex(state *stateStructs.ApplicationState) error {
 	case mediastate.SortArtistThenAlbum:
 		// Fetching by artist isn't a dedicated function because this is the only occurrence of it, unlike records & songs
 		// Bootstrap the sort-by-artist
-		allArtists := []stateStructs.Artist{}
+		allArtists := []database.Artist{}
 		unknownArtists := []*mediastate.ArtistState{}
 
 		if err := state.Config.Database.Preload("PrimarySongs").Where("library_id = ?", state.Config.ActiveLibraryID).Find(&allArtists).Error; err != nil {
@@ -64,7 +61,7 @@ func BootstrapIndex(state *stateStructs.ApplicationState) error {
 		state.PageStates.MediaManagement.SelectionStorage.Clear()
 	case mediastate.SortAlbum:
 		// Bootstrap the sort-by-album by fetching all the artists first
-		allArtists := []stateStructs.Artist{}
+		allArtists := []database.Artist{}
 		unknownRecords := []*mediastate.RecordState{}
 
 		if err := state.Config.Database.Preload("PrimarySongs").Where("library_id = ?", state.Config.ActiveLibraryID).Find(&allArtists).Error; err != nil {
@@ -113,7 +110,7 @@ func BootstrapIndex(state *stateStructs.ApplicationState) error {
 		state.Logger.Debug("Starting to load all artists, records, and songs, for SortSearch initialization...")
 		startTime := time.Now() // used for debug logs
 
-		allArtists := []stateStructs.Artist{}
+		allArtists := []database.Artist{}
 
 		if err := state.Config.Database.Preload("PrimarySongs").Where("library_id = ?", state.Config.ActiveLibraryID).Find(&allArtists).Error; err != nil {
 			return fmt.Errorf("failed to find all artists: %w", err)
@@ -167,7 +164,7 @@ func BootstrapIndex(state *stateStructs.ApplicationState) error {
 
 func DynLoadRecords(state *stateStructs.ApplicationState, artist *mediastate.ArtistState) ([]*mediastate.RecordState, error) {
 	// Fetch corresponding records for the artist from the database, incl. songs for their ArtIDs
-	allRecordsFromArtist := []stateStructs.Record{}
+	allRecordsFromArtist := []database.Record{}
 
 	if err := state.Config.Database.Preload("Songs").Where("library_id = ? AND artist_id = ?", state.Config.ActiveLibraryID, artist.ID).Find(&allRecordsFromArtist).Error; err != nil {
 		return nil, fmt.Errorf("failed to find records for artist %s: %w", artist.ArtistName, err)
@@ -196,7 +193,7 @@ func DynLoadRecords(state *stateStructs.ApplicationState, artist *mediastate.Art
 		// Disable image loading on threads that aren't the main UI thread
 		if mostPopularArtID != "" && state.PageStates.MediaManagement.SortMethod != mediastate.SortSearch {
 			var err error
-			loadedImage, err = loadImage(state, mostPopularArtID)
+			loadedImage, err = utilities.LoadImageFromArtID(state, mostPopularArtID)
 
 			if err != nil {
 				state.Logger.Errorf("Failed to load image for record '%s': %s", record.Name, err.Error())
@@ -224,7 +221,7 @@ func DynLoadRecords(state *stateStructs.ApplicationState, artist *mediastate.Art
 
 func DynLoadSongs(state *stateStructs.ApplicationState, record *mediastate.RecordState) ([]*mediastate.SongState, error) {
 	// Fetch songs for this record
-	allSongsOnThisRecord := []stateStructs.Song{}
+	allSongsOnThisRecord := []database.Song{}
 
 	if err := state.Config.Database.Preload("CollabArtists").Where("library_id = ? AND record_id = ?", state.Config.ActiveLibraryID, record.ID).Find(&allSongsOnThisRecord).Error; err != nil {
 		return nil, fmt.Errorf("failed to find songs for record %d: %w", record.ID, err)
@@ -250,7 +247,7 @@ func DynLoadSongs(state *stateStructs.ApplicationState, record *mediastate.Recor
 
 		if song.ArtID != "" && state.PageStates.MediaManagement.SortMethod != mediastate.SortSearch {
 			var err error
-			loadedImage, err = loadImage(state, song.ArtID)
+			loadedImage, err = utilities.LoadImageFromArtID(state, song.ArtID)
 
 			if err != nil {
 				state.Logger.Errorf("Failed to load image for song '%s' from record '%s': %s", song.Title, record.Title, err.Error())
@@ -270,29 +267,4 @@ func DynLoadSongs(state *stateStructs.ApplicationState, record *mediastate.Recor
 	}
 
 	return allUIRepresentedSongs, nil
-}
-
-// Loads an image into memory as an imgui texture
-func loadImage(state *stateStructs.ApplicationState, artID string) (*imgui.TextureRef, error) {
-	imageBytes, err := os.ReadFile(filepath.Join(state.Config.AppStatePath, "thumbnails", string(artID)))
-
-	if err != nil {
-		return nil, err
-	}
-
-	parsedOriginalImage, _, err := image.Decode(bytes.NewReader(imageBytes))
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode image for artID '%s': %w", artID, err)
-	}
-
-	rgbaImage, ok := parsedOriginalImage.(*image.RGBA)
-
-	if !ok {
-		rgbaImage = image.NewRGBA(image.Rect(0, 0, parsedOriginalImage.Bounds().Dx(), parsedOriginalImage.Bounds().Dy()))
-		draw.Draw(rgbaImage, rgbaImage.Rect, parsedOriginalImage, parsedOriginalImage.Bounds().Min, draw.Over)
-	}
-
-	texture := state.CurrentImguiBackend.CreateTextureRgba(rgbaImage, parsedOriginalImage.Bounds().Dx(), parsedOriginalImage.Bounds().Dy())
-	return &texture, nil
 }

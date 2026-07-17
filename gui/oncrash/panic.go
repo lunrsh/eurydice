@@ -15,9 +15,7 @@ import (
 )
 
 func Panic(title, error string, logger *log.Logger, logFile string) {
-	defer func() {
-		os.Exit(1)
-	}()
+	defer os.Exit(1)
 
 	// Get the stack trace
 	stackTraceBuf := make([]byte, 1<<16)
@@ -114,7 +112,7 @@ func ICanHazPanicDisplay() {
 
 		// Position text in bottom left corner with 10px padding
 		crashLogText := "Crash log stored in " + string(crashFileBuf)
-		crashLogTextHeight := imgui.CalcTextSize(crashLogText).Y
+		crashLogTextHeight := imgui.TextLineHeight()
 
 		imgui.SetCursorScreenPos(imgui.Vec2{
 			X: windowPosition.X + 10,

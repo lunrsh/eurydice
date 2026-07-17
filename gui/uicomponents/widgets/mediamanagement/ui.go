@@ -12,7 +12,7 @@ import (
 	"git.lunr.sh/luna/eurydice/gui/utilities"
 )
 
-var multiSelectFlags = imgui.MultiSelectFlagsClearOnEscape | imgui.MultiSelectFlagsBoxSelect2d
+const multiSelectFlags = imgui.MultiSelectFlagsClearOnEscape | imgui.MultiSelectFlagsBoxSelect2d
 
 // Recursively opens or closes items in the media management tree, given a node to start from, and a selection state.
 func recursivelyOpenOrCloseItems(state *stateStructs.ApplicationState, node any, selected bool) error {
@@ -316,7 +316,7 @@ func Render(state *stateStructs.ApplicationState) {
 			}
 
 			if err := BootstrapIndex(state); err != nil {
-				panic(fmt.Sprintf("Failed to bootstrap index: %v\n", err))
+				panic(fmt.Sprintf("Failed to bootstrap index: %v", err))
 			}
 		} else {
 			if state.PageStates.MediaManagement.SortMethod != mediastate.SortSearch {
@@ -348,7 +348,7 @@ func Render(state *stateStructs.ApplicationState) {
 		}
 
 		if err := BootstrapIndex(state); err != nil {
-			panic(fmt.Sprintf("Failed to bootstrap index: %v\n", err))
+			panic(fmt.Sprintf("Failed to bootstrap index: %v", err))
 		}
 	}
 
