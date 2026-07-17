@@ -11,6 +11,7 @@ import (
 	"unsafe"
 
 	stateStructs "git.lunr.sh/luna/eurydice/gui/state"
+	"git.lunr.sh/luna/eurydice/gui/state/database"
 	"git.lunr.sh/luna/eurydice/gui/state/widgetstate/mediastate"
 	"git.lunr.sh/luna/eurydice/gui/state/widgetstate/songmanagementstate"
 	"git.lunr.sh/luna/eurydice/gui/utilities"
@@ -73,12 +74,183 @@ func checkAndExecuteDragAndDrop(state *stateStructs.ApplicationState) {
 	}
 }
 
+func deleteSongs(state *stateStructs.ApplicationState) error {
+	for _, song := range state.PageStates.SongManagement.SongsToDelete {
+		if err := state.Config.Database.Where("id = ?", song.PlaylistContainerID).Delete(&database.PlaylistSong{}).Error; err != nil {
+			return fmt.Errorf("failed to delete song: %w", err)
+		}
+	}
+
+	// Fetch all songs from the database, to fix ID ordering
+	var songs []database.PlaylistSong
+
+	if err := state.Config.Database.Where("playlist_id = ?", state.PageStates.SongManagement.PlaylistID).Find(&songs).Error; err != nil {
+		return fmt.Errorf("failed to fetch songs: %w", err)
+	}
+
+	for songIndex, song := range songs {
+		if song.SortIndex != songIndex {
+			state.Logger.Debugf("Fixing sort index for song ID %d (prev. %d, now %d)", song.ID, song.SortIndex, songIndex)
+			song.SortIndex = songIndex
+
+			if err := state.Config.Database.Save(&song).Error; err != nil {
+				return fmt.Errorf("failed to update sort index for song ID %d: %w", song.ID, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+func DeleteModalRender(state *stateStructs.ApplicationState) {
+	defer imgui.EndPopup()
+
+	imgui.Text("You have these songs set for removal from this playlist:")
+	imgui.Spacing()
+	imgui.Spacing()
+
+	if imgui.BeginTableV("##DeletionList", 1, tableFlags&^imgui.TableFlagsSortable, imgui.Vec2{X: 0, Y: 300}, 0) {
+		imgui.TableSetupScrollFreeze(0, 1)
+		imgui.TableSetupColumnV("Title", imgui.TableColumnFlagsWidthStretch, 0, imgui.IDStr("##Title"))
+		imgui.TableHeadersRow()
+
+		for _, song := range state.PageStates.SongManagement.SongsToDelete {
+			imgui.TableNextRow()
+			imgui.TableSetColumnIndex(0)
+
+			// If we're visible, and image is nil but we have an ArtID, try to load the image
+			if imgui.IsItemVisible() && song.Image == nil && song.ArtID != "" {
+				state.Logger.Debugf("Dynamically loading image for song '%s'", song.Name)
+
+				var err error
+
+				song.Image, err = utilities.LoadImageFromArtID(state, song.ArtID)
+
+				if err != nil {
+					panic(fmt.Sprintf("Failed to load image for song '%s': %s", song.Name, err.Error()))
+				}
+			}
+
+			// I hope that I'm never allowed to write UI code ever again.
+			// Used to align the album art description
+			var cursorX float32
+			var cursorY float32
+
+			if song.Image != nil {
+				imgui.Image(*song.Image, imgui.Vec2{X: 32, Y: 32})
+				imgui.SameLine()
+
+				cursorX = imgui.CursorPosX()
+				cursorY = imgui.CursorPosY() + (12 - (imgui.FrameHeight() * 0.5))
+
+				imgui.SetCursorPosY(cursorY)
+			} else {
+				cursorX = imgui.CursorPosX()
+			}
+
+			imgui.Text(utilities.WrapText(song.Name))
+			imgui.SetCursorPosX(cursorX)
+
+			if song.Image != nil {
+				imgui.SetCursorPosY(cursorY + imgui.TextLineHeight() + 2) // Add some pixels for padding
+			}
+
+			imgui.TextColored(imgui.Vec4{X: 172.0 / 255, Y: 172.0 / 255, Z: 172.0 / 255, W: 255.0 / 255}, utilities.WrapText(strings.Join(song.Artists, ", ")))
+		}
+
+		imgui.EndTable()
+	}
+
+	imgui.Spacing()
+	imgui.Spacing()
+
+	imgui.Text("Are you sure you want to delete these songs?")
+	imgui.Spacing()
+	imgui.Spacing()
+
+	imgui.Checkbox("Do not show this popup again for this Eurydice session", &state.PageStates.SongManagement.DisableDeleteModal)
+	imgui.Spacing()
+	imgui.Spacing()
+
+	if imgui.Button("Delete") {
+		if err := deleteSongs(state); err != nil {
+			panic(fmt.Sprintf("Failed to delete songs: %v", err))
+		}
+
+		if err := BootstrapIndex(state, state.PageStates.SongManagement.PlaylistID); err != nil {
+			panic(fmt.Sprintf("Failed to bootstrap index: %v", err))
+		}
+
+		imgui.CloseCurrentPopup()
+	}
+
+	imgui.SameLine()
+
+	if imgui.Button("Cancel") {
+		imgui.CloseCurrentPopup()
+	}
+}
+
+func OpenDeleteModal(state *stateStructs.ApplicationState) error {
+	// Populate SongsToDelete with selected songs
+	state.PageStates.SongManagement.SongsToDelete = []*songmanagementstate.SongInList{}
+
+	for songIndex, song := range state.PageStates.SongManagement.Songs {
+		if state.PageStates.SongManagement.SelectionStorage.Contains(imgui.ID(songIndex)) {
+			state.PageStates.SongManagement.SongsToDelete = append(state.PageStates.SongManagement.SongsToDelete, song)
+		}
+	}
+
+	if state.PageStates.SongManagement.DisableDeleteModal {
+		if err := deleteSongs(state); err != nil {
+			return err
+		}
+
+		state.PageStates.SongManagement.DisableDeleteModal = false
+	} else {
+		imgui.OpenPopupStr("Delete Song?")
+	}
+
+	return nil
+}
+
 func Render(state *stateStructs.ApplicationState) {
 	if state.PageStates.SongManagement.SelectionStorage == nil {
 		state.PageStates.SongManagement.SelectionStorage = imgui.NewSelectionBasicStorage()
 	}
 
-	imgui.BeginChildStr("##SongManagement") // needed for drag and drop
+	// Child window is needed for custom Drag-Drop targeting
+	imgui.BeginChildStr("##SongManagement")
+
+	// Redefine because we disable padding in the table, which also disables here as a consequence
+	imgui.PushStyleVarVec2(imgui.StyleVarWindowPadding, imgui.Vec2{X: 8, Y: 8})
+
+	if imgui.BeginPopupModalV("Delete Song?", nil, imgui.WindowFlagsAlwaysAutoResize) {
+		DeleteModalRender(state)
+	}
+
+	imgui.PopStyleVar()
+
+	// Open deletion modal if:
+	// - We are currently viewing a playlist
+	// - We currently have songs selected
+	// - Either the current window, root window, or child window, is focused
+	// - Backspace or delete is pressed
+	//
+	// ...sorry for the beefy if statement.
+	if state.PageStates.SongManagement.IsCurrentlyDisplayingPlaylist &&
+		state.PageStates.SongManagement.SelectionStorage.Size() != 0 &&
+		imgui.IsWindowFocusedV(imgui.FocusedFlagsRootAndChildWindows) &&
+		(imgui.IsKeyPressedBool(imgui.KeyBackspace) || imgui.IsKeyPressedBool(imgui.KeyDelete)) {
+		if err := OpenDeleteModal(state); err != nil {
+			panic(fmt.Sprintf("Failed to open delete modal: %v", err))
+		}
+	}
+
+	// Hack: For *some* reason, just calling OpenPopupStr in the right click menu doesn't work. What the fuck?
+	// So instead, we do this hack of creating a variable to track whether the modal should be opened, and
+	// just opening it conditionally after the table
+	shouldOpenModal := false
 
 	// Handle drag and drop for adding songs to the playlist from the media browser
 	// See https://github.com/ocornut/imgui/issues/5539.
@@ -109,12 +281,6 @@ func Render(state *stateStructs.ApplicationState) {
 	}
 
 	if imgui.BeginTableV(tableID, 3, tableFlags, imgui.Vec2{}, 0) {
-		if state.PageStates.SongManagement.ShouldResetScrollState {
-			imgui.SetScrollXFloat(0)
-			imgui.SetScrollYFloat(0)
-			state.PageStates.SongManagement.ShouldResetScrollState = false
-		}
-
 		imgui.TableSetupScrollFreeze(0, 1)
 
 		if state.PageStates.SongManagement.IsCurrentlyDisplayingPlaylist {
@@ -127,11 +293,20 @@ func Render(state *stateStructs.ApplicationState) {
 		imgui.TableSetupColumnV("Album", imgui.TableColumnFlagsWidthStretch, 0, imgui.IDStr("##Album"))
 		imgui.TableHeadersRow()
 
-		// Sort the songs based on the current sort specs
 		sortSpecs := imgui.TableGetSortSpecs()
 
+		// Resets scroll and reorders everything. Used after rebootstrapping to ensure we have consistent UI
+		if state.PageStates.SongManagement.ShouldResetScrollAndOrdering {
+			imgui.SetScrollXFloat(0)
+			imgui.SetScrollYFloat(0)
+			sortSpecs.SetSpecsDirty(true)
+
+			state.PageStates.SongManagement.ShouldResetScrollAndOrdering = false
+		}
+
+		// Sort the songs based on the current sort specs
 		if sortSpecs.CData != nil && sortSpecs.SpecsDirty() {
-			defer sortSpecs.SetSpecsDirty(false)
+			sortSpecs.SetSpecsDirty(false)
 
 			switch sortSpecs.Specs().ColumnIndex() {
 			case 0: // Playlist Index or In Playlist
@@ -250,8 +425,27 @@ func Render(state *stateStructs.ApplicationState) {
 			imgui.PushIDInt(int32(songIndex))
 
 			imgui.SelectableBoolV("##", isSelected, imgui.SelectableFlagsSpanAllColumns|imgui.SelectableFlagsAllowOverlap, imgui.Vec2{X: 0, Y: endSongSize - startSongSize - 2})
+			imgui.PushStyleVarVec2(imgui.StyleVarWindowPadding, imgui.Vec2{X: 8, Y: 8}) // Redefine because we disable padding in the table, which also disables here as a consequence
 			checkAndExecuteDragAndDrop(state)
 
+			// Only handle right click and deletion if we're displaying a playlist
+			if imgui.BeginPopupContextItem() {
+				if !state.PageStates.SongManagement.IsCurrentlyDisplayingPlaylist {
+					imgui.BeginDisabled()
+				}
+
+				if imgui.SelectableBool("Delete...") {
+					shouldOpenModal = true
+				}
+
+				if !state.PageStates.SongManagement.IsCurrentlyDisplayingPlaylist {
+					imgui.EndDisabled()
+				}
+
+				imgui.EndPopup()
+			}
+
+			imgui.PopStyleVar()
 			imgui.PopID()
 			imgui.SetCursorPos(beforeSelectableCursorPos)
 
@@ -280,6 +474,12 @@ func Render(state *stateStructs.ApplicationState) {
 		multiSelectIO = imgui.EndMultiSelect()
 		state.PageStates.SongManagement.SelectionStorage.ApplyRequests(multiSelectIO)
 		imgui.EndTable()
+	}
+
+	if shouldOpenModal {
+		if err := OpenDeleteModal(state); err != nil {
+			panic(fmt.Sprintf("Failed to open delete modal: %v", err))
+		}
 	}
 
 	imgui.EndChild()

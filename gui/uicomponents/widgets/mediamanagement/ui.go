@@ -316,7 +316,7 @@ func Render(state *stateStructs.ApplicationState) {
 			}
 
 			if err := BootstrapIndex(state); err != nil {
-				panic(fmt.Sprintf("Failed to bootstrap index: %v\n", err))
+				panic(fmt.Sprintf("Failed to bootstrap index: %v", err))
 			}
 		} else {
 			if state.PageStates.MediaManagement.SortMethod != mediastate.SortSearch {
@@ -348,7 +348,7 @@ func Render(state *stateStructs.ApplicationState) {
 		}
 
 		if err := BootstrapIndex(state); err != nil {
-			panic(fmt.Sprintf("Failed to bootstrap index: %v\n", err))
+			panic(fmt.Sprintf("Failed to bootstrap index: %v", err))
 		}
 	}
 

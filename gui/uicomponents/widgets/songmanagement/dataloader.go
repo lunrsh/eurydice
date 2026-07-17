@@ -2,8 +2,6 @@ package songmanagement
 
 import (
 	"fmt"
-	"slices"
-	"strings"
 
 	stateStructs "git.lunr.sh/luna/eurydice/gui/state"
 	"git.lunr.sh/luna/eurydice/gui/state/database"
@@ -51,14 +49,9 @@ func BootstrapIndex(state *stateStructs.ApplicationState, playlistID uint) error
 		state.PageStates.SongManagement.Songs = append(state.PageStates.SongManagement.Songs, displayedSong)
 	}
 
-	// Sort by index incase we're out of order
-	slices.SortStableFunc(state.PageStates.SongManagement.Songs, func(i, j *songmanagementstate.SongInList) int {
-		return i.Index - j.Index
-	})
-
 	state.PageStates.SongManagement.PlaylistID = playlistID
 	state.PageStates.SongManagement.IsCurrentlyDisplayingPlaylist = true
-	state.PageStates.SongManagement.ShouldResetScrollState = true
+	state.PageStates.SongManagement.ShouldResetScrollAndOrdering = true
 
 	state.PageStates.SongManagement.SelectionStorage.Clear()
 
@@ -109,14 +102,9 @@ func LoadAllSongs(state *stateStructs.ApplicationState) error {
 		}
 	}
 
-	// Sort by playlists incase we add out of order
-	slices.SortStableFunc(state.PageStates.SongManagement.Songs, func(i, j *songmanagementstate.SongInList) int {
-		return strings.Compare(strings.ToLower(i.InPlaylists), strings.ToLower(j.InPlaylists))
-	})
-
 	state.PageStates.SongManagement.IsCurrentlyDisplayingPlaylist = false
 	state.PageStates.SongManagement.PlaylistID = 0 // TODO: is this safe?
-	state.PageStates.SongManagement.ShouldResetScrollState = true
+	state.PageStates.SongManagement.ShouldResetScrollAndOrdering = true
 
 	state.PageStates.SongManagement.SelectionStorage.Clear()
 

@@ -36,7 +36,7 @@ func HandleSongDragDrop(state *stateStructs.ApplicationState, dragDropPayload *i
 		}
 
 		currentIndex := int(currentSongCount) + songIndex
-		state.Logger.Debugf("Adding song (with index %d, in sorting) to the current playlist: %s\n", currentIndex, song.Title)
+		state.Logger.Debugf("Adding song (with index %d, in sorting) to the current playlist: %s", currentIndex, song.Title)
 
 		// Add song to the list
 		if err := state.Config.Database.Create(&database.PlaylistSong{

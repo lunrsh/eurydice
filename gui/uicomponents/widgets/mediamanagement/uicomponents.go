@@ -262,7 +262,7 @@ func renderRecord(state *stateStructs.ApplicationState, record *mediastate.Recor
 			songs, err := DynLoadSongs(state, record)
 
 			if err != nil {
-				panic(fmt.Sprintf("failed to load songs for %s: %s\n", record.Title, err.Error()))
+				panic(fmt.Sprintf("failed to load songs for %s: %s", record.Title, err.Error()))
 			}
 
 			for _, song := range songs {
