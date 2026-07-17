@@ -8,7 +8,8 @@ type SongInList struct {
 	PlaylistContainerID uint // ID from the database
 	SongID              uint // ID from the database
 
-	Index int
+	Index       int    // Used for BootstrapIndex
+	InPlaylists string // Used for LoadAllSongs
 
 	Image *imgui.TextureRef
 	ArtID string

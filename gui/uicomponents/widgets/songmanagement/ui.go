@@ -43,8 +43,8 @@ func checkAndExecuteDragAndDrop(state *stateStructs.ApplicationState) {
 			// I don't feel like fighting this library, and plus, we need to walk through visible items ANYWAYS to get their database IDs,
 			// so we just loop through all the visible items. Sorry!
 
-			for _, song := range state.PageStates.SongManagement.Songs {
-				if state.PageStates.SongManagement.SelectionStorage.Contains(imgui.ID(song.Index)) {
+			for songIndex, song := range state.PageStates.SongManagement.Songs {
+				if state.PageStates.SongManagement.SelectionStorage.Contains(imgui.ID(songIndex)) {
 					originalMarkerSlice = append(originalMarkerSlice, (mediastate.StateIDSong<<32)|int(song.SongID))
 				}
 			}
@@ -100,9 +100,23 @@ func Render(state *stateStructs.ApplicationState) {
 		imgui.EndDragDropTarget()
 	}
 
-	if imgui.BeginTableV("##SongList", 3, tableFlags, imgui.Vec2{}, 0) {
+	var tableID string
+
+	if state.PageStates.SongManagement.IsCurrentlyDisplayingPlaylist {
+		tableID = "##PlaylistContents"
+	} else {
+		tableID = "##SongList"
+	}
+
+	if imgui.BeginTableV(tableID, 3, tableFlags, imgui.Vec2{}, 0) {
 		imgui.TableSetupScrollFreeze(0, 1)
-		imgui.TableSetupColumn("Index")
+
+		if state.PageStates.SongManagement.IsCurrentlyDisplayingPlaylist {
+			imgui.TableSetupColumn("Index")
+		} else {
+			imgui.TableSetupColumnV("Playlist", imgui.TableColumnFlagsWidthStretch, 0, imgui.IDStr("##Playlist"))
+		}
+
 		imgui.TableSetupColumnV("Title", imgui.TableColumnFlagsWidthStretch, 0, imgui.IDStr("##Title"))
 		imgui.TableSetupColumnV("Album", imgui.TableColumnFlagsWidthStretch, 0, imgui.IDStr("##Album"))
 		imgui.TableHeadersRow()
@@ -114,15 +128,29 @@ func Render(state *stateStructs.ApplicationState) {
 			defer sortSpecs.SetSpecsDirty(false)
 
 			switch sortSpecs.Specs().ColumnIndex() {
-			case 0: // Index
-				if sortSpecs.Specs().SortDirection() == imgui.SortDirectionAscending {
-					slices.SortStableFunc(state.PageStates.SongManagement.Songs, func(i, j *songmanagementstate.SongInList) int {
-						return i.Index - j.Index
-					})
+			case 0: // Playlist Index or In Playlist
+				if state.PageStates.SongManagement.IsCurrentlyDisplayingPlaylist {
+					// Index
+					if sortSpecs.Specs().SortDirection() == imgui.SortDirectionAscending {
+						slices.SortStableFunc(state.PageStates.SongManagement.Songs, func(i, j *songmanagementstate.SongInList) int {
+							return i.Index - j.Index
+						})
+					} else {
+						slices.SortStableFunc(state.PageStates.SongManagement.Songs, func(i, j *songmanagementstate.SongInList) int {
+							return j.Index - i.Index
+						})
+					}
 				} else {
-					slices.SortStableFunc(state.PageStates.SongManagement.Songs, func(i, j *songmanagementstate.SongInList) int {
-						return j.Index - i.Index
-					})
+					// Playlist
+					if sortSpecs.Specs().SortDirection() == imgui.SortDirectionAscending {
+						slices.SortStableFunc(state.PageStates.SongManagement.Songs, func(i, j *songmanagementstate.SongInList) int {
+							return strings.Compare(strings.ToLower(i.InPlaylists), strings.ToLower(j.InPlaylists))
+						})
+					} else {
+						slices.SortStableFunc(state.PageStates.SongManagement.Songs, func(i, j *songmanagementstate.SongInList) int {
+							return strings.Compare(strings.ToLower(j.InPlaylists), strings.ToLower(i.InPlaylists))
+						})
+					}
 				}
 			case 1: // Title
 				if sortSpecs.Specs().SortDirection() == imgui.SortDirectionAscending {
@@ -157,7 +185,7 @@ func Render(state *stateStructs.ApplicationState) {
 		multiSelectIO := imgui.BeginMultiSelectV(multiSelectFlags, state.PageStates.SongManagement.SelectionStorage.Size(), int32(len(state.PageStates.SongManagement.Songs)))
 		state.PageStates.SongManagement.SelectionStorage.ApplyRequests(multiSelectIO)
 
-		for _, song := range state.PageStates.SongManagement.Songs {
+		for songIndex, song := range state.PageStates.SongManagement.Songs {
 			imgui.TableNextRow()
 
 			// If we're visible, and image is nil but we have an ArtID, try to load the image
@@ -179,7 +207,7 @@ func Render(state *stateStructs.ApplicationState) {
 			startSongSize := imgui.CursorPosY()
 
 			// I hope that I'm never allowed to write UI code ever again.
-			// Used to align the album art descriptor
+			// Used to align the album art description
 			var cursorX float32
 			var cursorY float32
 
@@ -211,9 +239,9 @@ func Render(state *stateStructs.ApplicationState) {
 			// We use a dummy selectable to span all columns in a given row, for any selection/multi-selection actions
 			beforeSelectableCursorPos := imgui.CursorPos()
 
-			isSelected := state.PageStates.SongManagement.SelectionStorage.Contains(imgui.ID(song.Index))
-			imgui.SetNextItemSelectionUserData(imgui.SelectionUserData(song.Index))
-			imgui.PushIDInt(int32(song.Index))
+			isSelected := state.PageStates.SongManagement.SelectionStorage.Contains(imgui.ID(songIndex))
+			imgui.SetNextItemSelectionUserData(imgui.SelectionUserData(songIndex))
+			imgui.PushIDInt(int32(songIndex))
 
 			imgui.SelectableBoolV("##", isSelected, imgui.SelectableFlagsSpanAllColumns|imgui.SelectableFlagsAllowOverlap, imgui.Vec2{X: 0, Y: endSongSize - startSongSize - 2})
 			checkAndExecuteDragAndDrop(state)
@@ -224,10 +252,17 @@ func Render(state *stateStructs.ApplicationState) {
 			// Align vertically centered
 			imgui.SetCursorPosY(imgui.CursorPosY() + 5 + ((endSongSize - startSongSize) / 2) - imgui.TextLineHeight())
 
-			displayedIndex := utilities.WrapText(strconv.Itoa(song.Index + 1))
-			imgui.SetCursorPosX(imgui.CursorPosX() + imgui.ContentRegionAvail().X - imgui.CalcTextSize(displayedIndex).X)
+			if state.PageStates.SongManagement.IsCurrentlyDisplayingPlaylist {
+				displayedIndex := utilities.WrapText(strconv.Itoa(song.Index + 1))
+				imgui.SetCursorPosX(imgui.CursorPosX() + imgui.ContentRegionAvail().X - imgui.CalcTextSize(displayedIndex).X)
 
-			imgui.Text(displayedIndex)
+				imgui.Text(displayedIndex)
+			} else {
+				displayedPlaylist := utilities.WrapText(song.InPlaylists)
+				imgui.SetCursorPosX(imgui.CursorPosX() + imgui.ContentRegionAvail().X - imgui.CalcTextSize(displayedPlaylist).X)
+
+				imgui.Text(displayedPlaylist)
+			}
 
 			// Render the record column last
 			imgui.TableSetColumnIndex(2)

@@ -2,6 +2,8 @@ package songmanagement
 
 import (
 	"fmt"
+	"slices"
+	"strings"
 
 	stateStructs "git.lunr.sh/luna/eurydice/gui/state"
 	"git.lunr.sh/luna/eurydice/gui/state/database"
@@ -52,6 +54,66 @@ func BootstrapIndex(state *stateStructs.ApplicationState, playlistID uint) error
 
 	state.PageStates.SongManagement.PlaylistID = playlistID
 	state.PageStates.SongManagement.IsCurrentlyDisplayingPlaylist = true
+
+	imgui.SetScrollXFloat(0)
+	imgui.SetScrollYFloat(0)
+
+	state.PageStates.SongManagement.SelectionStorage.Clear()
+
+	return nil
+}
+
+func LoadAllSongs(state *stateStructs.ApplicationState) error {
+	// Clear out the existing songs in the state
+	for _, song := range state.PageStates.SongManagement.Songs {
+		if song.Image != nil {
+			utilities.UnloadImageFromArtID(state, song.ArtID)
+		}
+	}
+
+	state.PageStates.SongManagement.Songs = []*songmanagementstate.SongInList{}
+
+	songs := []database.PlaylistSong{}
+	foundSongs := map[uint]*songmanagementstate.SongInList{} // map of song ID to song in list
+
+	if err := state.Config.Database.Preload("Playlist").Preload("Song.CollabArtists").Preload("Song.PrimaryArtist").Preload("Song.Record").Where("library_id = ?", state.Config.ActiveLibraryID).Find(&songs).Error; err != nil {
+		return fmt.Errorf("failed to fetch song list: %w", err)
+	}
+
+	for _, songInDatabase := range songs {
+		if song, ok := foundSongs[songInDatabase.Song.ID]; ok {
+			song.InPlaylists += ", " + songInDatabase.Playlist.Name
+		} else {
+			// Build string list of all the artists
+			listOfAllArtists := []string{songInDatabase.Song.PrimaryArtist.Name}
+
+			for _, collaborator := range songInDatabase.Song.CollabArtists {
+				listOfAllArtists = append(listOfAllArtists, collaborator.Name)
+			}
+
+			displayedSong := &songmanagementstate.SongInList{
+				PlaylistContainerID: songInDatabase.ID,
+				SongID:              songInDatabase.SongID,
+				ArtID:               songInDatabase.Song.ArtID,
+				InPlaylists:         songInDatabase.Playlist.Name,
+				Name:                songInDatabase.Song.Title,
+				Record:              songInDatabase.Song.Record.Name,
+				Artists:             listOfAllArtists,
+			}
+
+			// Add the song to the displayed songs list, and the map of songs
+			state.PageStates.SongManagement.Songs = append(state.PageStates.SongManagement.Songs, displayedSong)
+			foundSongs[songInDatabase.Song.ID] = displayedSong
+		}
+	}
+
+	// Sort by playlists incase we add out of order
+	slices.SortStableFunc(state.PageStates.SongManagement.Songs, func(i, j *songmanagementstate.SongInList) int {
+		return strings.Compare(strings.ToLower(i.InPlaylists), strings.ToLower(j.InPlaylists))
+	})
+
+	state.PageStates.SongManagement.IsCurrentlyDisplayingPlaylist = false
+	state.PageStates.SongManagement.PlaylistID = 0 // TODO: is this safe?
 
 	imgui.SetScrollXFloat(0)
 	imgui.SetScrollYFloat(0)

@@ -26,16 +26,21 @@ func DeleteModalRender(state *stateStructs.ApplicationState) {
 			panic(fmt.Sprintf("Failed to delete playlist: %v", err))
 		}
 
+		if err := state.Config.Database.Where("playlist_id = ?", state.PageStates.PlaylistSelection.PlaylistToDelete.ID).Delete(&([]database.PlaylistSong{})).Error; err != nil {
+			panic(fmt.Sprintf("Failed to delete playlist contents: %v", err))
+		}
+
 		if err := BootstrapIndex(state); err != nil {
 			panic(fmt.Sprintf("Failed to re-bootstrap index: %v", err))
 		}
 
 		// Make ourselves not open anymore because we don't exist
-		if state.PageStates.SongManagement.PlaylistID == state.PageStates.PlaylistSelection.PlaylistToDelete.ID {
+		if state.PageStates.SongManagement.PlaylistID == state.PageStates.PlaylistSelection.PlaylistToDelete.ID || !state.PageStates.SongManagement.IsCurrentlyDisplayingPlaylist {
 			state.PageStates.PlaylistSelection.PlaylistToDelete = nil
-			state.PageStates.SongManagement.IsCurrentlyDisplayingPlaylist = false
-			state.PageStates.SongManagement.PlaylistID = 0
-			state.PageStates.SongManagement.Songs = nil
+
+			if err := songmanagement.LoadAllSongs(state); err != nil {
+				panic(fmt.Sprintf("Failed to load songs: %v", err))
+			}
 		}
 
 		imgui.CloseCurrentPopup()
@@ -69,6 +74,18 @@ func Render(state *stateStructs.ApplicationState) {
 	}
 
 	imgui.PopStyleVar()
+
+	imgui.Spacing()
+	imgui.Separator()
+	imgui.Spacing()
+
+	if imgui.SelectableBoolV("All Songs", !state.PageStates.SongManagement.IsCurrentlyDisplayingPlaylist, 0, imgui.Vec2{X: 0, Y: 0}) {
+		if state.PageStates.SongManagement.IsCurrentlyDisplayingPlaylist {
+			if err := songmanagement.LoadAllSongs(state); err != nil {
+				panic(fmt.Sprintf("Failed to load all songs: %v", err))
+			}
+		}
+	}
 
 	imgui.Spacing()
 	imgui.Separator()
@@ -109,6 +126,13 @@ func Render(state *stateStructs.ApplicationState) {
 
 					if err := BootstrapIndex(state); err != nil {
 						panic(fmt.Sprintf("Failed to re-bootstrap index: %v", err))
+					}
+
+					// Depends on accurate names, so reload once rename is complete
+					if !state.PageStates.SongManagement.IsCurrentlyDisplayingPlaylist {
+						if err := songmanagement.LoadAllSongs(state); err != nil {
+							panic(fmt.Sprintf("Failed to load songs: %v", err))
+						}
 					}
 				}
 			} else if imgui.IsKeyPressedBool(imgui.KeyEscape) {
@@ -160,16 +184,21 @@ func Render(state *stateStructs.ApplicationState) {
 					panic(fmt.Sprintf("Failed to delete playlist: %v", err))
 				}
 
+				if err := state.Config.Database.Where("playlist_id = ?", state.PageStates.PlaylistSelection.PlaylistToDelete.ID).Delete(&([]database.PlaylistSong{})).Error; err != nil {
+					panic(fmt.Sprintf("Failed to delete playlist contents: %v", err))
+				}
+
 				if err := BootstrapIndex(state); err != nil {
 					panic(fmt.Sprintf("Failed to re-bootstrap index: %v", err))
 				}
 
 				// Make ourselves not open anymore because we don't exist
-				if state.PageStates.SongManagement.PlaylistID == state.PageStates.PlaylistSelection.PlaylistToDelete.ID {
+				if state.PageStates.SongManagement.PlaylistID == state.PageStates.PlaylistSelection.PlaylistToDelete.ID || !state.PageStates.SongManagement.IsCurrentlyDisplayingPlaylist {
 					state.PageStates.PlaylistSelection.PlaylistToDelete = nil
-					state.PageStates.SongManagement.IsCurrentlyDisplayingPlaylist = false
-					state.PageStates.SongManagement.PlaylistID = 0
-					state.PageStates.SongManagement.Songs = nil
+
+					if err := songmanagement.LoadAllSongs(state); err != nil {
+						panic(fmt.Sprintf("Failed to load songs: %v", err))
+					}
 				}
 			} else {
 				state.PageStates.PlaylistSelection.PlaylistToDelete = playlist
