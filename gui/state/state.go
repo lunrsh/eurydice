@@ -20,6 +20,11 @@ type JSONConfig struct {
 	LibraryPath              string
 	HasOOBEFinished          bool
 	UpdateLocalLibraryOnOpen bool
+
+	// Compromise: Just creating an all songs playlist and adding/removing dynamically is easier than
+	// making a system to delete songs within all songs. It'd also be confusing to the user.
+	AutoAddToPlaylistID uint
+	AutoAddToPlaylists  bool
 }
 
 type ConfigState struct {

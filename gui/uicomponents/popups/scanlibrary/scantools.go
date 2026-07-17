@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 
@@ -99,7 +100,7 @@ func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 
 	delegatedSongsPerThread := make([][]string, cpuThreadCount)
 	waitGroup := sync.WaitGroup{}
-	databaseLockMutex := sync.Mutex{} // Used when we're initializing artists and records
+	databaseLockMutex := sync.Mutex{} // Used when we're touching the database
 
 	// Divide songs evenly
 	maxSongsPerThread := len(uniqueMusicFound) / cpuThreadCount
@@ -126,6 +127,14 @@ func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 			delegatedSongsPerThread[i] = uniqueMusicFound[startPosition:endPosition]
 		}
 	}
+
+	// Create a processing queue of all the playlist entries (if AutoAddToPlaylists is enabled), so we can
+	// sort the new ones by record, so it's not *completely* out of order. We could just make it sort by
+	// default on the frontend, but that might be confusing to the user, so we sort it in the database instead.
+	//
+	// We don't sort existing entries in the auto-sync playlist, because I really doubt that users care about
+	// that.
+	songsInAutoSyncPlaylist := make([]*database.PlaylistSong, 0, len(uniqueMusicFound))
 
 	// Start execution now!
 	for i := 0; i < cpuThreadCount; i++ {
@@ -293,10 +302,22 @@ func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 				songInformation.PrimaryArtistID = foundArtists[0].ID
 				songInformation.CollabArtists = foundArtists[1:]
 
+				songInformation.Record = *foundRecord
 				songInformation.RecordID = foundRecord.ID
 
 				databaseLockMutex.Lock()
 				state.Config.Database.Create(songInformation)
+
+				// Automatically add to the playlist if AutoAddToPlaylists is enabled
+				if state.Config.JSONConfig.AutoAddToPlaylists {
+					songsInAutoSyncPlaylist = append(songsInAutoSyncPlaylist, &database.PlaylistSong{
+						PlaylistID: state.Config.JSONConfig.AutoAddToPlaylistID,
+						SongID:     songInformation.ID,
+						Song:       *songInformation,
+						LibraryID:  state.Config.ActiveLibraryID,
+					})
+				}
+
 				databaseLockMutex.Unlock()
 
 				state.Logger.Debugf("ScanLibrary->backingThread->indexNewMusic: Successfully processed '%s' (%s)", songPath, songInformation.Title)
@@ -307,6 +328,27 @@ func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 	}
 
 	waitGroup.Wait()
+
+	// Used when adding songs to the auto-sync playlist
+	var currentIndexInAutoSyncPlaylist int64
+
+	// Get the highest index in the auto-sync playlist
+	if state.Config.JSONConfig.AutoAddToPlaylists {
+		state.Config.Database.Model(&database.PlaylistSong{}).Where("playlist_id = ?", state.Config.JSONConfig.AutoAddToPlaylistID).Count(&currentIndexInAutoSyncPlaylist)
+	}
+
+	// Sort by record, then add
+	slices.SortStableFunc(songsInAutoSyncPlaylist, func(i, j *database.PlaylistSong) int {
+		return strings.Compare(strings.ToLower(i.Song.Record.Name), strings.ToLower(j.Song.Record.Name))
+	})
+
+	for _, song := range songsInAutoSyncPlaylist {
+		song.SortIndex = int(currentIndexInAutoSyncPlaylist)
+		state.Config.Database.Create(song)
+		currentIndexInAutoSyncPlaylist++
+	}
+
+	// Now, sort the auto-sync playlist by record
 	return nil
 }
 

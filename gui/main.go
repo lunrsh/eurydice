@@ -52,21 +52,12 @@ func mainLoop() {
 	// Menu bar
 	if imgui.BeginMainMenuBar() {
 		if imgui.BeginMenu("File") {
-			if imgui.MenuItemBool("Open") {
-				// open
-			}
-
 			imgui.Separator()
 
 			if imgui.MenuItemBool("Exit") {
 				appState.CurrentImguiBackend.SetShouldClose(true)
 			}
 
-			imgui.EndMenu()
-		}
-
-		if imgui.BeginMenu("Misc") {
-			imgui.Button("Button")
 			imgui.EndMenu()
 		}
 
