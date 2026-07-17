@@ -9,7 +9,6 @@ import (
 	"git.lunr.sh/luna/eurydice/gui/state/database"
 	"git.lunr.sh/luna/eurydice/gui/state/widgetstate/songmanagementstate"
 	"git.lunr.sh/luna/eurydice/gui/utilities"
-	"github.com/AllenDang/cimgui-go/imgui"
 )
 
 func BootstrapIndex(state *stateStructs.ApplicationState, playlistID uint) error {
@@ -52,11 +51,14 @@ func BootstrapIndex(state *stateStructs.ApplicationState, playlistID uint) error
 		state.PageStates.SongManagement.Songs = append(state.PageStates.SongManagement.Songs, displayedSong)
 	}
 
+	// Sort by index incase we're out of order
+	slices.SortStableFunc(state.PageStates.SongManagement.Songs, func(i, j *songmanagementstate.SongInList) int {
+		return i.Index - j.Index
+	})
+
 	state.PageStates.SongManagement.PlaylistID = playlistID
 	state.PageStates.SongManagement.IsCurrentlyDisplayingPlaylist = true
-
-	imgui.SetScrollXFloat(0)
-	imgui.SetScrollYFloat(0)
+	state.PageStates.SongManagement.ShouldResetScrollState = true
 
 	state.PageStates.SongManagement.SelectionStorage.Clear()
 
@@ -114,9 +116,7 @@ func LoadAllSongs(state *stateStructs.ApplicationState) error {
 
 	state.PageStates.SongManagement.IsCurrentlyDisplayingPlaylist = false
 	state.PageStates.SongManagement.PlaylistID = 0 // TODO: is this safe?
-
-	imgui.SetScrollXFloat(0)
-	imgui.SetScrollYFloat(0)
+	state.PageStates.SongManagement.ShouldResetScrollState = true
 
 	state.PageStates.SongManagement.SelectionStorage.Clear()
 

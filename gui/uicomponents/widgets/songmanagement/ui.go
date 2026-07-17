@@ -109,6 +109,12 @@ func Render(state *stateStructs.ApplicationState) {
 	}
 
 	if imgui.BeginTableV(tableID, 3, tableFlags, imgui.Vec2{}, 0) {
+		if state.PageStates.SongManagement.ShouldResetScrollState {
+			imgui.SetScrollXFloat(0)
+			imgui.SetScrollYFloat(0)
+			state.PageStates.SongManagement.ShouldResetScrollState = false
+		}
+
 		imgui.TableSetupScrollFreeze(0, 1)
 
 		if state.PageStates.SongManagement.IsCurrentlyDisplayingPlaylist {

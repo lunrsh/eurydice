@@ -23,6 +23,8 @@ type SongManagementState struct {
 	PlaylistID                    uint // ID from the database
 	IsCurrentlyDisplayingPlaylist bool
 
+	ShouldResetScrollState bool // Hack because we use seperate imgui IDs
+
 	Songs []*SongInList
 
 	SelectionStorage *imgui.SelectionBasicStorage
