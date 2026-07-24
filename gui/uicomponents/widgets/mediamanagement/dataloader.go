@@ -9,7 +9,6 @@ import (
 	stateStructs "git.lunr.sh/luna/eurydice/gui/state"
 	"git.lunr.sh/luna/eurydice/gui/state/database"
 	"git.lunr.sh/luna/eurydice/gui/state/widgetstate/mediastate"
-	"git.lunr.sh/luna/eurydice/gui/utilities"
 	"github.com/AllenDang/cimgui-go/imgui"
 )
 
@@ -173,39 +172,14 @@ func DynLoadRecords(state *stateStructs.ApplicationState, artist *mediastate.Art
 	allUIRepresentedRecords := make([]*mediastate.RecordState, len(allRecordsFromArtist))
 
 	for recordIndex, record := range allRecordsFromArtist {
-		// Get consensus on the most popular art id for this record (hopefully they're all the same, but shit happens)
-		imageHashes := map[string]int{}
-
-		for _, song := range record.Songs {
-			imageHashes[song.ArtID]++
-		}
-
-		var mostPopularArtID string
-
-		for hash, count := range imageHashes {
-			if count > imageHashes[mostPopularArtID] {
-				mostPopularArtID = hash
-			}
-		}
-
 		var loadedImage *imgui.TextureRef
-
-		// Disable image loading on threads that aren't the main UI thread
-		if mostPopularArtID != "" && state.PageStates.MediaManagement.SortMethod != mediastate.SortSearch {
-			var err error
-			loadedImage, err = utilities.LoadImageFromArtID(state, mostPopularArtID)
-
-			if err != nil {
-				state.Logger.Errorf("Failed to load image for record '%s': %s", record.Name, err.Error())
-			}
-		}
 
 		// Don't populate songs here in order to lazy load later (to save memory)
 		allUIRepresentedRecords[recordIndex] = &mediastate.RecordState{
 			ID:              record.ID,
 			Title:           record.Name,
 			Image:           loadedImage,
-			ArtID:           mostPopularArtID,
+			ArtID:           record.ArtID,
 			AuthoringArtist: artist,
 		}
 	}
@@ -245,18 +219,11 @@ func DynLoadSongs(state *stateStructs.ApplicationState, record *mediastate.Recor
 
 		var loadedImage *imgui.TextureRef
 
-		if song.ArtID != "" && state.PageStates.MediaManagement.SortMethod != mediastate.SortSearch {
-			var err error
-			loadedImage, err = utilities.LoadImageFromArtID(state, song.ArtID)
-
-			if err != nil {
-				state.Logger.Errorf("Failed to load image for song '%s' from record '%s': %s", song.Title, record.Title, err.Error())
-			}
-		}
-
 		allUIRepresentedSongs[songIndex] = &mediastate.SongState{
 			ID:    song.ID,
 			ArtID: song.ArtID,
+
+			SortIndex: song.TrackNumber,
 
 			OnRecord: record,
 			Artists:  mediaCompatibleArtists,
@@ -265,6 +232,10 @@ func DynLoadSongs(state *stateStructs.ApplicationState, record *mediastate.Recor
 			Image: loadedImage,
 		}
 	}
+
+	slices.SortStableFunc(allUIRepresentedSongs, func(a, b *mediastate.SongState) int {
+		return a.SortIndex - b.SortIndex
+	})
 
 	return allUIRepresentedSongs, nil
 }

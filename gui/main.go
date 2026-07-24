@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -15,6 +16,7 @@ import (
 	"git.lunr.sh/luna/eurydice/gui/state/database"
 	"git.lunr.sh/luna/eurydice/gui/uicomponents/popups/firstboot"
 	"git.lunr.sh/luna/eurydice/gui/uicomponents/popups/scanlibrary"
+	"git.lunr.sh/luna/eurydice/gui/uicomponents/sync"
 	"git.lunr.sh/luna/eurydice/gui/uicomponents/widgets/mediamanagement"
 	"git.lunr.sh/luna/eurydice/gui/uicomponents/widgets/playlistmanagement"
 	"git.lunr.sh/luna/eurydice/gui/uicomponents/widgets/songmanagement"
@@ -60,6 +62,20 @@ func mainLoop() {
 
 			imgui.EndMenu()
 		}
+
+		if imgui.BeginPopupModalV("Error | Sync", nil, imgui.WindowFlagsAlwaysAutoResize) {
+			imgui.Text(appState.PageStates.Sync.ErrHint + "\n")
+
+			if imgui.ButtonV("Close", imgui.Vec2{}) {
+				imgui.CloseCurrentPopup()
+				imgui.EndPopup()
+			} else {
+				imgui.EndPopup()
+			}
+		}
+
+		imgui.SetCursorPosX(imgui.ContentRegionAvail().X - sync.ItemWidth/2)
+		sync.RenderButton(appState)
 
 		imgui.EndMainMenuBar()
 	}
@@ -189,7 +205,7 @@ func mainLoop() {
 	if appState.Config.JSONConfig.UpdateLocalLibraryOnOpen && !appState.PageStates.FirstBoot.HasFirstbootPageOpenedAlready && !appState.PageStates.LibraryScan.HasLibraryScanPageOpenedAlready {
 		appState.PageStates.LibraryScan.HasLibraryScanPageOpenedAlready = true
 		imgui.OpenPopupStr("Scanning Library...")
-		appState.Logger.Debug("running library scanner")
+		appState.Logger.Debug("Running library scanner")
 	}
 
 	if imgui.BeginPopupModalV("First Launch Wizard", nil, imgui.WindowFlagsAlwaysAutoResize) {
@@ -201,7 +217,7 @@ func mainLoop() {
 	}
 
 	// "inline" this because it's so simple
-	// TODO: imgui supports nested modals, but we don't utilize it
+	// TODO: imgui supports nested modals, but we don't utilize it currently
 	if imgui.BeginPopupModalV("Error | First Launch Wizard", nil, imgui.WindowFlagsAlwaysAutoResize) ||
 		imgui.BeginPopupModalV("Library Initialization Error | Eurydice Startup", nil, imgui.WindowFlagsAlwaysAutoResize) {
 		imgui.Text(appState.PageStates.FirstBoot.ErrHint + "\n")
@@ -235,20 +251,20 @@ func main() {
 			err = os.Remove(logFilePath) // Attempt to delete the existing file
 
 			if err != nil {
-				log.Infof("failed to delete existing log file: %s", err.Error())
+				log.Infof("failed to delete existing log file: %v", err)
 				logFile = nil
 			} else {
 				// Once successful, recreate the log file
 				logFile, err = os.Create(logFilePath)
 
 				if err != nil {
-					log.Infof("failed to create log file: %s", err.Error())
+					log.Infof("failed to create log file: %v", err)
 					logFile = nil
 				}
 			}
 		} else {
 			// Some other error - display and give up
-			log.Infof("failed to create log file: %s", err.Error())
+			log.Infof("failed to create log file: %v", err)
 			logFile = nil
 		}
 	}
@@ -299,7 +315,7 @@ func main() {
 	globalConfigDirectory, err := os.UserConfigDir()
 
 	if err != nil {
-		panic(fmt.Sprintf("Failed to get config directory: %s", err.Error()))
+		panic(fmt.Sprintf("Failed to get config directory: %v", err))
 	}
 
 	pathArguments := make([]string, 1+len(EurydiceSavePath))
@@ -310,17 +326,17 @@ func main() {
 
 	// First, make the main application state directory (since we're doing MkdirAll, also make config here to kill 2 birds with one stone)
 	if err = os.MkdirAll(filepath.Join(applicationStatePath, "config"), 0755); err != nil && !errors.Is(err, os.ErrExist) {
-		panic(fmt.Sprintf("Failed to create application state directory: %s", err.Error()))
+		panic(fmt.Sprintf("Failed to create application state directory: %v", err))
 	}
 
 	// Then, make the application assets directory (when we do UI customization in the near future)
 	if err = os.MkdirAll(filepath.Join(applicationStatePath, "assets"), 0755); err != nil && !errors.Is(err, os.ErrExist) {
-		panic(fmt.Sprintf("Failed to create application assets directory: %s", err.Error()))
+		panic(fmt.Sprintf("Failed to create application assets directory: %v", err))
 	}
 
 	// Finally, make the thumbnail database directory
 	if err = os.MkdirAll(filepath.Join(applicationStatePath, "thumbnails"), 0755); err != nil && !errors.Is(err, os.ErrExist) {
-		panic(fmt.Sprintf("Failed to create thumbnail database directory: %s", err.Error()))
+		panic(fmt.Sprintf("Failed to create thumbnail database directory: %v", err))
 	}
 
 	// Initialize application state files (song database, etc.)
@@ -330,6 +346,7 @@ func main() {
 	if err != nil {
 		// Check if the file doesn't exist, and if it doesn't write it. Else, crash.
 		if errors.Is(err, os.ErrNotExist) {
+			appConfig.InstallationID = rand.Uint() // Generate a random installation ID
 			marshalledConfig, err := json.Marshal(appConfig)
 
 			if err != nil {
@@ -350,6 +367,22 @@ func main() {
 
 		if err != nil {
 			panic(fmt.Sprintf("Failed to parse configuration file: %s (try deleting the config directory?)", err.Error()))
+		}
+	}
+
+	// User is running an older build of Eurydice that doesn't have an installation ID set, so we set one
+	if appConfig.InstallationID == 0 {
+		logger.Warn("InstallationID is not set, generating a new one!")
+		appConfig.InstallationID = rand.Uint()
+
+		marshalledConfig, err := json.Marshal(appConfig)
+
+		if err != nil {
+			panic(fmt.Sprintf("Failed to marshal configuration: %v", err))
+		}
+
+		if err = os.WriteFile(filepath.Join(applicationStatePath, "config.json"), marshalledConfig, 0644); err != nil {
+			panic(fmt.Sprintf("Failed to write JSON configuration: %s (try deleting the config directory?)", err.Error()))
 		}
 	}
 
@@ -394,7 +427,7 @@ func main() {
 	appState.CurrentImguiBackend, err = backend.CreateBackend(glfwbackend.NewGLFWBackend())
 
 	if err != nil {
-		panic(fmt.Sprintf("Failed to initialize UI: %s", err.Error()))
+		panic(fmt.Sprintf("Failed to initialize UI: %v", err))
 	}
 
 	appState.CurrentImguiBackend.SetAfterCreateContextHook(func() {

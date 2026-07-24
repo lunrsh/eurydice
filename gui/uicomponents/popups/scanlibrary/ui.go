@@ -18,15 +18,15 @@ func Render(state *stateStructs.ApplicationState) {
 	if state.PageStates.LibraryScan.StepNo == scanstate.StepFinished {
 		// Step 5 needs to run on the main thread, so a bit of a hack, but once we reach StepFinished, initialize the indexers
 		if err := mediamanagement.BootstrapIndex(state); err != nil {
-			panic(fmt.Sprintf("Failed to bootstrap media management index: %s", err.Error()))
+			panic(fmt.Sprintf("Failed to bootstrap media management index: %v", err))
 		}
 
 		if err := playlistmanagement.BootstrapIndex(state); err != nil {
-			panic(fmt.Sprintf("Failed to bootstrap playlist management index: %s", err.Error()))
+			panic(fmt.Sprintf("Failed to bootstrap playlist management index: %v", err))
 		}
 
 		if err := songmanagement.LoadAllSongs(state); err != nil {
-			panic(fmt.Sprintf("Failed to bootstrap song management index: %s", err.Error()))
+			panic(fmt.Sprintf("Failed to bootstrap song management index: %v", err))
 		}
 
 		// Now we're done!

@@ -259,12 +259,12 @@ func Render(state *stateStructs.ApplicationState) {
 		if dragDropPayload.CData != nil && dragDropPayload.Delivery() {
 			// Add songs to playlist
 			if err := utilities.HandleSongDragDrop(state, dragDropPayload, state.PageStates.SongManagement.PlaylistID); err != nil {
-				state.Logger.Errorf("Failed to handle song drag drop: %s", err.Error())
+				state.Logger.Errorf("Failed to handle song drag drop: %v", err)
 			}
 
 			// Reinitialize the index
 			if err := BootstrapIndex(state, state.PageStates.SongManagement.PlaylistID); err != nil {
-				panic(fmt.Sprintf("Failed to re-bootstrap song index: %s", err.Error()))
+				panic(fmt.Sprintf("Failed to re-bootstrap song index: %v", err))
 			}
 		}
 

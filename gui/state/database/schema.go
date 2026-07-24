@@ -9,16 +9,18 @@ type Song struct {
 	ArtID string
 
 	PrimaryArtistID uint
-	PrimaryArtist   Artist
+	PrimaryArtist   *Artist
 
 	CollabArtists []*Artist `gorm:"many2many:song_other_artists;"`
-	PlaylistSongs []PlaylistSong
+	PlaylistSongs []*PlaylistSong
 
 	RecordID uint
-	Record   Record
+	Record   *Record
+
+	TrackNumber int
 
 	LibraryID uint
-	Library   Library
+	Library   *Library
 
 	RelativePathFromLibrary string
 }
@@ -28,27 +30,28 @@ type Artist struct {
 
 	Name string
 
-	PrimarySongs []Song  `gorm:"foreignKey:PrimaryArtistID"`
+	PrimarySongs []*Song `gorm:"foreignKey:PrimaryArtistID"`
 	CollabSongs  []*Song `gorm:"many2many:song_other_artists;"`
 
-	Records []Record `gorm:"foreignKey:ArtistID"`
+	Records []*Record `gorm:"foreignKey:ArtistID"`
 
 	LibraryID uint
-	Library   Library
+	Library   *Library
 }
 
 type Record struct {
 	gorm.Model
 
-	Name string
+	Name  string
+	ArtID string
 
 	ArtistID uint
-	Artist   Artist
+	Artist   *Artist
 
-	Songs []Song
+	Songs []*Song
 
 	LibraryID uint
-	Library   Library
+	Library   *Library
 }
 
 // We don't use many2many relationships here because sort order is indeterminate
@@ -58,23 +61,23 @@ type PlaylistSong struct {
 	SortIndex int
 
 	LibraryID uint
-	Library   Library
+	Library   *Library
 
 	SongID uint
-	Song   Song
+	Song   *Song
 
 	PlaylistID uint
-	Playlist   Playlist
+	Playlist   *Playlist
 }
 
 type Playlist struct {
 	gorm.Model
 
 	Name  string
-	Songs []PlaylistSong
+	Songs []*PlaylistSong
 
 	LibraryID uint
-	Library   Library
+	Library   *Library
 }
 
 type Library struct {
@@ -82,8 +85,8 @@ type Library struct {
 
 	LibraryPath string
 
-	Artists   []Artist
-	Songs     []Song
-	Records   []Record
-	Playlists []Playlist
+	Artists   []*Artist
+	Songs     []*Song
+	Records   []*Record
+	Playlists []*Playlist
 }

@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -25,6 +26,28 @@ import (
 	"golang.org/x/image/draw"
 	"gorm.io/gorm"
 )
+
+// Gets the song record index based off speculation based on the song's title and artist
+func speculateSongRecordIndex(state *stateStructs.ApplicationState, recordName string, artistName string) int {
+	artist := &database.Artist{}
+
+	if err := state.Config.Database.Model(&database.Artist{}).Where("library_id = ? AND name = ?", state.Config.ActiveLibraryID, artistName).First(artist).Error; err != nil {
+		state.Logger.Warnf("ScanLibrary->backingThread->indexNewMusic->speculateSongRecordIndex: Failed to find artist: %v", err)
+		return 0
+	}
+
+	record := &database.Record{}
+
+	if err := state.Config.Database.Model(&database.Record{}).Where("artist_id = ? AND name = ?", artist.ID, recordName).First(record).Error; err != nil {
+		state.Logger.Warnf("ScanLibrary->backingThread->indexNewMusic->speculateSongRecordIndex: Failed to find record: %v", err)
+		return 0
+	}
+
+	var currentSongCount int64
+	state.Config.Database.Model(&database.Song{}).Where("record_id = ?", record.ID).Count(&currentSongCount)
+
+	return int(currentSongCount)
+}
 
 // Finds all music files in the library path and returns them as a slice of paths.
 // Used internally for scanning the library (backingThread, step 1).
@@ -134,7 +157,13 @@ func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 	//
 	// We don't sort existing entries in the auto-sync playlist, because I really doubt that users care about
 	// that.
-	songsInAutoSyncPlaylist := make([]*database.PlaylistSong, 0, len(uniqueMusicFound))
+	var songsInAutoSyncPlaylist []*database.PlaylistSong
+
+	if state.Config.JSONConfig.AutoAddToPlaylists {
+		songsInAutoSyncPlaylist = make([]*database.PlaylistSong, 0, len(uniqueMusicFound))
+	}
+
+	newRecordsAdded := make([]*database.Record, 0)
 
 	// Start execution now!
 	for i := 0; i < cpuThreadCount; i++ {
@@ -152,8 +181,11 @@ func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 
 				var (
 					songRecord  string
-					songArtID   string
 					songArtists []string
+
+					songArtID string
+
+					wasUnableToFetchTrackNumber bool
 				)
 
 				songInformation := &database.Song{
@@ -165,12 +197,6 @@ func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 					songInformation.Title = title[0]
 				} else {
 					songInformation.Title = filepath.Base(songPath)
-				}
-
-				if record, ok := properties[taglib.Album]; ok && len(record) > 0 {
-					songRecord = record[0]
-				} else {
-					songRecord = "Unknown Album"
 				}
 
 				// I don't think the Artists property is used often, but if it is, let's rely on it
@@ -201,12 +227,96 @@ func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 					songArtists = append(songArtists, "Unknown Artist")
 				}
 
+				// Fetch the album
+				if record, ok := properties[taglib.Album]; ok && len(record) > 0 {
+					songRecord = record[0]
+				} else {
+					songRecord = "Unknown Album"
+				}
+
+				// Attempt to fetch the track number, and failing that (or if we succeed, but it's a multi-disc record), use speculation to determine our index
+				if trackNumberList, ok := properties[taglib.TrackNumber]; ok && len(trackNumberList) > 0 {
+					trackNumberSlashIndex := strings.Index(trackNumberList[0], "/")
+					trackNumberStr := trackNumberList[0]
+
+					// Why can't it just be universal?? Why the fuck?
+					if trackNumberSlashIndex != -1 {
+						trackNumberStr = trackNumberStr[:trackNumberSlashIndex]
+					}
+
+					if discNumbersList, ok := properties[taglib.DiscNumber]; ok && len(discNumbersList) > 0 {
+						discNumberStr := discNumbersList[0]
+						discNumberSlashIndex := strings.Index(discNumberStr, "/")
+
+						if discNumberSlashIndex != -1 {
+							discNumberStr = discNumberStr[:discNumberSlashIndex]
+						}
+
+						discNumber, err := strconv.Atoi(discNumberStr)
+
+						if err != nil {
+							state.Logger.Warnf("Failed to parse disc number (err: %v). Defaulting to 1, and hoping for the best...", err)
+							songInformation.TrackNumber, err = strconv.Atoi(trackNumberStr)
+
+							if err != nil {
+								panic(fmt.Sprintf("failed to parse track number: %v", err))
+							}
+
+							songInformation.TrackNumber-- // Convert to 0-based index
+						} else if discNumber > 1 {
+							// Oh for FUCK'S sake. Nasty hack incoming:
+							//
+							// We are too lazy to implement multi-disc records because I doubt anyone actually cares, so instead, if we encounter one,
+							// we just speculate about the future track numbers and assign them sequentially based on the position in the database.
+							//
+							// We *have* to speculate because the track numbers are going to be based on an entirely different point of reference
+							// per-disc.
+							//
+							// This "works" because, when we divide the songs evenly across threads, there's a decent chance that all the songs from
+							// a particular record are on the same thread as this one, and somehow are ordered perfectly.
+							//
+							// To be sure, we lock the database fully during this song. You can never know.
+							//
+							// ...I am so sorry. Please let this be the last fucking hack in this app.
+
+							state.Logger.Warn("BIG WARNING: EURYDICE DOES NOT SUPPORT MULTIPLE DISCS, AND WE HAVE FOUND A MULTIPLE DISC TRACK. Ignoring the TrackNumber and instead using speculation to determine the track number. YOU MAY HAVE TO FIX THIS.")
+							wasUnableToFetchTrackNumber = true
+							databaseLockMutex.Lock() // Lock until we add because we do ordering based on the position in the database
+
+							songInformation.TrackNumber = speculateSongRecordIndex(state, songRecord, songArtists[0])
+						} else {
+							songInformation.TrackNumber, err = strconv.Atoi(trackNumberStr)
+
+							if err != nil {
+								panic(fmt.Sprintf("failed to parse track number: %v", err))
+							}
+
+							songInformation.TrackNumber-- // Convert to 0-based index
+						}
+					} else {
+						songInformation.TrackNumber, err = strconv.Atoi(trackNumberStr)
+
+						if err != nil {
+							panic(fmt.Sprintf("failed to parse track number: %v", err))
+						}
+
+						songInformation.TrackNumber-- // Convert to 0-based index
+					}
+				} else {
+					wasUnableToFetchTrackNumber = true
+					databaseLockMutex.Lock() // Lock until we add because we do ordering based on the position in the database
+
+					songInformation.TrackNumber = speculateSongRecordIndex(state, songRecord, songArtists[0])
+				}
+
 				foundArtists := make([]*database.Artist, len(songArtists))
 
 				// Add artists (if they don't exist) into the database
 				for i, artistName := range songArtists {
 					// Try to find the artist first
-					databaseLockMutex.Lock()
+					if !wasUnableToFetchTrackNumber {
+						databaseLockMutex.Lock()
+					}
 
 					if err = state.Config.Database.Where("library_id = ? AND name = ?", state.Config.ActiveLibraryID, artistName).First(&foundArtists[i]).Error; err != nil {
 						if err == gorm.ErrRecordNotFound {
@@ -220,14 +330,22 @@ func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 						}
 					}
 
-					databaseLockMutex.Unlock()
+					if !wasUnableToFetchTrackNumber {
+						databaseLockMutex.Unlock()
+					}
 				}
 
 				foundRecord := &database.Record{}
 
 				// Add records (defined as LPs and EPs) into the database
-				// Lock now so we don't have a TOCTOU condition
-				databaseLockMutex.Lock()
+				// We lock the database (normally) now so we don't have a TOCTOU condition
+				//
+				// However, we also check if we were unable to fetch the record index from the database, and if we did,
+				// we don't lock the database here as we are doing a global lock of everything to ensure nothing at all gets added/deleted
+				// by not unlocking it until the end
+				if !wasUnableToFetchTrackNumber {
+					databaseLockMutex.Lock()
+				}
 
 				if err = state.Config.Database.Where("library_id = ? AND name = ? AND artist_id = ?", state.Config.ActiveLibraryID, songRecord, foundArtists[0].ID).First(foundRecord).Error; err != nil {
 					if err == gorm.ErrRecordNotFound {
@@ -238,12 +356,15 @@ func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 						foundRecord.ArtistID = foundArtists[0].ID
 
 						state.Config.Database.Create(foundRecord)
+						newRecordsAdded = append(newRecordsAdded, foundRecord)
 					} else {
 						state.Logger.Debugf("ScanLibrary->backingThread->indexNewMusic: Failed to fetch record '%s' from database: %s", songRecord, err.Error())
 					}
 				}
 
-				databaseLockMutex.Unlock()
+				if !wasUnableToFetchTrackNumber {
+					databaseLockMutex.Unlock()
+				}
 
 				// Write the album art to local storage
 				// Nested if statements because if we return or continue we won't write to the database. Sorry.
@@ -261,7 +382,9 @@ func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 							songArtID = string(imageHashAsString)
 
 							// Check if the image already exists. Run a databaseLockMutex to prevent TOCTOU or double-write
-							databaseLockMutex.Lock()
+							if !wasUnableToFetchTrackNumber {
+								databaseLockMutex.Lock()
+							}
 
 							if _, err := os.ReadFile(filepath.Join(state.Config.AppStatePath, "thumbnails", string(imageHashAsString))); !os.IsExist(err) {
 								// Downscale image and then write it
@@ -285,7 +408,9 @@ func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 								}
 							}
 
-							databaseLockMutex.Unlock()
+							if !wasUnableToFetchTrackNumber {
+								databaseLockMutex.Unlock()
+							}
 						} else {
 							state.Logger.Errorf("ScanLibrary->backingThread->indexNewMusic: Failed to hash embedded image in '%s': %s", songPath, err.Error())
 						}
@@ -302,10 +427,13 @@ func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 				songInformation.PrimaryArtistID = foundArtists[0].ID
 				songInformation.CollabArtists = foundArtists[1:]
 
-				songInformation.Record = *foundRecord
+				songInformation.Record = foundRecord
 				songInformation.RecordID = foundRecord.ID
 
-				databaseLockMutex.Lock()
+				if !wasUnableToFetchTrackNumber {
+					databaseLockMutex.Lock()
+				}
+
 				state.Config.Database.Create(songInformation)
 
 				// Automatically add to the playlist if AutoAddToPlaylists is enabled
@@ -313,11 +441,13 @@ func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 					songsInAutoSyncPlaylist = append(songsInAutoSyncPlaylist, &database.PlaylistSong{
 						PlaylistID: state.Config.JSONConfig.AutoAddToPlaylistID,
 						SongID:     songInformation.ID,
-						Song:       *songInformation,
+						Song:       songInformation,
 						LibraryID:  state.Config.ActiveLibraryID,
 					})
 				}
 
+				// We want to unlock the database lock mutex regardless of whether we were unable to fetch the record index because
+				// either way we need to unlock it so other threads can access the database
 				databaseLockMutex.Unlock()
 
 				state.Logger.Debugf("ScanLibrary->backingThread->indexNewMusic: Successfully processed '%s' (%s)", songPath, songInformation.Title)
@@ -348,7 +478,43 @@ func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 		currentIndexInAutoSyncPlaylist++
 	}
 
-	// Now, sort the auto-sync playlist by record
+	// Attempt to build a likely ArtID for each new record by finding the most common ArtID
+	for _, record := range newRecordsAdded {
+		songs := []*database.Song{}
+
+		if err := state.Config.Database.Model(&database.Song{}).Where("record_id = ?", record.ID).Find(&songs).Error; err != nil {
+			return fmt.Errorf("failed to find songs for record '%s': %w", record.Name, err)
+		}
+
+		if len(songs) == 0 {
+			state.Logger.Warnf("No songs found for record '%s' during ArtID calculation. This should not happen!", record.Name)
+			continue
+		}
+
+		mostPopularArtIDs := map[string]int{}
+
+		for _, song := range songs {
+			mostPopularArtIDs[song.ArtID]++
+		}
+
+		var mostPopularArtID string
+		maxCount := 0
+
+		for artID, count := range mostPopularArtIDs {
+			if count > maxCount {
+				maxCount = count
+				mostPopularArtID = artID
+			}
+		}
+
+		if record.ArtID != "" {
+			continue
+		}
+
+		record.ArtID = mostPopularArtID
+		state.Config.Database.Save(record)
+	}
+
 	return nil
 }
 
@@ -464,7 +630,7 @@ func backingThread(state *stateStructs.ApplicationState) {
 	uniqueMusicFound, err := findNonindexedMusic(state, allMusicFound)
 
 	if err != nil {
-		panic(fmt.Sprintf("Failed to find unique music library directories: %s", err.Error()))
+		panic(fmt.Sprintf("Failed to find unique music library directories: %v", err))
 	}
 
 	// If we have no unique music found, we jump to the code that cleans up the database (remove entries that are no longer in the filesystem)
@@ -479,7 +645,7 @@ func backingThread(state *stateStructs.ApplicationState) {
 	state.PageStates.LibraryScan.StepNo = scanstate.StepAddingSongs
 
 	if err = indexNewMusic(state, uniqueMusicFound); err != nil {
-		panic(fmt.Sprintf("Failed to index new music: %s", err.Error()))
+		panic(fmt.Sprintf("Failed to index new music: %v", err))
 	}
 
 	// Step 4: cleanup database (remove entries that are no longer in the filesystem)
@@ -487,7 +653,7 @@ cleanupDatabaseStep:
 	state.PageStates.LibraryScan.StepNo = scanstate.StepCleaningUp
 
 	if err = cleanupDatabase(state, allMusicFound); err != nil {
-		panic(fmt.Sprintf("Failed to cleanup database: %s", err.Error()))
+		panic(fmt.Sprintf("Failed to cleanup database: %v", err))
 	}
 
 	// Show that we're done!

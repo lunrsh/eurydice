@@ -34,7 +34,7 @@ func Render(state *stateStructs.ApplicationState) {
 			musicLibrary, err := dialog.Directory().Title("Music Library Location").Browse()
 
 			if err != nil {
-				state.Logger.Warnf("Failed to get audio directory: %s", err.Error())
+				state.Logger.Warnf("Failed to get audio directory: %v", err)
 			} else {
 				state.Logger.Infof("got text buf: %s", musicLibrary)
 				state.Config.JSONConfig.LibraryPath = musicLibrary

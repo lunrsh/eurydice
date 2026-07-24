@@ -21,6 +21,8 @@ type SongState struct {
 	ID      uint // ID from the database
 	ImguiID imgui.ID
 
+	SortIndex int
+
 	Artists []*ArtistState
 	Title   string
 

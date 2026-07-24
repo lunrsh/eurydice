@@ -51,31 +51,31 @@ func ICanHazPanicDisplay() {
 	crashTitleBuf, err := base64.StdEncoding.DecodeString(os.Getenv("EURYDICE_CRASH_TITLE"))
 
 	if err != nil {
-		log.Fatalf("failed to decode crash title: %s", err.Error())
+		log.Fatalf("failed to decode crash title: %v", err)
 	}
 
 	crashErrorBuf, err := base64.StdEncoding.DecodeString(os.Getenv("EURYDICE_CRASH_ERROR"))
 
 	if err != nil {
-		log.Fatalf("failed to decode crash error: %s", err.Error())
+		log.Fatalf("failed to decode crash error: %v", err)
 	}
 
 	crashFileBuf, err := base64.StdEncoding.DecodeString(os.Getenv("EURYDICE_CRASH_TO_FILE"))
 
 	if err != nil {
-		log.Fatalf("failed to decode crash file path: %s", err.Error())
+		log.Fatalf("failed to decode crash file path: %v", err)
 	}
 
 	stackTraceBuf, err := base64.StdEncoding.DecodeString(os.Getenv("EURYDICE_STACK_TRACE"))
 
 	if err != nil {
-		log.Fatalf("failed to decode stack trace: %s", err.Error())
+		log.Fatalf("failed to decode stack trace: %v", err)
 	}
 
 	glfwBackend, err := backend.CreateBackend(glfwbackend.NewGLFWBackend())
 
 	if err != nil {
-		log.Fatalf("failed to initialize GLFW window to display panic! error: %s", err.Error())
+		log.Fatalf("failed to initialize GLFW window to display panic! error: %v", err)
 	}
 
 	// Write crash log to file

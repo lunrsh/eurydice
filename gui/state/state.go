@@ -6,6 +6,7 @@ import (
 
 	"git.lunr.sh/luna/eurydice/gui/state/popupstate/scanstate"
 	"git.lunr.sh/luna/eurydice/gui/state/popupstate/setupstate"
+	"git.lunr.sh/luna/eurydice/gui/state/syncstate"
 	"git.lunr.sh/luna/eurydice/gui/state/widgetstate/mediastate"
 	"git.lunr.sh/luna/eurydice/gui/state/widgetstate/playlistselectionstate"
 	"git.lunr.sh/luna/eurydice/gui/state/widgetstate/songmanagementstate"
@@ -17,14 +18,22 @@ import (
 )
 
 type JSONConfig struct {
+	InstallationID           uint
 	LibraryPath              string
 	HasOOBEFinished          bool
 	UpdateLocalLibraryOnOpen bool
 
 	// Compromise: Just creating an all songs playlist and adding/removing dynamically is easier than
 	// making a system to delete songs within all songs. It'd also be confusing to the user.
+	//
+	// FIXME: when switching to the multi-library mechanism, AutoAddToPlaylists and AutoAddToPlaylistID will need to be per-library
 	AutoAddToPlaylistID uint
 	AutoAddToPlaylists  bool
+
+	// Sync settings
+	DeleteOldSongs     bool
+	DeleteOldPlaylists bool
+	AudioQuality       int32
 }
 
 type ConfigState struct {
@@ -50,6 +59,7 @@ type IndividualPageStates struct {
 	PlaylistSelection playlistselectionstate.PlaylistSelectionState
 	MediaManagement   mediastate.MediaState
 	SongManagement    songmanagementstate.SongManagementState
+	Sync              syncstate.SyncState
 }
 
 type ApplicationState struct {

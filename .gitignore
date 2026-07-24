@@ -27,3 +27,6 @@ go.work.sum
 
 # ---> Eurydice
 gui/gui
+
+# ---> Apple (metadata)
+.DS_Store

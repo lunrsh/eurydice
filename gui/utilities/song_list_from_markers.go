@@ -36,7 +36,7 @@ func GetSongListFromMarkers(state *stateStructs.ApplicationState, markerList []i
 			}
 
 			for _, song := range record.Songs {
-				songList = append(songList, &song)
+				songList = append(songList, song)
 			}
 		case mediastate.StateIDArtist:
 			// Get all records, then songs from said records
@@ -50,7 +50,7 @@ func GetSongListFromMarkers(state *stateStructs.ApplicationState, markerList []i
 
 			for _, record := range records {
 				for _, song := range record.Songs {
-					songList = append(songList, &song)
+					songList = append(songList, song)
 				}
 			}
 		default:

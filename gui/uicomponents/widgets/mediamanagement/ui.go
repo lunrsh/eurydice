@@ -367,7 +367,7 @@ func Render(state *stateStructs.ApplicationState) {
 	multiSelectIO := imgui.BeginMultiSelectV(multiSelectFlags, state.PageStates.MediaManagement.SelectionStorage.Size(), -1)
 
 	if err := applySelectionRequests(multiSelectIO, state); err != nil {
-		state.Logger.Error("Failed to apply selection requests: %s", err.Error())
+		state.Logger.Error("Failed to apply selection requests: %v", err)
 	}
 
 	// Render UI elements
@@ -389,7 +389,7 @@ func Render(state *stateStructs.ApplicationState) {
 	multiSelectIO = imgui.EndMultiSelect()
 
 	if err := applySelectionRequests(multiSelectIO, state); err != nil {
-		state.Logger.Error("Failed to apply selection requests: %s", err.Error())
+		state.Logger.Error("Failed to apply selection requests: %v", err)
 	}
 
 	imgui.EndChild()
