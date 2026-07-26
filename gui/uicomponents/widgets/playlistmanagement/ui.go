@@ -112,7 +112,7 @@ func Render(state *stateStructs.ApplicationState) {
 
 	for _, playlist := range state.PageStates.PlaylistSelection.Playlists {
 		imgui.AlignTextToFramePadding()
-		selectableSize := imgui.Vec2{X: contentRegion.X - (28 * 2), Y: 0}
+		selectableSize := imgui.Vec2{X: contentRegion.X - (26 * 2), Y: 0}
 
 		if playlist.IsRenaming {
 			imgui.PushItemWidth(selectableSize.X)
@@ -256,7 +256,7 @@ func Render(state *stateStructs.ApplicationState) {
 		imgui.PushFont(state.FontIcons, 14)
 		imgui.SetCursorPosX(imgui.CursorPosX() + 2)
 
-		if imgui.SelectableBoolV("\uf044##"+playlist.Name, playlist.IsRenaming, 0, imgui.Vec2{X: 14, Y: 0}) {
+		if imgui.SelectableBoolV("\uf044##"+playlist.Name, playlist.IsRenaming, 0, imgui.Vec2{X: 17, Y: 0}) {
 			playlist.IsRenaming = true
 			playlist.HasKeyboardFocusSetYet = false
 			playlist.RenameBuf = playlist.Name
