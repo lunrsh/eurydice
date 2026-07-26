@@ -65,10 +65,11 @@ func SetupCatppuccinMochaTheme(state *stateStructs.ApplicationState) {
 	colors[imgui.ColTab] = Surface0
 	colors[imgui.ColTabHovered] = Surface2
 	colors[imgui.ColTabSelected] = Surface2
+	colors[imgui.ColTabSelectedOverline] = Peach
+	colors[imgui.ColTabDimmed] = Surface0
+	colors[imgui.ColTabDimmedSelected] = Surface1
+	colors[imgui.ColTabDimmedSelectedOverline] = Surface2
 	colors[imgui.WindowDockStyleColTabFocused] = Surface1
-	//colors[imgui.ColorTabActive] = surface1
-	//colors[imgui.ColTabUnfocused] = surface0
-	//colors[imgui.ColTabUnfocusedActive] = surface1
 	colors[imgui.ColDockingPreview] = Sapphire
 	colors[imgui.ColDockingEmptyBg] = Base
 	colors[imgui.ColPlotLines] = Blue
