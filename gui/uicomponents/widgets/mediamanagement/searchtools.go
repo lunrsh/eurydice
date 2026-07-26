@@ -27,7 +27,7 @@ func backgroundSearchDaemon(state *stateStructs.ApplicationState) {
 	// Set up crash handler
 	defer func() {
 		if err := recover(); err != nil {
-			oncrash.Panic("Eurydice has crashed", fmt.Sprintf("Uncaught exception in background task: %s", err), state.Logger, state.LogFilePath)
+			oncrash.Panic("Eurydice crash handler", fmt.Sprintf("Uncaught exception in background task: %s", err), state.Logger, state.LogFilePath)
 		}
 	}()
 

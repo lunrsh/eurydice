@@ -312,7 +312,7 @@ func main() {
 	// Register our crash handlers now
 	defer func() {
 		if err := recover(); err != nil {
-			oncrash.Panic("Eurydice has crashed", fmt.Sprintf("Uncaught exception: %s", err), logger, logFilePath)
+			oncrash.Panic("Eurydice crash handler", fmt.Sprintf("Uncaught exception: %s", err), logger, logFilePath)
 			os.Exit(1)
 		}
 	}()

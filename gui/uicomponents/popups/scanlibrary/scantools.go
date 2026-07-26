@@ -603,7 +603,7 @@ func backingThread(state *stateStructs.ApplicationState) {
 	// Set up crash handler
 	defer func() {
 		if err := recover(); err != nil {
-			oncrash.Panic("Eurydice has crashed", fmt.Sprintf("Uncaught exception in background task: %s", err), state.Logger, state.LogFilePath)
+			oncrash.Panic("Eurydice crash handler", fmt.Sprintf("Uncaught exception in background task: %s", err), state.Logger, state.LogFilePath)
 		}
 	}()
 
@@ -617,7 +617,7 @@ func backingThread(state *stateStructs.ApplicationState) {
 		// Special case: if we failed to scan the filesystem, it's more of an easy fix that needs less visible.
 		// So, we call Panic directly.
 		state.Logger.Errorf("ScanLibrary->backingThread: We are about to crash! Failed to scan library path '%s': %s", state.Config.JSONConfig.LibraryPath, err.Error())
-		oncrash.Panic("Eurydice has crashed", fmt.Sprintf("Failed to read the current library path (%s). Is it readable and accessible?", state.Config.JSONConfig.LibraryPath), state.Logger, state.LogFilePath)
+		oncrash.Panic("Eurydice crash handler", fmt.Sprintf("Failed to read the current library path (%s). Is it readable and accessible?", state.Config.JSONConfig.LibraryPath), state.Logger, state.LogFilePath)
 	}
 
 	if len(allMusicFound) == 0 {

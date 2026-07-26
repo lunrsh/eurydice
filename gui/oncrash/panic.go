@@ -26,6 +26,11 @@ func Panic(title, error string, logger *log.Logger, logFile string) {
 	// Print crash log to console
 	logger.Errorf("oncrash panic() called! crash log:\n\n%s\n\n%s\n\nBacktrace:\n%s", title, error, stackTraceBuf[:stackTraceLen])
 
+	// When debugging, this can get annoying, so, as a remedy for the potential annoyance, we can disable the crash dialog
+	if os.Getenv("EURYDICE_NO_CRASH_DIALOG") != "" {
+		return
+	}
+
 	// Spawn a crash handler process to handle UI
 	crashHandlerProcess := exec.Command(os.Args[0], os.Args[0:]...)
 	crashHandlerEnvironmentVariables := []string{
@@ -38,11 +43,11 @@ func Panic(title, error string, logger *log.Logger, logFile string) {
 
 	// Run until we exit
 	crashHandlerProcess.Env = append(os.Environ(), crashHandlerEnvironmentVariables...)
-	crashHandlerProcess.Stderr = os.Stderr
-	crashHandlerProcess.Stdout = os.Stdout
-	crashHandlerProcess.Stdin = os.Stdin
 
-	crashHandlerProcess.Run()
+	crashHandlerProcess.Start()
+	crashHandlerProcess.Process.Release()
+
+	os.Exit(1)
 }
 
 func ICanHazPanicDisplay() {
@@ -102,7 +107,6 @@ func ICanHazPanicDisplay() {
 	glfwBackend.Run(func() {
 		if !hasSetThemeYet {
 			themes.SetupCatppuccinMochaTheme(dummyAppState)
-
 		}
 
 		viewport := imgui.MainViewport()
