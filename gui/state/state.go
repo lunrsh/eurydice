@@ -12,6 +12,7 @@ import (
 	"git.lunr.sh/luna/eurydice/gui/state/widgetstate/songmanagementstate"
 	"github.com/AllenDang/cimgui-go/backend"
 	"github.com/AllenDang/cimgui-go/backend/glfwbackend"
+	"github.com/AllenDang/cimgui-go/imgui"
 	_ "github.com/AllenDang/cimgui-go/impl/glfw"
 	"github.com/charmbracelet/log"
 	"gorm.io/gorm"
@@ -73,6 +74,13 @@ type ApplicationState struct {
 
 	CurrentFrame int
 	ModalReady   bool
+
+	HasThemeInitialized bool
+
+	FontIcons   *imgui.Font
+	FontRegular *imgui.Font
+	FontBold    *imgui.Font
+	FontItalic  *imgui.Font
 
 	PageStates *IndividualPageStates
 }

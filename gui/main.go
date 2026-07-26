@@ -14,6 +14,7 @@ import (
 	"git.lunr.sh/luna/eurydice/gui/oncrash"
 	"git.lunr.sh/luna/eurydice/gui/state"
 	"git.lunr.sh/luna/eurydice/gui/state/database"
+	"git.lunr.sh/luna/eurydice/gui/themes"
 	"git.lunr.sh/luna/eurydice/gui/uicomponents/popups/firstboot"
 	"git.lunr.sh/luna/eurydice/gui/uicomponents/popups/scanlibrary"
 	"git.lunr.sh/luna/eurydice/gui/uicomponents/sync"
@@ -49,6 +50,11 @@ func init() {
 }
 
 func mainLoop() {
+	if !appState.HasThemeInitialized {
+		themes.SetupCatppuccinMochaTheme(appState)
+		appState.HasThemeInitialized = true
+	}
+
 	appState.CurrentFrame++ // Frame counter, used for modals
 
 	// Menu bar
@@ -74,7 +80,7 @@ func mainLoop() {
 			}
 		}
 
-		imgui.SetCursorPosX(imgui.ContentRegionAvail().X - sync.ItemWidth/2)
+		imgui.SetCursorPosX(imgui.ContentRegionAvail().X - (sync.ItemWidth / 2) + 2)
 		sync.RenderButton(appState)
 
 		imgui.EndMainMenuBar()
@@ -431,7 +437,8 @@ func main() {
 	}
 
 	appState.CurrentImguiBackend.SetAfterCreateContextHook(func() {
-		appState.CurrentImguiBackend.SetBgColor(imgui.NewVec4(0, 0, 0, 1.0))
+		appState.CurrentImguiBackend.SetBgColor(themes.Base)
+		themes.EnumerateAndInitializeFonts(appState)
 
 		// This mechanism caps the FPS at V-Sync (ie. 144Hz display = 144fps, 60Hz display = 60fps)
 		//

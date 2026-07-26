@@ -270,6 +270,8 @@ func RenderButton(state *stateStructs.ApplicationState) {
 		RenderSyncProgressModal(state)
 	}
 
+	//imgui.PushStyleVarFloat(imgui.StyleVarFrameRounding, 0)
+
 	ItemWidth = imgui.CalcTextSize("Sync to Device").X + 20
 
 	switch state.PageStates.Sync.StepNo {
@@ -420,4 +422,6 @@ func RenderButton(state *stateStructs.ApplicationState) {
 
 		state.PageStates.Sync.StepNo = syncstate.StepIdle
 	}
+
+	//imgui.PopStyleVar()
 }

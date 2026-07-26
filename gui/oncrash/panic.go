@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"strings"
 
+	"git.lunr.sh/luna/eurydice/gui/state"
+	"git.lunr.sh/luna/eurydice/gui/themes"
 	"github.com/AllenDang/cimgui-go/backend"
 	"github.com/AllenDang/cimgui-go/backend/glfwbackend"
 	"github.com/AllenDang/cimgui-go/imgui"
@@ -82,15 +84,27 @@ func ICanHazPanicDisplay() {
 	windowWidth := float32(600)  // px
 	windowHeight := float32(400) // px
 
+	dummyAppState := &state.ApplicationState{}
+
 	glfwBackend.SetAfterCreateContextHook(func() {
-		glfwBackend.SetBgColor(imgui.NewVec4(0, 0, 0, 1.0))
+		glfwBackend.SetBgColor(themes.Base)
+		themes.EnumerateAndInitializeFonts(dummyAppState)
+
 		imgui.PushStyleVarFloat(imgui.StyleVarWindowBorderSize, 0)
 	})
 
 	glfwBackend.SetWindowFlags(glfwbackend.GLFWWindowFlagsResizable, 0)
 	glfwBackend.CreateWindow(string(crashTitleBuf), int(windowWidth), int(windowHeight))
 
+	hasSetThemeYet := false
+
+	// TODO: this code is a mess.
 	glfwBackend.Run(func() {
+		if !hasSetThemeYet {
+			themes.SetupCatppuccinMochaTheme(dummyAppState)
+
+		}
+
 		viewport := imgui.MainViewport()
 		windowPosition := viewport.WorkPos()
 
@@ -100,26 +114,36 @@ func ICanHazPanicDisplay() {
 		imgui.SetNextWindowPos(windowPosition)
 		imgui.SetNextWindowSize(imgui.Vec2{X: windowWidth, Y: windowHeight})
 
-		imgui.BeginV("crashpopup", nil, imgui.WindowFlagsNoMove|imgui.WindowFlagsNoDecoration)
-		imgui.TextWrapped("Eurydice has crashed with the following error:\n\n" + crashError + "\n\n")
+		imgui.SetNextWindowBgAlpha(0)
+		imgui.BeginV("##CrashPopup", nil, imgui.WindowFlagsNoMove|imgui.WindowFlagsNoDecoration)
+		imgui.TextWrapped("Eurydice has crashed with the following error:\n\n")
+		imgui.PushFont(dummyAppState.FontBold, 14)
+		imgui.TextWrapped(crashError + "\n\n")
+		imgui.PopFont()
 
 		if imgui.CollapsingHeaderTreeNodeFlags("Show Backtrace") {
 			// TODO: make this more dynamic to resize better
-			imgui.BeginChildStrV("crashbacktrace", imgui.Vec2{X: windowWidth, Y: windowHeight - 170}, 0, 0)
+			imgui.PushStyleColorVec4(imgui.ColChildBg, themes.Surface0)
+			imgui.PushStyleVarFloat(imgui.StyleVarChildRounding, 0)
+			imgui.BeginChildStrV("##CrashBacktrace", imgui.Vec2{X: imgui.ContentRegionAvail().X, Y: imgui.ContentRegionAvail().Y - 34}, 0, 0)
 			imgui.TextWrapped(string(stackTraceBuf))
 			imgui.EndChild()
+			imgui.PopStyleVar()
+			imgui.PopStyleColor()
 		}
 
 		// Position text in bottom left corner with 10px padding
-		crashLogText := "Crash log stored in " + string(crashFileBuf)
-		crashLogTextHeight := imgui.TextLineHeight()
 
 		imgui.SetCursorScreenPos(imgui.Vec2{
 			X: windowPosition.X + 10,
-			Y: windowPosition.Y + windowHeight - crashLogTextHeight - 10,
+			Y: windowPosition.Y + windowHeight - (imgui.TextLineHeight() * 2) - 13,
 		})
 
-		imgui.Text(crashLogText)
+		imgui.Text("Crash log stored in:\n")
+		imgui.PushFont(dummyAppState.FontBold, 14)
+		imgui.SetCursorPosX(10)
+		imgui.TextWrapped(string(crashFileBuf))
+		imgui.PopFont()
 
 		buttonLabel := "Quit"
 		buttonSize := imgui.CalcTextSize(buttonLabel)

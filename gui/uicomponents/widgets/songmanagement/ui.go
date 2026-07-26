@@ -142,7 +142,7 @@ func DeleteModalRender(state *stateStructs.ApplicationState) {
 			var cursorY float32
 
 			if song.Image != nil {
-				imgui.Image(*song.Image, imgui.Vec2{X: 32, Y: 32})
+				imgui.Image(*song.Image, imgui.Vec2{X: 36, Y: 36})
 				imgui.SameLine()
 
 				cursorX = imgui.CursorPosX()
@@ -219,6 +219,7 @@ func Render(state *stateStructs.ApplicationState) {
 	}
 
 	// Child window is needed for custom Drag-Drop targeting
+	imgui.SetScrollXFloat(0)
 	imgui.BeginChildStr("##SongManagement")
 
 	// Redefine because we disable padding in the table, which also disables here as a consequence
@@ -392,7 +393,7 @@ func Render(state *stateStructs.ApplicationState) {
 			var cursorY float32
 
 			if song.Image != nil {
-				imgui.Image(*song.Image, imgui.Vec2{X: 32, Y: 32})
+				imgui.Image(*song.Image, imgui.Vec2{X: 36, Y: 36})
 				imgui.SameLine()
 
 				cursorX = imgui.CursorPosX()
@@ -423,7 +424,7 @@ func Render(state *stateStructs.ApplicationState) {
 			imgui.SetNextItemSelectionUserData(imgui.SelectionUserData(songIndex))
 			imgui.PushIDInt(int32(songIndex))
 
-			imgui.SelectableBoolV("##", isSelected, imgui.SelectableFlagsSpanAllColumns|imgui.SelectableFlagsAllowOverlap, imgui.Vec2{X: 0, Y: endSongSize - startSongSize - 2})
+			imgui.SelectableBoolV("##", isSelected, imgui.SelectableFlagsSpanAllColumns|imgui.SelectableFlagsAllowOverlap, imgui.Vec2{X: 0, Y: endSongSize - startSongSize})
 			imgui.PushStyleVarVec2(imgui.StyleVarWindowPadding, imgui.Vec2{X: 8, Y: 8}) // Redefine because we disable padding in the table, which also disables here as a consequence
 			checkAndExecuteDragAndDrop(state)
 
@@ -449,7 +450,7 @@ func Render(state *stateStructs.ApplicationState) {
 			imgui.SetCursorPos(beforeSelectableCursorPos)
 
 			// Align vertically centered
-			imgui.SetCursorPosY(imgui.CursorPosY() + 5 + ((endSongSize - startSongSize) / 2) - imgui.TextLineHeight())
+			imgui.SetCursorPosY(imgui.CursorPosY() + 6.5 + ((endSongSize - startSongSize) / 2) - imgui.TextLineHeight())
 
 			if state.PageStates.SongManagement.IsCurrentlyDisplayingPlaylist {
 				displayedIndex := utilities.WrapText(strconv.Itoa(song.Index + 1))
@@ -465,7 +466,7 @@ func Render(state *stateStructs.ApplicationState) {
 
 			// Render the record column last
 			imgui.TableSetColumnIndex(2)
-			imgui.SetCursorPosY(imgui.CursorPosY() + 5 + ((endSongSize - startSongSize) / 2) - imgui.TextLineHeight())
+			imgui.SetCursorPosY(imgui.CursorPosY() + 6.5 + ((endSongSize - startSongSize) / 2) - imgui.TextLineHeight())
 
 			imgui.Text(utilities.WrapText(song.Record))
 		}

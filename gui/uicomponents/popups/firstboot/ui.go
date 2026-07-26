@@ -19,7 +19,7 @@ func Render(state *stateStructs.ApplicationState) {
 		imgui.CloseCurrentPopup()
 		imgui.EndPopup()
 	case 0:
-		imgui.Text("Welcome to the Eurydice Rockbox management tool, made by Luna, et al.\n\nYou are using a pre-alpha version! Be wary of any bugs that may lurk beneath the surface.\n\nFirst, you need to tell me where your song library is, before I get started:\n\n")
+		imgui.Text("Welcome to the Eurydice Rockbox management tool, made by Luna, et al.\n\nYou are using an alpha version! Thanks for being an early tester! Be wary of any bugs that may lurk beneath the surface.\n\nFirst, you need to tell me where your song library is, before I get started:\n\n")
 		textCursorPosition := imgui.CursorScreenPos()
 
 		imgui.SetCursorScreenPos(imgui.Vec2{
