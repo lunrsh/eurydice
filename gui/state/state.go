@@ -35,6 +35,9 @@ type JSONConfig struct {
 	DeleteOldSongs     bool
 	DeleteOldPlaylists bool
 	AudioQuality       int32
+
+	// UI settings
+	HighContrast bool
 }
 
 type ConfigState struct {

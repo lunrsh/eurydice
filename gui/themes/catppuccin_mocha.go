@@ -56,12 +56,13 @@ func SetupCatppuccinMochaTheme(state *stateStructs.ApplicationState) {
 	colors[imgui.ColHeader] = Surface0
 	colors[imgui.ColHeaderHovered] = Surface1
 	colors[imgui.ColHeaderActive] = Surface2
+	colors[imgui.ColNavCursor] = Peach
 	colors[imgui.ColSeparator] = Surface1
-	colors[imgui.ColSeparatorHovered] = Mauve
-	colors[imgui.ColSeparatorActive] = Mauve
+	colors[imgui.ColSeparatorHovered] = Peach
+	colors[imgui.ColSeparatorActive] = Peach
 	colors[imgui.ColResizeGrip] = Surface2
-	colors[imgui.ColResizeGripHovered] = Mauve
-	colors[imgui.ColResizeGripActive] = Mauve
+	colors[imgui.ColResizeGripHovered] = Peach
+	colors[imgui.ColResizeGripActive] = Peach
 	colors[imgui.ColTab] = Surface0
 	colors[imgui.ColTabHovered] = Surface2
 	colors[imgui.ColTabSelected] = Surface2

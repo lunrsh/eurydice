@@ -50,7 +50,7 @@ func init() {
 }
 
 func mainLoop() {
-	if !appState.HasThemeInitialized {
+	if !appState.HasThemeInitialized && !appState.Config.JSONConfig.HighContrast {
 		themes.SetupCatppuccinMochaTheme(appState)
 		appState.HasThemeInitialized = true
 	}
@@ -127,7 +127,7 @@ func mainLoop() {
 		imgui.InternalDockBuilderFinish(docking.DockID)
 	}
 
-	imgui.DockSpaceV(docking.DockID, imgui.Vec2{}, imgui.DockNodeFlagsNone, imgui.NewWindowClass())
+	imgui.DockSpaceV(docking.DockID, imgui.Vec2{}, imgui.DockNodeFlags(imgui.DockNodeFlagsNoTabBar), imgui.NewWindowClass())
 	imgui.End()
 
 	// Now we define the windows with matching titles
@@ -437,7 +437,12 @@ func main() {
 	}
 
 	appState.CurrentImguiBackend.SetAfterCreateContextHook(func() {
-		appState.CurrentImguiBackend.SetBgColor(themes.Base)
+		if !appState.Config.JSONConfig.HighContrast {
+			appState.CurrentImguiBackend.SetBgColor(themes.Base)
+		} else {
+			appState.CurrentImguiBackend.SetBgColor(imgui.Vec4{X: 0, Y: 0, Z: 0, W: 0})
+		}
+
 		themes.EnumerateAndInitializeFonts(appState)
 
 		// This mechanism caps the FPS at V-Sync (ie. 144Hz display = 144fps, 60Hz display = 60fps)
