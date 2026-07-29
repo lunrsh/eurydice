@@ -1,0 +1,4 @@
+- add .envrc to add direnv support
+- add .zig-cache to gitignore
+- add build.zig and build.zig.zon for building eurydice
+- add go.zig as a local version of zig4go in order to fix it for latest zig

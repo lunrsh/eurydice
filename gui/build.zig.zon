@@ -1,0 +1,13 @@
+.{
+    .name = .eurydice,
+    .version = "0.0.1",
+    .minimum_zig_version = "0.16.0",
+    .paths = .{""},
+    .dependencies = .{
+        // .go = .{
+        //     .url = "git+https://github.com/rockorager/zig4go/#9e5ef35567ac7f55c80da3c55af664861f3c2802",
+        //     .hash = "go-0.0.0-zblNS_UlAADppd4UwJHdK0-4i58xPC1Xcm_NlI2KzdG3",
+        // },
+    },
+    .fingerprint = 0x711b9d063d830eda,
+}

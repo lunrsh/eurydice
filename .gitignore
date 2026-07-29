@@ -30,3 +30,6 @@ gui/gui
 
 # ---> Apple (metadata)
 .DS_Store
+
+# ---> zig
+.zig-cache
