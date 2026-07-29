@@ -5,6 +5,8 @@
     go
     gopls
 
+    zig
+
     pkg-config
     libGL
 
