@@ -15,16 +15,21 @@ jobs:
         os: ["windows", "linux"]
 
     steps:
+      - name: Install Dependencies
+        run: apt-get update && apt-get install -y sudo git-lfs
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          lfs: "true"
+          persist-credentials: "true"
 
       - name: Pull LFS assets
-        run: git lfs pull
-
-      - name: Install Sudo
-        run: apt-get update && apt-get install -y sudo
+        run: |
+          git lfs install --local
+          AUTH=$(git config --local http.${{ github.server_url }}/.extraheader)
+          git config --local --unset http.${{ github.server_url }}/.extraheader
+          git config --local http.${{ github.server_url }}/${{ github.repository }}.git/info/lfs/objects/batch.extraheader "$AUTH"
+          git lfs pull
 
       - name: Install Nix
         uses: https://github.com/cachix/install-nix-action@v31
