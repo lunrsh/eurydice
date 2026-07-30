@@ -51,12 +51,12 @@ jobs:
         if: matrix.os == 'windows'
         uses: https://code.forgejo.org/actions/upload-artifact@v3
         with:
-          name: Eurydice-Windows-NightlyBuild.exe
+          name: Eurydice (Windows; Nightly)
           path: gui/eurydice.exe
 
       - name: Push build artifacts (Linux)
         if: matrix.os == 'linux'
         uses: https://code.forgejo.org/actions/upload-artifact@v3
         with:
-          name: Eurydice-Linux-NightlyBuild
+          name: Eurydice (Linux; Nightly)
           path: gui/eurydice

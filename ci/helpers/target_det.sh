@@ -18,7 +18,7 @@ fi
 if [ "$TARGET_OS" = "windows" ]; then
     ASSEMBLED_TARGET_STRING+="windows-gnu"
 elif [ "$TARGET_OS" = "darwin" ]; then
-    ASSEMBLED_TARGET_STRING+="macos-none"
+    exit 0
 elif [ "$TARGET_OS" = "linux" ]; then
     ASSEMBLED_TARGET_STRING+="linux-musl"
 else

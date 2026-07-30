@@ -7,9 +7,6 @@ vars:
   GOARCH:
     sh: FALLBACK_OS={{OS}} FALLBACK_ARCH={{ARCH}} ../ci/helpers/goarch_det.sh {{.CLI_ARGS}}
 
-  COMP_TARGET:
-    sh: FALLBACK_OS={{OS}} FALLBACK_ARCH={{ARCH}} ../ci/helpers/target_det.sh {{.CLI_ARGS}}
-
   OUTPUT_FILE: '{{if eq .GOOS "windows"}}eurydice.exe{{else}}eurydice{{end}}'
 
   # Fuck you Apple
@@ -28,12 +25,18 @@ vars:
         echo "-static"
       fi
 
+  PLATFORM_CC_ARGS:
+    sh: |
+      if [ "{{.GOOS}}" = "darwin" ]; then
+        echo ""
+      else
+        COMP_TARGET="$(FALLBACK_OS={{OS}} FALLBACK_ARCH={{ARCH}} ../ci/helpers/target_det.sh {{.CLI_ARGS}})"
+        echo "-target $COMP_TARGET"
+      fi
+
 tasks:
   build:
-    - "echo 'GOOS: {{.GOOS}}'"
-    - "echo 'GOARCH: {{.GOARCH}}'"
-    - "echo 'COMP_TARGET: {{.COMP_TARGET}}'"
-    - 'CC="zig cc -target {{.COMP_TARGET}}" CXX="zig c++ -target {{.COMP_TARGET}}" GOOS="{{.GOOS}}" GOARCH="{{.GOARCH}}" CGO_LDFLAGS="{{.PLATFORM_LD_ARGS}} $NIX_LDFLAGS" go build -v -ldflags "-linkmode external -H=windows -s -w" -o {{.OUTPUT_FILE}} .'
+    - 'CC="zig cc {{.PLATFORM_CC_ARGS}}" CXX="zig c++ {{.PLATFORM_CC_ARGS}}" GOOS="{{.GOOS}}" GOARCH="{{.GOARCH}}" CGO_LDFLAGS="{{.PLATFORM_LD_ARGS}} $NIX_LDFLAGS" go build -v -ldflags "-linkmode external {{if eq .GOOS "windows"}}-H=windows{{end}} -s -w" -o {{.OUTPUT_FILE}} .'
 
   dev:
     - task: build
