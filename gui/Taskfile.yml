@@ -2,13 +2,13 @@ version: 3
 
 vars:
   GOOS:
-    sh: FALLBACK_OS={{OS}} FALLBACK_ARCH={{ARCH}} ../helpers/goos_det.sh {{.CLI_ARGS}}
+    sh: FALLBACK_OS={{OS}} FALLBACK_ARCH={{ARCH}} ../ci/helpers/goos_det.sh {{.CLI_ARGS}}
 
   GOARCH:
-    sh: FALLBACK_OS={{OS}} FALLBACK_ARCH={{ARCH}} ../helpers/goarch_det.sh {{.CLI_ARGS}}
+    sh: FALLBACK_OS={{OS}} FALLBACK_ARCH={{ARCH}} ../ci/helpers/goarch_det.sh {{.CLI_ARGS}}
 
   COMP_TARGET:
-    sh: FALLBACK_OS={{OS}} FALLBACK_ARCH={{ARCH}} ../helpers/target_det.sh {{.CLI_ARGS}}
+    sh: FALLBACK_OS={{OS}} FALLBACK_ARCH={{ARCH}} ../ci/helpers/target_det.sh {{.CLI_ARGS}}
 
   OUTPUT_FILE: '{{if eq .GOOS "windows"}}Eurydice.exe{{else}}Eurydice{{end}}'
 
