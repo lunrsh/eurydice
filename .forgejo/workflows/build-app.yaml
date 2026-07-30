@@ -1,0 +1,47 @@
+name: Build Eurydice
+
+on:
+  workflow_dispatch:
+  push:
+    branches-ignore:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ["windows", "linux"]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: https://github.com/cachix/install-nix-action@v31
+
+      - name: (hack) Swap regex until we switch to flakes
+        run: |
+          sed -i \
+            -e 's/^[[:space:]]*#xorg\.libX11/xorg.libX11/' \
+            -e 's/^[[:space:]]*#wayland/wayland/' \
+            -e 's/^[[:space:]]*#gtk3/gtk3/' \
+            shell.nix
+
+      - name: Build Eurydice
+        run: nix-shell --command "cd gui; task build -- ${{ matrix.os }} amd64"
+
+      - name: Push build artifacts (Windows)
+        if: matrix.os == 'windows'
+        uses: https://code.forgejo.org/actions/upload-artifact@v4
+        with:
+          name: Eurydice-Windows-NightlyBuild.exe
+          path: gui/eurydice.exe
+
+      - name: Push build artifacts (Linux)
+        if: matrix.os == 'linux'
+        uses: https://code.forgejo.org/actions/upload-artifact@v4
+        with:
+          name: Eurydice-Linux-NightlyBuild
+          path: gui/eurydice.exe

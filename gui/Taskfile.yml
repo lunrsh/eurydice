@@ -10,7 +10,7 @@ vars:
   COMP_TARGET:
     sh: FALLBACK_OS={{OS}} FALLBACK_ARCH={{ARCH}} ../ci/helpers/target_det.sh {{.CLI_ARGS}}
 
-  OUTPUT_FILE: '{{if eq .GOOS "windows"}}Eurydice.exe{{else}}Eurydice{{end}}'
+  OUTPUT_FILE: '{{if eq .GOOS "windows"}}eurydice.exe{{else}}eurydice{{end}}'
 
   # Fuck you Apple
   PLATFORM_LD_ARGS:
@@ -37,4 +37,4 @@ tasks:
 
   dev:
     - task: build
-    - EURYDICE_LOG_LEVEL=debug EURYDICE_NO_CRASH_DIALOG=1 {{if eq .GOOS "windows"}}./Eurydice.exe{{else}}./Eurydice{{end}}
+    - EURYDICE_LOG_LEVEL=debug EURYDICE_NO_CRASH_DIALOG=1 {{if eq .GOOS "windows"}}./eurydice.exe{{else}}./eurydice{{end}}
