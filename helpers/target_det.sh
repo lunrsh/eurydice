@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-set -x
 CLI_OS=$1
 TARGET_OS="${CLI_OS:=$FALLBACK_OS}"
 
