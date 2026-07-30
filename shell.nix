@@ -15,6 +15,7 @@
     #xorg.libX11
     #wayland
     #gtk3
+    #libGL
   ];
 
   shellHook = ''
