@@ -18,6 +18,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Install Sudo
+        run: apt-get update && apt-get install -y sudo
+
       - name: Install Nix
         uses: https://github.com/cachix/install-nix-action@v31
 
