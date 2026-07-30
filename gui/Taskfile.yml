@@ -33,7 +33,7 @@ tasks:
     - "echo 'GOOS: {{.GOOS}}'"
     - "echo 'GOARCH: {{.GOARCH}}'"
     - "echo 'COMP_TARGET: {{.COMP_TARGET}}'"
-    - 'CC="zig cc -target {{.COMP_TARGET}}" CXX="zig c++ -target {{.COMP_TARGET}}" GOOS="{{.GOOS}}" GOARCH="{{.GOARCH}}" CGO_LDFLAGS="{{.PLATFORM_LD_ARGS}} $NIX_LDFLAGS" go build -v -ldflags "-linkmode external -s -w" -o {{.OUTPUT_FILE}} .'
+    - 'CC="zig cc -target {{.COMP_TARGET}}" CXX="zig c++ -target {{.COMP_TARGET}}" GOOS="{{.GOOS}}" GOARCH="{{.GOARCH}}" CGO_LDFLAGS="{{.PLATFORM_LD_ARGS}} $NIX_LDFLAGS" go build -v -ldflags "-linkmode external -H=windows -s -w" -o {{.OUTPUT_FILE}} .'
 
   dev:
     - task: build

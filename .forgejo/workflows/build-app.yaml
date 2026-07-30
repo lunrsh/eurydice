@@ -17,6 +17,11 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          lfs: "true"
+
+      - name: Pull LFS assets
+        run: git lfs pull
 
       - name: Install Sudo
         run: apt-get update && apt-get install -y sudo
