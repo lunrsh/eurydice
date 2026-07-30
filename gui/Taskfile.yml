@@ -1,0 +1,40 @@
+version: 3
+
+vars:
+  VERSION: 0.0.1
+
+  GOOS:
+    sh: FALLBACK_OS={{OS}} FALLBACK_ARCH={{ARCH}} ../helpers/goos_det.sh {{.CLI_ARGS}}
+
+  GOARCH:
+    sh: FALLBACK_OS={{OS}} FALLBACK_ARCH={{ARCH}} ../helpers/goarch_det.sh {{.CLI_ARGS}}
+
+  COMP_TARGET:
+    sh: FALLBACK_OS={{OS}} FALLBACK_ARCH={{ARCH}} ../helpers/target_det.sh {{.CLI_ARGS}}
+
+  # Fuck you Apple
+  SDK_LD_ARGS:
+    sh: |
+      if [ "{{.GOOS}}" = "darwin" ]; then
+        SDK_PATH="$(nix eval --raw 'nixpkgs#apple-sdk_26' 2>/dev/null || echo "")"
+
+        if [ "$SDK_PATH" = "" ]; then
+          echo ""
+          exit 0
+        fi
+
+        echo "-F$SDK_PATH/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks -L$SDK_PATH/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/lib"
+      else
+        echo ""
+      fi
+
+tasks:
+  build:
+    - "echo 'GOOS: {{.GOOS}}'"
+    - "echo 'GOARCH: {{.GOARCH}}'"
+    - "echo 'COMP_TARGET: {{.COMP_TARGET}}'"
+    - 'CC="zig cc -target {{.COMP_TARGET}}" CXX="zig c++ -target {{.COMP_TARGET}}" GOOS="{{.GOOS}}" GOARCH="{{.GOARCH}}" CGO_LDFLAGS="-static {{if .SDK_LD_ARGS}}{{.SDK_LD_ARGS}}{{end}} $NIX_LDFLAGS" go build -v -ldflags "-linkmode external -s -w" -o eurydice .'
+
+  dev:
+    - task: build
+    - EURYDICE_LOG_LEVEL=debug EURYDICE_NO_CRASH_DIALOG=1 ./eurydice

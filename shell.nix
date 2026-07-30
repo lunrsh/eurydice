@@ -10,6 +10,8 @@
     pkg-config
     libGL
 
+    go-task
+
     #xorg.libX11
     #wayland
     #gtk3

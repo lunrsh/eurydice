@@ -26,7 +26,8 @@ go.work.sum
 .env
 
 # ---> Eurydice
-gui/gui
+gui/eurydice*
+gui/Eurydice*
 
 # ---> Apple (metadata)
 .DS_Store
