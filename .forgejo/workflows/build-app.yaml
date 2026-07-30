@@ -33,7 +33,9 @@ jobs:
             shell.nix
 
       - name: Build Eurydice
-        run: nix-shell --command "cd gui; task build -- ${{ matrix.os }} amd64"
+        run: |
+          export NIX_PATH=nixpkgs=channel:nixos-unstable
+          nix-shell --command "cd gui; task build -- ${{ matrix.os }} amd64"
 
       - name: Push build artifacts (Windows)
         if: matrix.os == 'windows'
