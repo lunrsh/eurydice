@@ -49,4 +49,4 @@ jobs:
         uses: https://code.forgejo.org/actions/upload-artifact@v4
         with:
           name: Eurydice-Linux-NightlyBuild
-          path: gui/eurydice.exe
+          path: gui/eurydice
