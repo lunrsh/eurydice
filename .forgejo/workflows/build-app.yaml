@@ -3,8 +3,6 @@ name: Build Eurydice
 on:
   workflow_dispatch:
   push:
-    branches-ignore:
-      - main
 
 jobs:
   build:
