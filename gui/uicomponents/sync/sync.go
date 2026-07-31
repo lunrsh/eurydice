@@ -366,7 +366,23 @@ func copySongs(state *stateStructs.ApplicationState, songsToSync map[uint]*datab
 			state.Logger.Debug("Sync->backingThread: Transcoding song")
 
 			if err := transcodeSong(state, filepath.Join(library.LibraryPath, song.RelativePathFromLibrary), filepath.Join(state.PageStates.Sync.SelectedDevice.Mountpoint, songPath)); err != nil {
-				return fmt.Errorf("failed to transcode song: %w", err)
+				unwrappedErr := errors.Unwrap(err)
+
+				if errors.Is(unwrappedErr, syscall.EIO) ||
+					errors.Is(unwrappedErr, syscall.ENODEV) ||
+					errors.Is(unwrappedErr, syscall.ENOENT) {
+					if restartCounter == 2 {
+						state.Logger.Error("Sync->backingThread: Transcode keeps failing! Aborting...")
+						return fmt.Errorf("failed to transcode song: %w", err)
+					} else {
+						state.Logger.Errorf("Sync->backingThread: Device disconnected mid transfer (err: %v). Waiting 25 seconds for device to reconnect...", err)
+						time.Sleep(25 * time.Second)
+						restartCounter++
+						goto startTransfer
+					}
+				} else {
+					return fmt.Errorf("failed to transcode song: %w", err)
+				}
 			}
 		}
 
