@@ -190,10 +190,7 @@ func RenderSyncSetupModal(state *stateStructs.ApplicationState) {
 	imgui.SameLine()
 	imgui.SetNextItemWidth(imgui.ContentRegionAvail().X)
 
-	// Alpha 2 will implement this feature. libav wrangling is likely a lot of work
-	imgui.BeginDisabled()
 	imgui.ComboStrarr("##AudioQuality", &state.PageStates.Sync.AudioQuality, displayedAudioQualityList, int32(len(displayedAudioQualityList)))
-	imgui.EndDisabled()
 
 	imgui.Spacing()
 	imgui.Separator()
@@ -350,6 +347,8 @@ func RenderButton(state *stateStructs.ApplicationState) {
 
 			state.PageStates.Sync.PlaylistList = unnamedPlaylists
 			state.PageStates.Sync.PlaylistList = append(state.PageStates.Sync.PlaylistList, namedPlaylists...)
+
+			state.PageStates.Sync.AudioQuality = state.Config.JSONConfig.AudioQuality
 
 			imgui.OpenPopupStr("Sync Options")
 		}

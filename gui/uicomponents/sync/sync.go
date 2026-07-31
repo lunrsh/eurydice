@@ -123,6 +123,47 @@ func fetchSongsToSync(state *stateStructs.ApplicationState, metadataPath string)
 
 			hasFoundOurself = true
 
+			// If the song doesn't exist, but we want a copy of it, we re-copy it, because that's not the proper way to remove stuff around these parts!
+			if _, err := os.Stat(filepath.Join(state.PageStates.Sync.SelectedDevice.Mountpoint, song.RelativePath)); err != nil {
+				if errors.Is(err, syscall.ENOTDIR) {
+					// What?
+					// The folder containing songs has become a file, which... has happened to me personally and thus might happen to other people
+					state.Logger.Error("Ooops: folder became a file! Attempting to do delete this corrupted folder, and do a rebuild of this album")
+					state.Logger.Error("This should not happen! Check your device and cables! Nontheless, continuing...")
+
+					currentDirectory := filepath.Dir(filepath.Join(state.PageStates.Sync.SelectedDevice.Mountpoint, song.RelativePath))
+
+					if err = os.Remove(currentDirectory); err != nil {
+						// Ah. FUCK.
+						if errors.Is(err, syscall.ENOTDIR) {
+							state.Logger.Error("Shit, the previous folder became a file. Attempting to delete the previous folder")
+							currentDirectory = filepath.Dir(currentDirectory)
+
+							if err = os.Remove(currentDirectory); err != nil {
+								state.Logger.Error("Well, fuck. Failed to cleanup corruption in songs: %w (crashing now!)", err)
+								panic(fmt.Sprintf("Error while cleaning up filesystem corruption (fallback method) in path '%s' (uh oh...): %v (this should not happen!)", song.RelativePath, err))
+							}
+						} else {
+							panic(fmt.Sprintf("Error while cleaning up filesystem corruption in path '%s': %v", song.RelativePath, err))
+						}
+					}
+				} else if !errors.Is(err, os.ErrNotExist) {
+					panic(fmt.Sprintf("Failed to read song '%s': %v (try recreating Eurydice data on device?)", song.RelativePath, err))
+				}
+
+				if songFromDatabase, ok := songsToSync[installation.SongID]; ok {
+					state.Logger.Errorf("Song '%s' does not exist, but we have an installation for it. Recopying and updating!", song.RelativePath)
+					// We're updating the metadata ourselves, so mark this song as needing no metadata
+					songsThatDoNotNeedMetadata[installation.SongID] = true
+
+					// Update the metadata hash and the relative path to the song
+					song.MetadataHash = calculateMetadataHash(songFromDatabase)
+					song.RelativePath = calculateRelativePath(state, songFromDatabase)
+
+					continue
+				}
+			}
+
 			// Check if the song is already installed on this device and is, therefore, feasibly the same file. If so, don't copy the song
 			// TODO: Also take metadata into account!
 			if song.QualityLevel == state.PageStates.Sync.AudioQuality {
@@ -324,7 +365,7 @@ func copySongs(state *stateStructs.ApplicationState, songsToSync map[uint]*datab
 		} else {
 			state.Logger.Debug("Sync->backingThread: Transcoding song")
 
-			if err := transcodeSong(filepath.Join(library.LibraryPath, song.RelativePathFromLibrary), filepath.Join(state.PageStates.Sync.SelectedDevice.Mountpoint, songPath)); err != nil {
+			if err := transcodeSong(state, filepath.Join(library.LibraryPath, song.RelativePathFromLibrary), filepath.Join(state.PageStates.Sync.SelectedDevice.Mountpoint, songPath)); err != nil {
 				return fmt.Errorf("failed to transcode song: %w", err)
 			}
 		}

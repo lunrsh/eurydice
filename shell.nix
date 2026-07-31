@@ -11,6 +11,7 @@
     libGL
 
     go-task
+    ffmpeg
 
     #xorg.libX11
     #wayland

@@ -7,6 +7,8 @@ replace github.com/AllenDang/cimgui-go => git.lunr.sh/luna/cimgui-go v1.4.1-0.20
 require (
 	github.com/AllenDang/cimgui-go v1.5.0
 	github.com/agnivade/levenshtein v1.2.1
+	github.com/asticode/go-astiav v0.41.0
+	github.com/asticode/go-astikit v0.59.0
 	github.com/charmbracelet/log v1.0.0
 	github.com/epiclabs-io/diff3 v0.0.0-20260520111523-3b1669897fb1
 	github.com/muesli/termenv v0.16.0
@@ -19,10 +21,7 @@ require (
 )
 
 require (
-	github.com/Eyevinn/hls-m3u8 v0.6.5 // indirect
 	github.com/TheTitanrain/w32 v0.0.0-20200114052255-2654d97dbd3d // indirect
-	github.com/asticode/go-astiav v0.41.0 // indirect
-	github.com/asticode/go-astikit v0.59.0 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
 	github.com/charmbracelet/lipgloss v1.1.0 // indirect
