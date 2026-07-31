@@ -1,0 +1,62 @@
+name: Build Eurydice
+
+on:
+  workflow_dispatch:
+  push:
+    branches-ignore:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ["windows", "linux"]
+
+    steps:
+      - name: Install Dependencies
+        run: apt-get update && apt-get install -y sudo git-lfs
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: "true"
+
+      - name: Pull LFS assets
+        run: |
+          git lfs install --local
+          AUTH=$(git config --local http.${{ github.server_url }}/.extraheader)
+          git config --local --unset http.${{ github.server_url }}/.extraheader
+          git config --local http.${{ github.server_url }}/${{ github.repository }}.git/info/lfs/objects/batch.extraheader "$AUTH"
+          git lfs pull
+
+      - name: Install Nix
+        uses: https://github.com/cachix/install-nix-action@v31
+
+      - name: (hack) Swap regex until we switch to flakes
+        run: |
+          sed -i \
+            -e 's/^[[:space:]]*#xorg\.libX11/xorg.libX11/' \
+            -e 's/^[[:space:]]*#wayland/wayland/' \
+            -e 's/^[[:space:]]*#gtk3/gtk3/' \
+            shell.nix
+
+      - name: Build Eurydice
+        run: |
+          export NIX_PATH=nixpkgs=channel:nixos-unstable
+          nix-shell --command "cd gui; task build -- ${{ matrix.os }} amd64"
+
+      - name: Push build artifacts (Windows)
+        if: matrix.os == 'windows'
+        uses: https://code.forgejo.org/actions/upload-artifact@v3
+        with:
+          name: Eurydice (Windows; Nightly)
+          path: gui/eurydice.exe
+
+      - name: Push build artifacts (Linux)
+        if: matrix.os == 'linux'
+        uses: https://code.forgejo.org/actions/upload-artifact@v3
+        with:
+          name: Eurydice (Linux; Nightly)
+          path: gui/eurydice

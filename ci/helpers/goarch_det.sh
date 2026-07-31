@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+CLI_ARCH=$2
+TARGET_ARCH="${CLI_ARCH:=$FALLBACK_ARCH}"
+
+echo $TARGET_ARCH
