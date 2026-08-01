@@ -42,7 +42,9 @@ jobs:
 
       - name: (Windows) Compile FFmpeg
         if: matrix.os == 'windows'
-        run: nix-shell --command "cd ci; ./build_ffmpeg.shg"
+        run: |
+          export NIX_PATH=nixpkgs=channel:nixos-unstable
+          nix-shell --command "cd ci; ./build_ffmpeg.shg"
 
       - name: Build Eurydice
         run: |
