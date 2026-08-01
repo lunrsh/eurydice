@@ -11,7 +11,7 @@ pushd /tmp/libmp3lame
 curl -L https://sourceforge.net/projects/lame/files/lame/3.100/lame-3.100.tar.gz > lame.tar.gz
 tar -xzvf lame.tar.gz
 cd lame-3.100
-./configure --host=x86_64-w64-mingw32 --disable-shared --enable-static --cc="$CC" --cxx="$CXX" --ld="$LD"
+./configure --host=x86_64-w64-mingw32 --disable-shared --enable-static --disable-frontend --disable-dependency-tracking
 make -j$(nproc)
 sudo make install # TODO: unsafe, migrate to prefix soon
 popd
