@@ -14,7 +14,7 @@ jobs:
 
     steps:
       - name: Install Dependencies
-        run: apt-get update && apt-get install -y sudo git-lfs
+        run: apt-get update && apt-get install -y sudo git-lfs nproc pkg-config
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -39,6 +39,10 @@ jobs:
             -e 's/^[[:space:]]*#wayland/wayland/' \
             -e 's/^[[:space:]]*#gtk3/gtk3/' \
             shell.nix
+
+      - name: Compile FFmpeg
+        if: matrix.os == 'windows'
+        run: nix-shell --command "cd ci; ./build_ffmpeg.shg"
 
       - name: Build Eurydice
         run: |
