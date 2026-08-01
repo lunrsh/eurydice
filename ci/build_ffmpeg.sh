@@ -7,11 +7,15 @@ export LD="zig cc -target x86_64-windows-gnu"
 export AR="zig ar"
 
 mkdir -p /tmp/ffmpeg /tmp/libmp3lame
+
 pushd /tmp/libmp3lame
-curl -L https://sourceforge.net/projects/lame/files/lame/3.100/lame-3.100.tar.gz > lame.tar.gz
+curl -L https://sourceforge.net/projects/lame/files/lame/3.101/lame-3.101.tar.gz > lame.tar.gz
 tar -xzvf lame.tar.gz
-cd lame-3.100
-./configure --host=x86_64-w64-mingw32 --disable-shared --enable-static --disable-frontend --disable-dependency-tracking
+cd lame-3.101
+./configure --host=x86_64-w64-mingw32 --disable-shared --enable-static --disable-frontend --disable-dependency-tracking --disable-decoder
+sed -i \
+  's|old_archive_cmds="lib -OUT:\\$oldlib\\$oldobjs\\$old_deplibs"|old_archive_cmds="\\$AR rcs \\$oldlib \\$oldobjs"|' \
+  libtool
 make -j$(nproc)
 sudo make install # TODO: unsafe, migrate to prefix soon
 popd
