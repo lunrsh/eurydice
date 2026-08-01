@@ -4,6 +4,7 @@ set -xeuo pipefail
 export CC="zig cc -target x86_64-windows-gnu"
 export CXX="zig c++ -target x86_64-windows-gnu"
 export LD="zig cc -target x86_64-windows-gnu"
+export AR="zig ar"
 
 mkdir -p /tmp/ffmpeg /tmp/libmp3lame
 pushd /tmp/libmp3lame
