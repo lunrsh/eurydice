@@ -14,7 +14,7 @@ jobs:
 
     steps:
       - name: Install Dependencies
-        run: apt-get update && apt-get install -y sudo git-lfs nproc pkg-config
+        run: apt-get update && apt-get install -y sudo git-lfs pkg-config
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -40,7 +40,7 @@ jobs:
             -e 's/^[[:space:]]*#gtk3/gtk3/' \
             shell.nix
 
-      - name: Compile FFmpeg
+      - name: (Windows) Compile FFmpeg
         if: matrix.os == 'windows'
         run: nix-shell --command "cd ci; ./build_ffmpeg.shg"
 
