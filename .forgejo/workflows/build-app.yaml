@@ -13,8 +13,8 @@ jobs:
         os: ["windows", "linux"]
 
     steps:
-      - name: Install Dependencies
-        run: apt-get update && apt-get install -y sudo git-lfs pkg-config binutils-mingw-w64-x86-64
+      - name: Install dependencies
+        run: apt-get update && apt-get install -y sudo git-lfs pkg-config binutils-mingw-w64-x86-64 nasm
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -40,7 +40,7 @@ jobs:
             -e 's/^[[:space:]]*#gtk3/gtk3/' \
             shell.nix
 
-      - name: (Windows) Compile FFmpeg
+      - name: Compile FFmpeg (Windows)
         if: matrix.os == 'windows'
         run: |
           export NIX_PATH=nixpkgs=channel:nixos-unstable
