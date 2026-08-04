@@ -17,12 +17,17 @@ sed -i \
   's|old_archive_cmds="lib -OUT:\\$oldlib\\$oldobjs\\$old_deplibs"|old_archive_cmds="\\$AR rcs \\$oldlib \\$oldobjs"|' \
   libtool
 make -j$(nproc)
-sudo make install # TODO: unsafe, migrate to prefix soon
+make install
 popd
 
 git clone https://git.ffmpeg.org/ffmpeg.git /tmp/ffmpeg -b n8.1.2
 pushd /tmp/ffmpeg
+echo $PATH
+echo $PKG_CONFIG_PATH
+pushd /tmp/ffmpeg_dist
+find . -type f
+popd
 ./configure --arch=x86_64 --target-os=mingw32 --prefix=/tmp/ffmpeg_dist --cross-prefix=x86_64-w64-mingw32- --cc="$CC" --cxx="$CXX" --ld="$LD" --disable-programs --enable-gpl --enable-libmp3lame --enable-nonfree --enable-static --disable-shared
 make
-sudo make install # TODO: unsafe, migrate to prefix soon
+make install
 popd
