@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-set -xeuo pipefail
+set -x
+# set -euo pipefail
 
 export CC="zig cc -target x86_64-windows-gnu"
 export CXX="zig c++ -target x86_64-windows-gnu"
@@ -21,12 +22,8 @@ make install
 popd
 
 git clone https://git.ffmpeg.org/ffmpeg.git /tmp/ffmpeg -b n8.1.2
-pushd /tmp/ffmpeg
-echo $PATH
-pushd /tmp/ffmpeg_dist
-find . -type f
-popd
 ./configure --arch=x86_64 --target-os=mingw32 --prefix=/tmp/ffmpeg_dist --cross-prefix=x86_64-w64-mingw32- --cc="$CC" --cxx="$CXX" --ld="$LD" --extra-cflags="-I/tmp/ffmpeg_dist/include/lame" --extra-ldflags="-L/tmp/ffmpeg_dist/lib -Wl,-rpath-link=/tmp/ffmpeg_dist/lib" --disable-programs --enable-gpl --enable-libmp3lame --enable-nonfree --enable-static --disable-shared
+cat ffbuild/config.log
 make
 make install
 popd
