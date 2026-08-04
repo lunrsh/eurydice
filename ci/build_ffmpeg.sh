@@ -26,7 +26,7 @@ echo $PATH
 pushd /tmp/ffmpeg_dist
 find . -type f
 popd
-./configure --arch=x86_64 --target-os=mingw32 --prefix=/tmp/ffmpeg_dist --cross-prefix=x86_64-w64-mingw32- --cc="$CC" --cxx="$CXX" --ld="$LD" --disable-programs --enable-gpl --enable-libmp3lame --enable-nonfree --enable-static --disable-shared
+./configure --arch=x86_64 --target-os=mingw32 --prefix=/tmp/ffmpeg_dist --cross-prefix=x86_64-w64-mingw32- --cc="$CC" --cxx="$CXX" --ld="$LD" --extra-cflags="-I/tmp/ffmpeg_dist/include/lame" --extra-ldflags="-L/tmp/ffmpeg_dist/lib -Wl,-rpath-link=/tmp/ffmpeg_dist/lib" --disable-programs --enable-gpl --enable-libmp3lame --enable-nonfree --enable-static --disable-shared
 make
 make install
 popd
