@@ -19,6 +19,8 @@ sed -i \
   libtool
 make -j$(nproc)
 make install
+mv /tmp/ffmpeg_dist/lib/libmp3lame.la /tmp/ffmpeg_dist/lib/mp3lame.la # ffmpeg expects a diff path, so we meet its expectation
+mv /tmp/ffmpeg_dist/lib/libmp3lame.lib /tmp/ffmpeg_dist/lib/mp3lame.lib
 popd
 
 git clone https://git.ffmpeg.org/ffmpeg.git /tmp/ffmpeg -b n8.1.2
