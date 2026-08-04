@@ -23,7 +23,6 @@ popd
 git clone https://git.ffmpeg.org/ffmpeg.git /tmp/ffmpeg -b n8.1.2
 pushd /tmp/ffmpeg
 echo $PATH
-echo $PKG_CONFIG_PATH
 pushd /tmp/ffmpeg_dist
 find . -type f
 popd
