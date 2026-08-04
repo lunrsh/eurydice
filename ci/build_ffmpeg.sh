@@ -10,7 +10,7 @@ export AR="zig ar"
 mkdir -p /tmp/ffmpeg /tmp/libmp3lame /tmp/ffmpeg_dist
 
 pushd /tmp/libmp3lame
-curl -L https://sourceforge.net/projects/lame/files/lame/3.100/lame-3.100.tar.gz > lame.tar.gz
+curl -L https://sourceforge.net/projects/lame/files/lame/3.101/lame-3.101.tar.gz > lame.tar.gz
 tar -xzvf lame.tar.gz
 cd lame-3.100
 ./configure --host=x86_64-w64-mingw32 --prefix=/tmp/ffmpeg_dist --disable-shared --enable-static --disable-frontend --disable-dependency-tracking --disable-decoder
@@ -22,6 +22,7 @@ make install
 popd
 
 git clone https://git.ffmpeg.org/ffmpeg.git /tmp/ffmpeg -b n8.1.2
+pushd /tmp/ffmpeg
 ./configure --arch=x86_64 --target-os=mingw32 --prefix=/tmp/ffmpeg_dist --cross-prefix=x86_64-w64-mingw32- --cc="$CC" --cxx="$CXX" --ld="$LD" --extra-cflags="-I/tmp/ffmpeg_dist/include/lame" --extra-ldflags="-L/tmp/ffmpeg_dist/lib -Wl,-rpath-link=/tmp/ffmpeg_dist/lib" --disable-programs --enable-gpl --enable-libmp3lame --enable-nonfree --enable-static --disable-shared
 cat ffbuild/config.log
 make
