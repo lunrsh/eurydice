@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-set -x
-# set -euo pipefail
+set -xeuo pipefail
 
 export CC="zig cc -target x86_64-windows-gnu"
 export CXX="zig c++ -target x86_64-windows-gnu"
@@ -29,4 +28,10 @@ pushd /tmp/ffmpeg
 cat ffbuild/config.log
 make
 make install
+popd
+
+set +x
+pushd /tmp/ffmpeg_dist
+echo "Done! ffmpeg-related files:"
+find . -type f
 popd

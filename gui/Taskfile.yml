@@ -21,8 +21,15 @@ vars:
         fi
 
         echo "-F$SDK_PATH/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks -L$SDK_PATH/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/lib"
+      elif [ "{{.GOOS}}" = "windows" ]; then
+        # HACK: use CI stuff only if the dist dir is detected. maybe use env var instead?
+        if [[ -d "/tmp/ffmpeg_dist" ]]; then
+          echo "-static -flto -L/tmp/ffmpeg_dist/lib"
+        else
+          echo "-static -flto"
+        fi
       else
-        echo "-static"
+        echo "-static -flto"
       fi
 
   PLATFORM_CC_ARGS:
@@ -31,7 +38,7 @@ vars:
         echo ""
       else
         COMP_TARGET="$(FALLBACK_OS={{OS}} FALLBACK_ARCH={{ARCH}} ../ci/helpers/target_det.sh {{.CLI_ARGS}})"
-        echo "-target $COMP_TARGET"
+        echo "-flto -target $COMP_TARGET"
       fi
 
 tasks:
