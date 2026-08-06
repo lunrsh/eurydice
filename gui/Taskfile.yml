@@ -24,7 +24,7 @@ vars:
       elif [ "{{.GOOS}}" = "windows" ]; then
         # HACK: use CI stuff only if the dist dir is detected. maybe use env var instead?
         if [[ -d "/tmp/ffmpeg_dist" ]]; then
-          echo "-static -L/tmp/ffmpeg_dist/lib"
+          echo "-static -L/tmp/ffmpeg_dist/lib -lavdevice -lavfilter -lavformat -lavcodec -lswresample -lswscale -lavutil -lmp3lame -lws2_32 -lole32 -loleaut32 -lshlwapi -lstrmiids -luuid -lbcrypt -lsecur32"
         else
           echo "-static"
         fi
