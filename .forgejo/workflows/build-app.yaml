@@ -49,18 +49,18 @@ jobs:
       - name: Build Eurydice
         run: |
           export NIX_PATH=nixpkgs=channel:nixos-unstable
-          nix-shell --command "cd gui; task build -- ${{ matrix.os }} amd64"
+          nix-shell --command "task build -- ${{ matrix.os }} amd64"
 
       - name: Push build artifacts (Windows)
         if: matrix.os == 'windows'
         uses: https://code.forgejo.org/actions/upload-artifact@v3
         with:
           name: Eurydice (Windows; Nightly)
-          path: gui/eurydice.exe
+          path: eurydice.exe
 
       - name: Push build artifacts (Linux)
         if: matrix.os == 'linux'
         uses: https://code.forgejo.org/actions/upload-artifact@v3
         with:
           name: Eurydice (Linux; Nightly)
-          path: gui/eurydice
+          path: eurydice

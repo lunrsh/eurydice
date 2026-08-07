@@ -1,0 +1,50 @@
+version: 3
+
+vars:
+  GOOS:
+    sh: FALLBACK_OS={{OS}} FALLBACK_ARCH={{ARCH}} ../ci/helpers/goos_det.sh {{.CLI_ARGS}}
+
+  GOARCH:
+    sh: FALLBACK_OS={{OS}} FALLBACK_ARCH={{ARCH}} ../ci/helpers/goarch_det.sh {{.CLI_ARGS}}
+
+  OUTPUT_FILE: '{{if eq .GOOS "windows"}}eurydice.exe{{else}}eurydice{{end}}'
+
+  # Fuck you Apple
+  PLATFORM_LD_ARGS:
+    sh: |
+      if [ "{{.GOOS}}" = "darwin" ]; then
+        SDK_PATH="$(nix eval --raw 'nixpkgs#apple-sdk_26' 2>/dev/null || echo "")"
+
+        if [ "$SDK_PATH" = "" ]; then
+          echo ""
+          exit 0
+        fi
+
+        echo "-F$SDK_PATH/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks -L$SDK_PATH/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/lib"
+      elif [ "{{.GOOS}}" = "windows" ]; then
+        # HACK: use CI stuff only if the dist dir is detected. maybe use env var instead?
+        if [[ -d "/tmp/ffmpeg_dist" ]]; then
+          echo "-static -L/tmp/ffmpeg_dist/lib -mwindows -lavdevice -lavfilter -lavformat -lavcodec -lswresample -lswscale -lavutil -lmp3lame -lws2_32 -lole32 -loleaut32 -lshlwapi -lstrmiids -luuid -lbcrypt -lsecur32 -lncrypt -lcrypt32"
+        else
+          echo "-static -mwindows"
+        fi
+      else
+        echo "-static"
+      fi
+
+  PLATFORM_CC_ARGS:
+    sh: |
+      if [ "{{.GOOS}}" = "darwin" ]; then
+        echo ""
+      else
+        COMP_TARGET="$(FALLBACK_OS={{OS}} FALLBACK_ARCH={{ARCH}} ../ci/helpers/target_det.sh {{.CLI_ARGS}})"
+        echo "-target $COMP_TARGET"
+      fi
+
+tasks:
+  build:
+    - 'CC="zig cc {{.PLATFORM_CC_ARGS}}" CXX="zig c++ {{.PLATFORM_CC_ARGS}}" GOOS="{{.GOOS}}" GOARCH="{{.GOARCH}}" CGO_LDFLAGS="{{.PLATFORM_LD_ARGS}} $NIX_LDFLAGS" go build -v -ldflags "-linkmode external {{if eq .GOOS "windows"}}-H=windows{{end}} -s -w" -o {{.OUTPUT_FILE}} .'
+
+  dev:
+    - task: build
+    - EURYDICE_LOG_LEVEL=debug EURYDICE_NO_CRASH_DIALOG=1 {{if eq .GOOS "windows"}}./eurydice.exe{{else}}./eurydice{{end}}
