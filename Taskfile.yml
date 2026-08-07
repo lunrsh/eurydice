@@ -2,10 +2,10 @@ version: 3
 
 vars:
   GOOS:
-    sh: FALLBACK_OS={{OS}} FALLBACK_ARCH={{ARCH}} ../ci/helpers/goos_det.sh {{.CLI_ARGS}}
+    sh: FALLBACK_OS={{OS}} FALLBACK_ARCH={{ARCH}} ./ci/helpers/goos_det.sh {{.CLI_ARGS}}
 
   GOARCH:
-    sh: FALLBACK_OS={{OS}} FALLBACK_ARCH={{ARCH}} ../ci/helpers/goarch_det.sh {{.CLI_ARGS}}
+    sh: FALLBACK_OS={{OS}} FALLBACK_ARCH={{ARCH}} ./ci/helpers/goarch_det.sh {{.CLI_ARGS}}
 
   OUTPUT_FILE: '{{if eq .GOOS "windows"}}eurydice.exe{{else}}eurydice{{end}}'
 
@@ -37,7 +37,7 @@ vars:
       if [ "{{.GOOS}}" = "darwin" ]; then
         echo ""
       else
-        COMP_TARGET="$(FALLBACK_OS={{OS}} FALLBACK_ARCH={{ARCH}} ../ci/helpers/target_det.sh {{.CLI_ARGS}})"
+        COMP_TARGET="$(FALLBACK_OS={{OS}} FALLBACK_ARCH={{ARCH}} ./ci/helpers/target_det.sh {{.CLI_ARGS}})"
         echo "-target $COMP_TARGET"
       fi
 
