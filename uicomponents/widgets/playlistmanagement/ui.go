@@ -23,12 +23,12 @@ func DeleteModalRender(state *stateStructs.ApplicationState) {
 	imgui.Spacing()
 
 	if imgui.Button("Delete") {
-		if err := state.Config.Database.Where("id = ?", state.PageStates.PlaylistSelection.PlaylistToDelete.ID).Delete(&database.Playlist{}).Error; err != nil {
-			panic(fmt.Sprintf("Failed to delete playlist: %v", err))
-		}
-
 		if err := state.Config.Database.Where("playlist_id = ?", state.PageStates.PlaylistSelection.PlaylistToDelete.ID).Delete(&([]database.PlaylistSong{})).Error; err != nil {
 			panic(fmt.Sprintf("Failed to delete playlist contents: %v", err))
+		}
+
+		if err := state.Config.Database.Where("id = ?", state.PageStates.PlaylistSelection.PlaylistToDelete.ID).Delete(&database.Playlist{}).Error; err != nil {
+			panic(fmt.Sprintf("Failed to delete playlist: %v", err))
 		}
 
 		if err := BootstrapIndex(state); err != nil {
@@ -207,12 +207,12 @@ func Render(state *stateStructs.ApplicationState) {
 
 		if imgui.SelectableBoolV("\uf2ed##"+playlist.Name, state.PageStates.PlaylistSelection.PlaylistToDelete != nil, 0, imgui.Vec2{X: 14, Y: 0}) {
 			if state.PageStates.PlaylistSelection.PlaylistDeleteModalDisabled {
-				if err := state.Config.Database.Where("id = ?", playlist.ID).Delete(&database.Playlist{}).Error; err != nil {
-					panic(fmt.Sprintf("Failed to delete playlist: %v", err))
-				}
-
 				if err := state.Config.Database.Where("playlist_id = ?", state.PageStates.PlaylistSelection.PlaylistToDelete.ID).Delete(&([]database.PlaylistSong{})).Error; err != nil {
 					panic(fmt.Sprintf("Failed to delete playlist contents: %v", err))
+				}
+
+				if err := state.Config.Database.Where("id = ?", playlist.ID).Delete(&database.Playlist{}).Error; err != nil {
+					panic(fmt.Sprintf("Failed to delete playlist: %v", err))
 				}
 
 				if err := BootstrapIndex(state); err != nil {

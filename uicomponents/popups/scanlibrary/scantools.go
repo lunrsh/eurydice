@@ -21,6 +21,7 @@ import (
 	stateStructs "git.lunr.sh/luna/eurydice/state"
 	"git.lunr.sh/luna/eurydice/state/database"
 	"git.lunr.sh/luna/eurydice/state/popupstate/scanstate"
+	"git.lunr.sh/luna/eurydice/utilities"
 
 	"go.senan.xyz/taglib"
 	"golang.org/x/image/draw"
@@ -529,7 +530,8 @@ func cleanupDatabase(state *stateStructs.ApplicationState, musicFound []string) 
 		return fmt.Errorf("failed to find all songs: %w", err)
 	}
 
-	// Use hash maps for looking up songs
+	// Use hash maps for looking up songs, and for playlists to reindex
+	playlistsToReindexMap := map[uint]bool{}
 	songPathMap := make(map[string]bool, len(allSongs))
 
 	for _, path := range musicFound {
@@ -539,6 +541,24 @@ func cleanupDatabase(state *stateStructs.ApplicationState, musicFound []string) 
 	// First, clean up songs that are no longer in the filesystem
 	for _, song := range allSongs {
 		if !songPathMap[song.RelativePathFromLibrary] {
+			// First, check to see if this song is in any playlists, before we delete the song itself
+			playlistEntries := []database.PlaylistSong{}
+
+			if err := state.Config.Database.Where("song_id = ?", song.ID).Find(&playlistEntries).Error; err != nil {
+				return fmt.Errorf("failed to find playlists that contain the current song: %w", err)
+			}
+
+			// Delete any entries
+			for _, entry := range playlistEntries {
+				if err := state.Config.Database.Delete(&entry).Error; err != nil {
+					return fmt.Errorf("failed to delete song's entry in a playlist: %w", err)
+				}
+
+				state.Logger.Debugf("ScanLibrary->backingThread->cleanupDatabase: Deleted song '%s' from playlist '%s'", song.Title, entry.Playlist.Name)
+
+				playlistsToReindexMap[entry.PlaylistID] = true
+			}
+
 			if err := state.Config.Database.Delete(&song).Error; err != nil {
 				return fmt.Errorf("failed to delete song: %w", err)
 			}
@@ -579,7 +599,7 @@ func cleanupDatabase(state *stateStructs.ApplicationState, musicFound []string) 
 		}
 	}
 
-	// Finally, clean up artists that have no songs anymore
+	// Finally (in terms of deletion), clean up artists that have no songs anymore
 	allArtists := []database.Artist{}
 
 	if err := state.Config.Database.Preload("PrimarySongs").Preload("CollabSongs").Find(&allArtists).Error; err != nil {
@@ -594,6 +614,15 @@ func cleanupDatabase(state *stateStructs.ApplicationState, musicFound []string) 
 
 			state.Logger.Debugf("ScanLibrary->backingThread->cleanupDatabase: Deleted artist '%s'", artist.Name)
 		}
+	}
+
+	// And the last step: reindex any playlists that have been modified
+	for playlistIndex, _ := range playlistsToReindexMap {
+		if err := utilities.ReindexDeletedSongs(state, playlistIndex); err != nil {
+			return fmt.Errorf("failed to reindex deleted songs in playlist: %w", err)
+		}
+
+		state.Logger.Debugf("ScanLibrary->backingThread->cleanupDatabase: Reindexed playlist ID '%d'", playlistIndex)
 	}
 
 	return nil

@@ -81,27 +81,13 @@ func deleteSongs(state *stateStructs.ApplicationState) error {
 		}
 	}
 
-	// Fetch all songs from the database, to fix ID ordering
-	var songs []database.PlaylistSong
-
-	if err := state.Config.Database.Where("playlist_id = ?", state.PageStates.SongManagement.PlaylistID).Find(&songs).Error; err != nil {
-		return fmt.Errorf("failed to fetch songs: %w", err)
-	}
-
-	for songIndex, song := range songs {
-		if song.SortIndex != songIndex {
-			state.Logger.Debugf("Fixing sort index for song ID %d (prev. %d, now %d)", song.ID, song.SortIndex, songIndex)
-			song.SortIndex = songIndex
-
-			if err := state.Config.Database.Save(&song).Error; err != nil {
-				return fmt.Errorf("failed to update sort index for song ID %d: %w", song.ID, err)
-			}
-		}
+	if err := utilities.ReindexDeletedSongs(state, state.PageStates.SongManagement.PlaylistID); err != nil {
+		return fmt.Errorf("failed to reindex songs after deletion: %w", err)
 	}
 
 	// Sync the UI by re-bootstrapping the index
 	if err := BootstrapIndex(state, state.PageStates.SongManagement.PlaylistID); err != nil {
-		panic(fmt.Sprintf("Failed to bootstrap index: %v", err))
+		return fmt.Errorf("failed to rebootstrap index: %w", err)
 	}
 
 	return nil

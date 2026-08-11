@@ -67,8 +67,9 @@ func LoadAllSongs(state *stateStructs.ApplicationState) error {
 	}
 
 	state.PageStates.SongManagement.Songs = []*songmanagementstate.SongInList{}
+	songs := []*database.PlaylistSong{}
 
-	songs := []database.PlaylistSong{}
+	// We have a list of all the songs we have found, so we can get a list of who has this song in their playlist
 	foundSongs := map[uint]*songmanagementstate.SongInList{} // map of song ID to song in list
 
 	if err := state.Config.Database.Preload("Playlist").Preload("Song.CollabArtists").Preload("Song.PrimaryArtist").Preload("Song.Record").Where("library_id = ?", state.Config.ActiveLibraryID).Find(&songs).Error; err != nil {
@@ -76,6 +77,38 @@ func LoadAllSongs(state *stateStructs.ApplicationState) error {
 	}
 
 	for _, songInDatabase := range songs {
+		// HACK 1: this is a workaround for an issue where the database gets into an inconsistent state because of a missing song.
+		// THIS IS NOT A PROPER SOLUTION, however, this is a "migration" path because the database can be currently corrupted in past builds without this fix.
+
+		// If the current song in the database doesn't have a matching song, kill it with fire!
+		if songInDatabase.Song == nil {
+			state.Logger.Errorf("INCONSISTENT STATE ERROR: Playlist's song does not point to a song in database that exists! Deleting this song!")
+			state.Logger.Errorf("If you are not migrating from action run 40 or earlier, report this issue!")
+
+			if err := state.Config.Database.Delete(songInDatabase).Error; err != nil {
+				return fmt.Errorf("failed to delete song: %w", err)
+			}
+
+			if err := utilities.ReindexDeletedSongs(state, songInDatabase.PlaylistID); err != nil {
+				return fmt.Errorf("failed to reindex songs in playlist: %w", err)
+			}
+
+			continue
+		}
+
+		// HACK 2: This is of same reasons of HACK 1 above, but instead, it's a missing playlist for the song, and not a missing "backing song" if that makes sense.
+		// The root cause of this is still not fully known, but I currently believe it's a race condition. It should be fixed from now on, though. - @luna
+		if songInDatabase.Playlist == nil {
+			state.Logger.Errorf("INCONSISTENT STATE ERROR: Playlist's song does not point to a playlist that actually exists! Deleting this song!")
+			state.Logger.Errorf("If you are not migrating from action run 40 or earlier, report this issue!")
+
+			if err := state.Config.Database.Delete(songInDatabase).Error; err != nil {
+				return fmt.Errorf("failed to delete song: %w", err)
+			}
+
+			continue
+		}
+
 		if song, ok := foundSongs[songInDatabase.Song.ID]; ok {
 			song.InPlaylists += ", " + songInDatabase.Playlist.Name
 		} else {
