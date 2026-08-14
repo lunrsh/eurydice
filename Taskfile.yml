@@ -13,7 +13,7 @@ vars:
   PLATFORM_LD_ARGS:
     sh: |
       if [ "{{.GOOS}}" = "darwin" ]; then
-        SDK_PATH="$(nix eval --raw 'nixpkgs#apple-sdk_26' 2>/dev/null || echo "")"
+        SDK_PATH="$(nix eval --raw 'nixpkgs#apple-sdk_14' 2>/dev/null || echo "")"
 
         if [ "$SDK_PATH" = "" ]; then
           echo ""
