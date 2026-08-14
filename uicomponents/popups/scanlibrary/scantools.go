@@ -554,7 +554,7 @@ func cleanupDatabase(state *stateStructs.ApplicationState, musicFound []string) 
 					return fmt.Errorf("failed to delete song's entry in a playlist: %w", err)
 				}
 
-				state.Logger.Debugf("ScanLibrary->backingThread->cleanupDatabase: Deleted song '%s' from playlist '%s'", song.Title, entry.Playlist.Name)
+				state.Logger.Debugf("ScanLibrary->backingThread->cleanupDatabase: Deleted song '%s' from playlist ID '%d'", song.Title, entry.PlaylistID)
 
 				playlistsToReindexMap[entry.PlaylistID] = true
 			}
