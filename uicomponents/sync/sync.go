@@ -389,12 +389,7 @@ func copySongs(state *stateStructs.ApplicationState, songsToSync map[uint]*datab
 		state.Logger.Debug("Sync->backingThread: Fetching tags from source media")
 
 		// Update song tags
-		// Read from the local filesystem as it's faster than the device logically
-		tags, err := taglib.ReadTags(filepath.Join(library.LibraryPath, song.RelativePathFromLibrary))
-
-		if err != nil {
-			return fmt.Errorf("failed to read tags: %w", err)
-		}
+		newTags := map[string][]string{}
 
 		// If we have artists that have collaborated on this song, add them to the title, if they're not present
 		// e.g. "Song Title" -> "Song Title (feat. Artist 1, Artist 2)"
@@ -421,9 +416,9 @@ func copySongs(state *stateStructs.ApplicationState, songsToSync map[uint]*datab
 		}
 
 		// Sync tags with our local metadata
-		tags[taglib.Artist] = []string{song.PrimaryArtist.Name}
-		tags[taglib.Title] = []string{songTitle}
-		tags[taglib.Album] = []string{song.Record.Name}
+		newTags[taglib.Artist] = []string{song.PrimaryArtist.Name}
+		newTags[taglib.Title] = []string{songTitle}
+		newTags[taglib.Album] = []string{song.Record.Name}
 
 		// Get our record
 		var (
@@ -438,12 +433,11 @@ func copySongs(state *stateStructs.ApplicationState, songsToSync map[uint]*datab
 		state.Config.Database.Model(&database.Song{}).Where("record_id = ?", song.RecordID).Count(&totalTracksInt)
 		totalTracks = strconv.Itoa(int(totalTracksInt))
 
-		tags[taglib.DiscNumber] = []string{} // We do not support multi-disc albums
-		tags[taglib.TrackNumber] = []string{trackNumber + "/" + totalTracks}
+		newTags[taglib.TrackNumber] = []string{trackNumber + "/" + totalTracks}
 
 		state.Logger.Debug("Sync->backingThread: Writing tags to target media")
 
-		if err := taglib.WriteTags(filepath.Join(state.PageStates.Sync.SelectedDevice.Mountpoint, songPath), tags, taglib.Clear); err != nil {
+		if err := taglib.WriteTags(filepath.Join(state.PageStates.Sync.SelectedDevice.Mountpoint, songPath), newTags, taglib.Clear); err != nil {
 			// Do similar checks for the tag writing
 			if err.Error() == "can't save file" {
 				if restartCounter == 3 {

@@ -15,7 +15,9 @@ import (
 	"git.lunr.sh/luna/eurydice/state"
 	"git.lunr.sh/luna/eurydice/state/database"
 	"git.lunr.sh/luna/eurydice/themes"
+	"git.lunr.sh/luna/eurydice/uicomponents/popups/filestometadata"
 	"git.lunr.sh/luna/eurydice/uicomponents/popups/firstboot"
+	"git.lunr.sh/luna/eurydice/uicomponents/popups/metadatatofiles"
 	"git.lunr.sh/luna/eurydice/uicomponents/popups/scanlibrary"
 	"git.lunr.sh/luna/eurydice/uicomponents/sync"
 	"git.lunr.sh/luna/eurydice/uicomponents/widgets/mediamanagement"
@@ -59,7 +61,28 @@ func mainLoop() {
 
 	// Menu bar
 	if imgui.BeginMainMenuBar() {
+		// HACKS: because imgui doesn't want to fire the OpenPopup for some reason, we just set a variable and call it later
+		var (
+			shouldOpenMetadataToFileConfirmationPopup = false
+			shouldOpenFileToMetadataConfirmationPopup = false
+
+			shouldOpenMetadataToFilePopup = false
+			shouldOpenFileToMetadataPopup = false
+		)
+
 		if imgui.BeginMenu("File") {
+			if imgui.MenuItemBool("Sync Metadata to Files") {
+				shouldOpenMetadataToFileConfirmationPopup = true
+			}
+
+			imgui.BeginDisabled() // not implemented
+
+			if imgui.MenuItemBool("Sync Files to Metadata") {
+				shouldOpenFileToMetadataConfirmationPopup = true
+			}
+
+			imgui.EndDisabled()
+
 			imgui.Separator()
 
 			if imgui.MenuItemBool("Exit") {
@@ -67,6 +90,46 @@ func mainLoop() {
 			}
 
 			imgui.EndMenu()
+		}
+
+		if shouldOpenMetadataToFileConfirmationPopup {
+			imgui.OpenPopupStr("Confirmation | Metadata to Files")
+		} else if shouldOpenFileToMetadataConfirmationPopup {
+			imgui.OpenPopupStr("Confirmation | Files to Metadata")
+		}
+
+		if imgui.BeginPopupModalV("Confirmation | Metadata to Files", nil, imgui.WindowFlagsAlwaysAutoResize) {
+			imgui.Text("Are you sure you want to sync metadata to files? This will overwrite any existing metadata on the files, with metadata from your library.\n")
+			imgui.Spacing()
+			imgui.Text("If you rely on metadata attributes not exposed by Eurydice, or have otherwise updated metadata externally, you will lose this information after syncing.")
+			imgui.Spacing()
+
+			if imgui.ButtonV("Continue", imgui.Vec2{}) {
+				imgui.CloseCurrentPopup()
+				shouldOpenMetadataToFilePopup = true
+			}
+
+			imgui.SameLine()
+
+			if imgui.ButtonV("Cancel", imgui.Vec2{}) {
+				imgui.CloseCurrentPopup()
+			}
+
+			imgui.EndPopup()
+		}
+
+		if shouldOpenMetadataToFilePopup {
+			imgui.OpenPopupStr("Sync | Metadata to Files")
+		} else if shouldOpenFileToMetadataPopup {
+			imgui.OpenPopupStr("Sync | Files to Metadata")
+		}
+
+		if imgui.BeginPopupModalV("Sync | Metadata to Files", nil, imgui.WindowFlagsAlwaysAutoResize) {
+			metadatatofiles.Render(appState)
+		}
+
+		if imgui.BeginPopupModalV("Sync | Files to Metadata", nil, imgui.WindowFlagsAlwaysAutoResize) {
+			filestometadata.Render(appState)
 		}
 
 		if imgui.BeginPopupModalV("Error | Sync", nil, imgui.WindowFlagsAlwaysAutoResize) {
@@ -222,7 +285,7 @@ func mainLoop() {
 		scanlibrary.Render(appState)
 	}
 
-	// "inline" this because it's so simple
+	// "inline" these because it's so simple
 	// TODO: imgui supports nested modals, but we don't utilize it currently
 	if imgui.BeginPopupModalV("Error | First Launch Wizard", nil, imgui.WindowFlagsAlwaysAutoResize) ||
 		imgui.BeginPopupModalV("Library Initialization Error | Eurydice Startup", nil, imgui.WindowFlagsAlwaysAutoResize) {

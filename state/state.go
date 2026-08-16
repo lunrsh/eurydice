@@ -4,6 +4,8 @@ package state
 import (
 	"context"
 
+	"git.lunr.sh/luna/eurydice/state/popupstate/ftmstate"
+	"git.lunr.sh/luna/eurydice/state/popupstate/mtfstate"
 	"git.lunr.sh/luna/eurydice/state/popupstate/scanstate"
 	"git.lunr.sh/luna/eurydice/state/popupstate/setupstate"
 	"git.lunr.sh/luna/eurydice/state/syncstate"
@@ -59,6 +61,8 @@ type ConfigState struct {
 type IndividualPageStates struct {
 	FirstBoot   setupstate.SetupState
 	LibraryScan scanstate.ScanState
+	FTMUpdate   ftmstate.FTMUpdateState
+	MTFUpdate   mtfstate.MTFUpdateState
 
 	PlaylistSelection playlistselectionstate.PlaylistSelectionState
 	MediaManagement   mediastate.MediaState
