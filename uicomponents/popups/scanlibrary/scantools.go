@@ -200,11 +200,8 @@ func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 					songInformation.Title = filepath.Base(songPath)
 				}
 
-				// I don't think the Artists property is used often, but if it is, let's rely on it
-				// Otherwise, fall back to the Artist property, and try to manually find multiple artists (if applicable)
-				if artists, ok := properties[taglib.Artists]; ok && len(artists) > 0 {
-					songArtists = artists
-				} else if artist, ok := properties[taglib.Artist]; ok && len(artist) > 0 {
+				// Fetch the Artist property, and try to manually find all the artists on this song
+				if artist, ok := properties[taglib.Artist]; ok && len(artist) > 0 {
 					artistName := artist[0]
 					artists := []string{}
 

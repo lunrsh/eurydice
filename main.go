@@ -75,13 +75,9 @@ func mainLoop() {
 				shouldOpenMetadataToFileConfirmationPopup = true
 			}
 
-			imgui.BeginDisabled() // not implemented
-
 			if imgui.MenuItemBool("Sync Files to Metadata") {
 				shouldOpenFileToMetadataConfirmationPopup = true
 			}
-
-			imgui.EndDisabled()
 
 			imgui.Separator()
 
@@ -99,7 +95,7 @@ func mainLoop() {
 		}
 
 		if imgui.BeginPopupModalV("Confirmation | Metadata to Files", nil, imgui.WindowFlagsAlwaysAutoResize) {
-			imgui.Text("Are you sure you want to sync metadata to files? This will overwrite any existing metadata on the files, with metadata from your library.\n")
+			imgui.Text("Are you sure you want to sync the metadata in your library to the files on disk? This will overwrite any existing metadata on the files, with metadata from your library.")
 			imgui.Spacing()
 			imgui.Text("If you rely on metadata attributes not exposed by Eurydice, or have otherwise updated metadata externally, you will lose this information after syncing.")
 			imgui.Spacing()
@@ -107,6 +103,24 @@ func mainLoop() {
 			if imgui.ButtonV("Continue", imgui.Vec2{}) {
 				imgui.CloseCurrentPopup()
 				shouldOpenMetadataToFilePopup = true
+			}
+
+			imgui.SameLine()
+
+			if imgui.ButtonV("Cancel", imgui.Vec2{}) {
+				imgui.CloseCurrentPopup()
+			}
+
+			imgui.EndPopup()
+		} else if imgui.BeginPopupModalV("Confirmation | Files to Metadata", nil, imgui.WindowFlagsAlwaysAutoResize) {
+			imgui.Text("Are you sure you want to sync the files on disk to the metadata in your library? This will overwrite any existing metadata in the library, and rebuild it.")
+			imgui.Spacing()
+			imgui.Text("If you have modified any metadata in Eurydice, you will lose this information after syncing, unless you have ran Metadata to Files sync before your modifications.")
+			imgui.Spacing()
+
+			if imgui.ButtonV("Continue", imgui.Vec2{}) {
+				imgui.CloseCurrentPopup()
+				shouldOpenFileToMetadataPopup = true
 			}
 
 			imgui.SameLine()
@@ -126,9 +140,7 @@ func mainLoop() {
 
 		if imgui.BeginPopupModalV("Sync | Metadata to Files", nil, imgui.WindowFlagsAlwaysAutoResize) {
 			metadatatofiles.Render(appState)
-		}
-
-		if imgui.BeginPopupModalV("Sync | Files to Metadata", nil, imgui.WindowFlagsAlwaysAutoResize) {
+		} else if imgui.BeginPopupModalV("Sync | Files to Metadata", nil, imgui.WindowFlagsAlwaysAutoResize) {
 			filestometadata.Render(appState)
 		}
 
