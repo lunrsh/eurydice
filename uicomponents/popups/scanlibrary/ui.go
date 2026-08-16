@@ -12,11 +12,78 @@ import (
 )
 
 func Render(state *stateStructs.ApplicationState) {
-	// ScanStepFinished is earlier because we need to EndPopup before closing, but we already have a defer that does that,
-	// so it'd call twice, and break things (crash).
+	switch state.PageStates.LibraryScan.StepNo {
+	case scanstate.StepIdle:
+		imgui.Text("Initializing runtime...\n")
+		imgui.Separator()
+		imgui.SetCursorPosY(imgui.CursorPosY() + 1) // Do this because it's not exactly the same
 
-	if state.PageStates.LibraryScan.StepNo == scanstate.StepFinished {
-		// Step 5 needs to run on the main thread, so a bit of a hack, but once we reach StepFinished, initialize the indexers
+		imgui.ProgressBarV(float32(imgui.Time()*-0.25), imgui.Vec2{X: 600, Y: 0}, "Initializing...")
+
+		go backingThread(state)
+		state.PageStates.LibraryScan.StepNo = scanstate.StepScanningFilesystem // do this to ensure backingThread doesn't start multiple times
+	case scanstate.StepScanningFilesystem:
+		imgui.Text("Scanning filesystem, please wait...\n")
+		currentSongPath := state.PageStates.LibraryScan.CurrentSongPath
+
+		if len(currentSongPath) > 65 {
+			// Truncate characters but leave room for the ellipsis prefix
+			currentSongPath = "..." + currentSongPath[len(currentSongPath)-(65-3):]
+		}
+
+		imgui.Text(fmt.Sprintf("Currently scanning: %s\n", currentSongPath))
+		imgui.Separator()
+		imgui.SetCursorPosY(imgui.CursorPosY() + 1) // Do this because it's not exactly the same
+
+		imgui.ProgressBarV(float32(imgui.Time()*-0.25), imgui.Vec2{X: 600, Y: 0}, "Scanning...")
+	case scanstate.StepScanningDatabase:
+		imgui.Text("Scanning database, please wait...\n")
+		currentSongPath := state.PageStates.LibraryScan.CurrentSongPath
+
+		if len(currentSongPath) > 65 {
+			// Truncate characters but leave room for the ellipsis prefix
+			currentSongPath = "..." + currentSongPath[len(currentSongPath)-(65-3):]
+		}
+
+		imgui.Text(fmt.Sprintf("Currently scanning: %s\n", currentSongPath))
+		imgui.Separator()
+		imgui.SetCursorPosY(imgui.CursorPosY() + 1) // Do this because it's not exactly the same
+
+		imgui.ProgressBarV(float32(imgui.Time()*-0.25), imgui.Vec2{X: 600, Y: 0}, "Scanning...")
+	case scanstate.StepAddingSongs:
+		imgui.Text("Adding new songs to database, please wait...\n")
+		currentSongPath := state.PageStates.LibraryScan.CurrentSongPath
+
+		if len(currentSongPath) > 65 {
+			// Truncate characters but leave room for the ellipsis prefix
+			currentSongPath = "..." + currentSongPath[len(currentSongPath)-(65-3):]
+		}
+
+		imgui.Text(fmt.Sprintf("Currently indexing: %s\n", currentSongPath))
+		imgui.Separator()
+		imgui.SetCursorPosY(imgui.CursorPosY() + 1) // Do this because it's not exactly the same
+
+		progressBarText := fmt.Sprintf("Adding... (%d/%d)", state.PageStates.LibraryScan.TotalSongsScanned+1, state.PageStates.LibraryScan.TotalSongsToScan+1)
+
+		imgui.ProgressBarV(float32(state.PageStates.LibraryScan.TotalSongsScanned)/float32(state.PageStates.LibraryScan.TotalSongsToScan), imgui.Vec2{X: 600, Y: 0}, progressBarText)
+	case scanstate.StepCleaningUp:
+		imgui.Text("Removing missing songs from database, please wait...\n")
+		currentSongPath := state.PageStates.LibraryScan.CurrentSongPath
+
+		if len(currentSongPath) > 65 {
+			// Truncate characters but leave room for the ellipsis prefix
+			currentSongPath = "..." + currentSongPath[len(currentSongPath)-(65-3):]
+		}
+
+		imgui.Text(fmt.Sprintf("Currently scanning: %s\n", currentSongPath))
+		imgui.Separator()
+		imgui.SetCursorPosY(imgui.CursorPosY() + 1) // Do this because it's not exactly the same
+
+		imgui.ProgressBarV(float32(imgui.Time()*-0.25), imgui.Vec2{X: 600, Y: 0}, "Scanning...")
+	case scanstate.StepFinished:
+		// Once we reach StepFinished, initialize the indexers.
+		// This needs to run on the main thread, because of the calls here (that can call imgui functions), so it's a bit of a hack running this here.
+
 		if err := mediamanagement.BootstrapIndex(state); err != nil {
 			panic(fmt.Sprintf("Failed to bootstrap media management index: %v", err))
 		}
@@ -32,76 +99,7 @@ func Render(state *stateStructs.ApplicationState) {
 		// Now we're done!
 		state.PageStates.LibraryScan.StepNo = scanstate.StepIdle
 		imgui.CloseCurrentPopup()
-		imgui.EndPopup()
-
-		return
 	}
 
-	defer imgui.EndPopup()
-
-	switch state.PageStates.LibraryScan.StepNo {
-	case scanstate.StepIdle:
-		imgui.Text("Initializing runtime...\n")
-		imgui.Separator()
-		imgui.Spacing()
-		imgui.ProgressBarV(float32(imgui.Time()*-0.25), imgui.Vec2{X: 600, Y: 0}, "Initializing...")
-
-		go backingThread(state)
-	case scanstate.StepScanningFilesystem:
-		imgui.Text("Scanning filesystem, please wait...\n")
-		currentSongPath := state.PageStates.LibraryScan.CurrentSongPath
-
-		if len(currentSongPath) > 65 {
-			// Truncate characters but leave room for the ellipsis prefix
-			currentSongPath = "..." + currentSongPath[len(currentSongPath)-(65-3):]
-		}
-
-		imgui.Text(fmt.Sprintf("Currently scanning: %s\n", currentSongPath))
-		imgui.Separator()
-		imgui.Spacing()
-		imgui.ProgressBarV(float32(imgui.Time()*-0.25), imgui.Vec2{X: 600, Y: 0}, "Scanning...")
-	case scanstate.StepScanningDatabase:
-		imgui.Text("Scanning database, please wait...\n")
-		currentSongPath := state.PageStates.LibraryScan.CurrentSongPath
-
-		if len(currentSongPath) > 65 {
-			// Truncate characters but leave room for the ellipsis prefix
-			currentSongPath = "..." + currentSongPath[len(currentSongPath)-(65-3):]
-		}
-
-		imgui.Text(fmt.Sprintf("Currently scanning: %s\n", currentSongPath))
-		imgui.Separator()
-		imgui.Spacing()
-		imgui.ProgressBarV(float32(imgui.Time()*-0.25), imgui.Vec2{X: 600, Y: 0}, "Scanning...")
-	case scanstate.StepAddingSongs:
-		imgui.Text("Adding new songs to database, please wait...\n")
-		currentSongPath := state.PageStates.LibraryScan.CurrentSongPath
-
-		if len(currentSongPath) > 65 {
-			// Truncate characters but leave room for the ellipsis prefix
-			currentSongPath = "..." + currentSongPath[len(currentSongPath)-(65-3):]
-		}
-
-		imgui.Text(fmt.Sprintf("Currently indexing: %s\n", currentSongPath))
-
-		imgui.Separator()
-		imgui.Spacing()
-
-		progressBarText := fmt.Sprintf("Adding... (%d/%d)", state.PageStates.LibraryScan.TotalSongsScanned+1, state.PageStates.LibraryScan.TotalSongsToScan+1)
-		imgui.ProgressBarV(float32(state.PageStates.LibraryScan.TotalSongsScanned)/float32(state.PageStates.LibraryScan.TotalSongsToScan), imgui.Vec2{X: 600, Y: 0}, progressBarText)
-	case scanstate.StepCleaningUp:
-		imgui.Text("Removing missing songs from database, please wait...\n")
-		currentSongPath := state.PageStates.LibraryScan.CurrentSongPath
-
-		if len(currentSongPath) > 65 {
-			// Truncate characters but leave room for the ellipsis prefix
-			currentSongPath = "..." + currentSongPath[len(currentSongPath)-(65-3):]
-		}
-
-		imgui.Text(fmt.Sprintf("Currently scanning: %s\n", currentSongPath))
-
-		imgui.Separator()
-		imgui.Spacing()
-		imgui.ProgressBarV(float32(imgui.Time()*-0.25), imgui.Vec2{X: 600, Y: 0}, "Scanning...")
-	}
+	imgui.EndPopup()
 }
