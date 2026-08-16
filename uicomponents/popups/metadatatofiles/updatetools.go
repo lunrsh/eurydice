@@ -97,8 +97,6 @@ func updateSongs(state *stateStructs.ApplicationState, songs []*database.Song, r
 					panic(fmt.Sprintf("Failed to fetch other artist IDs on song %d: %s", song.ID, err))
 				}
 
-				fmt.Printf("SongLen: %d\n", len(otherArtistIDsOnThisSong))
-
 				artistsOnThisSong := make([]*database.Artist, 1+len(otherArtistIDsOnThisSong))
 
 				// Lock the database to ensure no one else loads artists and records while we're loading them
@@ -152,7 +150,6 @@ func updateSongs(state *stateStructs.ApplicationState, songs []*database.Song, r
 				allArtists := ""
 
 				for artistIndex, artist := range artistsOnThisSong {
-					fmt.Printf("curr: %s\n", artist.Name)
 					if artistIndex == 0 {
 						allArtists = artist.Name
 					} else {

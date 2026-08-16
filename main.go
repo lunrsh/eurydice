@@ -506,6 +506,9 @@ func main() {
 			appState.CurrentImguiBackend.SetBgColor(imgui.Vec4{X: 0, Y: 0, Z: 0, W: 0})
 		}
 
+		imgui.CurrentIO().SetConfigDpiScaleFonts(true)
+		imgui.CurrentIO().SetConfigDpiScaleViewports(true)
+
 		themes.EnumerateAndInitializeFonts(appState)
 
 		// This mechanism caps the FPS at V-Sync (ie. 144Hz display = 144fps, 60Hz display = 60fps)

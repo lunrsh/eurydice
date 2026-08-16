@@ -31,10 +31,7 @@ func TinyPlaylistParser(playlist string) ([]*TPPSong, error) {
 			continue
 		}
 
-		fmt.Printf("line contents: '%s'\n", line)
-
 		if string(line[0]) != "#" {
-			fmt.Printf("file path: '%s'\n", line)
 			workingSongCopy.FilePath = line
 			songList = append(songList, workingSongCopy)
 
@@ -46,20 +43,15 @@ func TinyPlaylistParser(playlist string) ([]*TPPSong, error) {
 		} else {
 			prefix := line[1:strings.Index(line, ":")]
 
-			fmt.Printf("prefix: '%s'\n", prefix)
-
 			switch prefix {
 			case "EXTINF":
 				workingSongCopy.DisplayName = strings.Trim(line[strings.Index(line, ",")+1:], " ")
-				fmt.Printf("display name: '%s'\n", workingSongCopy.DisplayName)
 			case "EXT-EURYDICE-SONGID":
 				songID, err := strconv.Atoi(strings.Trim(line[strings.Index(line, ":")+1:], " "))
 
 				if err != nil {
 					return nil, fmt.Errorf("Failed to parse Eurydice song ID directive in playlist: %w", err)
 				}
-
-				fmt.Printf("song ID: %d\n", songID)
 
 				workingSongCopy.EurydiceSongID = songID
 			}
