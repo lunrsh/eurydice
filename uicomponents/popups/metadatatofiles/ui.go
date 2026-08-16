@@ -5,7 +5,6 @@ import (
 
 	stateStructs "git.lunr.sh/luna/eurydice/state"
 	"git.lunr.sh/luna/eurydice/state/popupstate/mtfstate"
-	"git.lunr.sh/luna/eurydice/state/popupstate/scanstate"
 	"git.lunr.sh/luna/eurydice/uicomponents/widgets/mediamanagement"
 	"git.lunr.sh/luna/eurydice/uicomponents/widgets/playlistmanagement"
 	"git.lunr.sh/luna/eurydice/uicomponents/widgets/songmanagement"
@@ -61,7 +60,10 @@ func Render(state *stateStructs.ApplicationState) {
 		}
 
 		// Now we're done!
-		state.PageStates.LibraryScan.StepNo = scanstate.StepIdle
+		state.PageStates.MTFUpdate.StepNo = mtfstate.StepIdle
+		state.PageStates.MTFUpdate.TotalSongsToUpdate = 0
+		state.PageStates.MTFUpdate.TotalSongsUpdated = 0
+
 		imgui.CloseCurrentPopup()
 	}
 
