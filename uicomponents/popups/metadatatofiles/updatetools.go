@@ -19,7 +19,7 @@ import (
 
 // Given a list of songs, this function updates the metadata embedded in the songs with the metadata currently stored in Eurydice.
 func updateSongs(state *stateStructs.ApplicationState, songs []*database.Song, records map[uint]*database.Record, artists map[uint]*database.Artist) ([]string, error) {
-	relativePathsOfSongsToKeep := []string{} // We keep track of the songs to keep, to pass in to the cleanup code
+	relativePathsOfSongsToKeep := make([]string, 0, len(songs)) // We keep track of the songs to keep, to pass in to the cleanup code
 
 	// Before we do anything, we fetch the current active library path, so we can get the path to songs
 	library := &database.Library{}
@@ -81,7 +81,7 @@ func updateSongs(state *stateStructs.ApplicationState, songs []*database.Song, r
 						state.PageStates.MTFUpdate.TotalSongsUpdated++
 						continue
 					} else {
-						panic(fmt.Sprintf("Failed to check file existence for '%s': %w", song.Title, err))
+						panic(fmt.Sprintf("Failed to check file existence for '%s': %v", song.Title, err))
 					}
 				}
 
@@ -202,7 +202,11 @@ func updateSongs(state *stateStructs.ApplicationState, songs []*database.Song, r
 				// We're done!
 				state.PageStates.MTFUpdate.TotalSongsUpdated++
 				state.PageStates.MTFUpdate.CurrentSongPath = fmt.Sprintf("%s - %s", artistsOnThisSong[0].Name, song.Title)
+
+				// Lock because appending is not thread-safe
+				databaseLockMutex.Lock()
 				relativePathsOfSongsToKeep = append(relativePathsOfSongsToKeep, song.RelativePathFromLibrary)
+				databaseLockMutex.Unlock()
 			}
 		})
 	}
