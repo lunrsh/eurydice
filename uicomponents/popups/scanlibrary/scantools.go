@@ -52,7 +52,7 @@ func speculateSongRecordIndex(state *stateStructs.ApplicationState, recordName s
 
 // Finds all music files in the library path and returns them as a slice of paths.
 // Used internally for scanning the library (backingThread, step 1).
-func walkToFindAllMusic(state *stateStructs.ApplicationState) ([]string, error) {
+func WalkToFindAllMusic(state *stateStructs.ApplicationState) ([]string, error) {
 	allMusicFound := []string{}
 
 	err := filepath.WalkDir(state.Config.JSONConfig.LibraryPath, func(path string, dirEntry fs.DirEntry, err error) error {
@@ -94,7 +94,7 @@ func walkToFindAllMusic(state *stateStructs.ApplicationState) ([]string, error) 
 // database yet.
 //
 // Used internally for scanning the library and finding new music to index (backingThread, step 2).
-func findNonindexedMusic(state *stateStructs.ApplicationState, allMusicFound []string) ([]string, error) {
+func FindNonindexedMusic(state *stateStructs.ApplicationState, allMusicFound []string) ([]string, error) {
 	uniqueMusicFound := []string{}
 
 	for _, musicPath := range allMusicFound {
@@ -522,11 +522,13 @@ func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 // Given a list of all music found in our library, this function cleans up the database by removing entries that
 // are no longer in the filesystem.
 //
+// IMPORTANT: musicFound is NOT a list of music to remove. It is a list of music to KEEP.
+//
 // Used internally for scanning the library and cleaning up the database (backingThread, step 4).
-func cleanupDatabase(state *stateStructs.ApplicationState, musicFound []string) error {
+func CleanupDatabase(state *stateStructs.ApplicationState, musicFound []string) error {
 	allSongs := []database.Song{}
 
-	if err := state.Config.Database.Find(&allSongs).Error; err != nil {
+	if err := state.Config.Database.Where("library_id = ?", state.Config.ActiveLibraryID).Find(&allSongs).Error; err != nil {
 		return fmt.Errorf("failed to find all songs: %w", err)
 	}
 
@@ -565,19 +567,27 @@ func cleanupDatabase(state *stateStructs.ApplicationState, musicFound []string) 
 
 			state.Logger.Debugf("ScanLibrary->backingThread->cleanupDatabase: Deleted song '%s'", song.Title)
 
-			// Check to see if there are any songs still using the thumbnail, and if not, delete it
-			songsWithThumbnail := []database.Song{}
+			// If we have a thumbnail attached to this song, we check to see if there are any songs or records still using the thumbnail, and if not, delete it
+			if song.ArtID != "" {
+				var songsWithThumbnailCount int64
+				var recordsWithThumbnailCount int64
 
-			if err := state.Config.Database.Where("art_id = ?", song.ArtID).Find(&songsWithThumbnail).Error; err != nil {
-				return fmt.Errorf("failed to find songs with thumbnail: %w", err)
-			}
-
-			if len(songsWithThumbnail) == 0 {
-				if err := os.Remove(filepath.Join(state.Config.AppStatePath, "thumbnails", song.ArtID)); err != nil {
-					return fmt.Errorf("failed to remove thumbnail: %w", err)
+				// Checking all songs, regardless of library, is intentional, as they can be reused across libraries
+				if err := state.Config.Database.Model(&database.Song{}).Where("art_id = ?", song.ArtID).Count(&songsWithThumbnailCount).Error; err != nil {
+					return fmt.Errorf("failed to find songs with thumbnail: %w", err)
 				}
 
-				state.Logger.Debugf("ScanLibrary->backingThread->cleanupDatabase: Deleted thumbnail ID '%s'", song.ArtID)
+				if err := state.Config.Database.Model(&database.Record{}).Where("art_id = ?", song.ArtID).Count(&recordsWithThumbnailCount).Error; err != nil {
+					return fmt.Errorf("failed to find records with thumbnail: %w", err)
+				}
+
+				if songsWithThumbnailCount == 0 && recordsWithThumbnailCount == 0 {
+					if err := os.Remove(filepath.Join(state.Config.AppStatePath, "thumbnails", song.ArtID)); err != nil {
+						return fmt.Errorf("failed to remove thumbnail: %w", err)
+					}
+
+					state.Logger.Debugf("ScanLibrary->backingThread->cleanupDatabase: Deleted thumbnail ID '%s'", song.ArtID)
+				}
 			}
 		}
 	}
@@ -640,7 +650,7 @@ func backingThread(state *stateStructs.ApplicationState) {
 	state.Logger.Debugf("ScanLibrary->backingThread: scanning library path '%s'", state.Config.JSONConfig.LibraryPath)
 	state.PageStates.LibraryScan.StepNo = scanstate.StepScanningFilesystem
 
-	allMusicFound, err := walkToFindAllMusic(state)
+	allMusicFound, err := WalkToFindAllMusic(state)
 
 	if err != nil {
 		// Special case: if we failed to scan the filesystem, it's more of an easy fix that needs less visible.
@@ -649,14 +659,15 @@ func backingThread(state *stateStructs.ApplicationState) {
 		oncrash.Panic("Eurydice crash handler", fmt.Sprintf("Failed to read the current library path (%s). Is it readable and accessible?", state.Config.JSONConfig.LibraryPath), state.Logger, state.LogFilePath)
 	}
 
+	var uniqueMusicFound []string // hack to allow the goto statement to work
+
 	if len(allMusicFound) == 0 {
-		state.PageStates.LibraryScan.StepNo = scanstate.StepFinished
-		return
+		goto cleanupDatabaseStep
 	}
 
 	// Step 2: scan the database (for entries we already have in the database)
 	state.PageStates.LibraryScan.StepNo = scanstate.StepScanningDatabase
-	uniqueMusicFound, err := findNonindexedMusic(state, allMusicFound)
+	uniqueMusicFound, err = FindNonindexedMusic(state, allMusicFound)
 
 	if err != nil {
 		panic(fmt.Sprintf("Failed to find unique music library directories: %v", err))
@@ -681,7 +692,7 @@ func backingThread(state *stateStructs.ApplicationState) {
 cleanupDatabaseStep:
 	state.PageStates.LibraryScan.StepNo = scanstate.StepCleaningUp
 
-	if err = cleanupDatabase(state, allMusicFound); err != nil {
+	if err = CleanupDatabase(state, allMusicFound); err != nil {
 		panic(fmt.Sprintf("Failed to cleanup database: %v", err))
 	}
 
