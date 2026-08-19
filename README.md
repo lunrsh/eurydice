@@ -64,4 +64,8 @@ After that, you can extract the archive and run Eurydice! Be sure to have a dedi
 
 With that aside, I hope you enjoy using Eurydice!
 
-~ Luna, Contributors, and the lunaworks project
+~ Luna, contributors, and the lunaworks project
+
+## Special Thanks
+
+Special thanks to Neo, Vincent, Kirb, GRG, and Vivian for their early support for this project. You guys know what you helped with -- thank you guys a lot.
