@@ -39,6 +39,10 @@ Is Eurydice not doing a song, record, or artist you listen to justice? Don't fre
 
 Eurydice allows you to create, edit, and delete playlists with just a click. It also lets you do the same to songs, too (as pictured)! While Eurydice does not support this yet, Eurydice will support a plug-in system that will let you sync playlists with streaming services such as Spotify and Apple Music.
 
+<br>
+<br>
+<br>
+
 ### Syncing to a Digital Audio Player
 
 [<img align="left" width="295" height="182" src="https://git.lunr.sh/luna/eurydice/media/branch/main/assets/readme/sync.png">](https://git.lunr.sh/luna/eurydice/media/branch/main/assets/readme/sync.png)
@@ -49,8 +53,6 @@ Eurydice is also very intelligent - if you sync from a different instance of Eur
 
 Eurydice also supports that have a `Playlists/` directory and work over USB/SD-card. If this is the case for your device, but it's not using Rockbox, worry not! Create a `.eurydice.json` file on the root of the device, and it will work perfectly.
 
-<br>
-<br>
 <br>
 
 ## Getting Started
