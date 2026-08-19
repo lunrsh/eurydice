@@ -31,7 +31,6 @@ Is Eurydice not doing a song, record, or artist you listen to justice? Don't fre
 
 <br>
 <br>
-<br>
 
 ### Playlist Management
 
