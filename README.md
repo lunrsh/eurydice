@@ -7,7 +7,7 @@
 
 # Eurydice (Alpha 1)
 
-Eurydice is a Rockbox music manager for the modern age.
+Eurydice is a music and playlist manager for the modern age.
 
 ## Features
 
