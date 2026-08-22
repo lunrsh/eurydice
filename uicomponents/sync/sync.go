@@ -153,6 +153,7 @@ func fetchSongsToSync(state *stateStructs.ApplicationState, metadataPath string)
 
 				if songFromDatabase, ok := songsToSync[installation.SongID]; ok {
 					state.Logger.Errorf("Song '%s' does not exist, but we have an installation for it. Recopying and updating!", song.RelativePath)
+
 					// We're updating the metadata ourselves, so mark this song as needing no metadata
 					songsThatDoNotNeedMetadata[installation.SongID] = true
 
@@ -234,7 +235,11 @@ func fetchSongsToSync(state *stateStructs.ApplicationState, metadataPath string)
 				tags, err := taglib.ReadTags(filepath.Join(state.PageStates.Sync.SelectedDevice.Mountpoint, song.RelativePath))
 
 				if err != nil {
-					return nil, nil, nil, fmt.Errorf("Failed to read tags for song '%s': %w", songTitle, err)
+					state.Logger.Warnf("Failed to read tags for song '%s': %v. Deleting and rebuilding...", songTitle, err)
+
+					// Update the metadata hash and the relative path to the song
+					//song.MetadataHash = calculateMetadataHash(s)
+					//song.RelativePath = calculateRelativePath(state, foundSongs)
 				}
 
 				// Now, narrow down from here

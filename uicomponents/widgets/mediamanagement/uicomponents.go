@@ -230,9 +230,11 @@ func renderRecord(state *stateStructs.ApplicationState, record *mediastate.Recor
 	}
 
 	if record.Image != nil {
-		imgui.Image(*record.Image, imgui.Vec2{X: 64, Y: 64})
+		scale := imgui.CurrentIO().DisplayFramebufferScale()
+
+		imgui.Image(*record.Image, imgui.Vec2{X: 32 * scale.X, Y: 32 * scale.Y})
 		imgui.SameLine()
-		imgui.SetCursorPosY(imgui.CursorPosY() + (32 - (imgui.FrameHeight() * 0.5)))
+		imgui.SetCursorPosY(imgui.CursorPosY() + ((16 * scale.Y) - (imgui.FrameHeight() * 0.5)))
 	}
 
 	// Select the record if it's in the selection storage
@@ -321,9 +323,12 @@ func renderSong(state *stateStructs.ApplicationState, song *mediastate.SongState
 	}
 
 	if song.Image != nil {
-		imgui.Image(*song.Image, imgui.Vec2{X: 32, Y: 32})
+		// Fetch UI scale
+		scale := imgui.CurrentIO().DisplayFramebufferScale()
+
+		imgui.Image(*song.Image, imgui.Vec2{X: 16 * scale.X, Y: 16 * scale.Y})
 		imgui.SameLine()
-		imgui.SetCursorPosY(imgui.CursorPosY() + 8)
+		imgui.SetCursorPosY(imgui.CursorPosY() + (4 * scale.Y))
 	}
 
 	isSongSelected := state.PageStates.MediaManagement.SelectionStorage.Contains(song.ImguiID)

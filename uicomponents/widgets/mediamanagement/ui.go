@@ -363,6 +363,12 @@ func Render(state *stateStructs.ApplicationState) {
 
 	imgui.BeginChildStrV("##MediaManagementScrollArea", imgui.ContentRegionAvail(), 0, imgui.WindowFlagsNoTitleBar)
 
+	if imgui.IsWindowFocusedV(imgui.FocusedFlagsRootAndChildWindows) {
+		state.PageStates.MediaManagement.IsFocused = true
+	} else if !state.IsMenubarOpen { // It unfocuses when the menubar is open, which we don't want for tracking purposes
+		state.PageStates.MediaManagement.IsFocused = false
+	}
+
 	// Initialize multiselection
 	multiSelectIO := imgui.BeginMultiSelectV(multiSelectFlags, state.PageStates.MediaManagement.SelectionStorage.Size(), -1)
 

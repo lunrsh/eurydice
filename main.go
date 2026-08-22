@@ -71,6 +71,8 @@ func mainLoop() {
 		)
 
 		if imgui.BeginMenu("File") {
+			appState.IsMenubarOpen = true
+
 			if imgui.MenuItemBool("Sync Metadata to Files") {
 				shouldOpenMetadataToFileConfirmationPopup = true
 			}
@@ -81,11 +83,41 @@ func mainLoop() {
 
 			imgui.Separator()
 
+			neitherOfTheSongPanelsAreFocused := !appState.PageStates.MediaManagement.IsFocused && !appState.PageStates.SongManagement.IsFocused
+
+			if neitherOfTheSongPanelsAreFocused {
+				imgui.BeginDisabled()
+			}
+
+			if imgui.MenuItemBool("Copy") {
+
+			}
+
+			if neitherOfTheSongPanelsAreFocused {
+				imgui.EndDisabled()
+			}
+
+			if len(appState.MarkerCopyBuffer) == 0 || neitherOfTheSongPanelsAreFocused {
+				imgui.BeginDisabled()
+			}
+
+			if imgui.MenuItemBool("Paste") {
+
+			}
+
+			if len(appState.MarkerCopyBuffer) == 0 || neitherOfTheSongPanelsAreFocused {
+				imgui.EndDisabled()
+			}
+
+			imgui.Separator()
+
 			if imgui.MenuItemBool("Exit") {
 				appState.CurrentImguiBackend.SetShouldClose(true)
 			}
 
 			imgui.EndMenu()
+		} else {
+			appState.IsMenubarOpen = false
 		}
 
 		if shouldOpenMetadataToFileConfirmationPopup {
@@ -155,7 +187,9 @@ func mainLoop() {
 			}
 		}
 
-		imgui.SetCursorPosX(imgui.ContentRegionAvail().X - (sync.ItemWidth / 2) + 2)
+		scaling := imgui.CurrentIO().DisplayFramebufferScale()
+
+		imgui.SetCursorPosX(imgui.ContentRegionAvail().X - (sync.ItemWidth / 2) + scaling.X)
 		sync.RenderButton(appState)
 
 		imgui.EndMainMenuBar()

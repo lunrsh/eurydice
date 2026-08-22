@@ -84,6 +84,9 @@ type ApplicationState struct {
 
 	HasThemeInitialized bool
 
+	MarkerCopyBuffer []int
+	IsMenubarOpen    bool // hack because opening the menubar deselects things
+
 	FontIcons   *imgui.Font
 	FontRegular *imgui.Font
 	FontBold    *imgui.Font

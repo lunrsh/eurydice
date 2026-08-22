@@ -208,6 +208,13 @@ func Render(state *stateStructs.ApplicationState) {
 	imgui.SetScrollXFloat(0)
 	imgui.BeginChildStr("##SongManagement")
 
+	// Set focused state
+	if imgui.IsWindowFocusedV(imgui.FocusedFlagsRootAndChildWindows) {
+		state.PageStates.SongManagement.IsFocused = true
+	} else if !state.IsMenubarOpen { // It unfocuses when the menubar is open, which we don't want for tracking purposes
+		state.PageStates.SongManagement.IsFocused = false
+	}
+
 	// Redefine because we disable padding in the table, which also disables here as a consequence
 	imgui.PushStyleVarVec2(imgui.StyleVarWindowPadding, imgui.Vec2{X: 8, Y: 8})
 
@@ -352,6 +359,9 @@ func Render(state *stateStructs.ApplicationState) {
 		multiSelectIO := imgui.BeginMultiSelectV(multiSelectFlags, state.PageStates.SongManagement.SelectionStorage.Size(), int32(len(state.PageStates.SongManagement.Songs)))
 		state.PageStates.SongManagement.SelectionStorage.ApplyRequests(multiSelectIO)
 
+		// Fetch UI scale
+		scale := imgui.CurrentIO().DisplayFramebufferScale()
+
 		for songIndex, song := range state.PageStates.SongManagement.Songs {
 			imgui.TableNextRow()
 
@@ -379,7 +389,7 @@ func Render(state *stateStructs.ApplicationState) {
 			var cursorY float32
 
 			if song.Image != nil {
-				imgui.Image(*song.Image, imgui.Vec2{X: 36, Y: 36})
+				imgui.Image(*song.Image, imgui.Vec2{X: 18 * scale.X, Y: 18 * scale.Y})
 				imgui.SameLine()
 
 				cursorX = imgui.CursorPosX()
