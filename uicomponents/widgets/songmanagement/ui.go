@@ -134,7 +134,7 @@ func DeleteModalRender(state *stateStructs.ApplicationState) {
 				imgui.SameLine()
 
 				cursorX = imgui.CursorPosX()
-				cursorY = imgui.CursorPosY() + (2 * state.ScaleFactor) // ScaleFactor here can never backfire, I'm sure... yeah...
+				cursorY = imgui.CursorPosY() + (2 * state.ScaleFactor) // ScaleFactor here can never backfire, I'm sure... yeah...
 
 				imgui.SetCursorPosY(cursorY)
 			} else {
@@ -394,7 +394,7 @@ func Render(state *stateStructs.ApplicationState) {
 				imgui.SameLine()
 
 				cursorX = imgui.CursorPosX()
-				cursorY = imgui.CursorPosY() + (2 * state.ScaleFactor) // ScaleFactor here can never backfire, I'm sure... yeah...
+				cursorY = imgui.CursorPosY() + (2 * state.ScaleFactor) // ScaleFactor here can never backfire, I'm sure... yeah...
 
 				imgui.SetCursorPosY(cursorY)
 			} else {
