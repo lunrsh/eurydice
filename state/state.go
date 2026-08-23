@@ -55,6 +55,13 @@ type ConfigState struct {
 	ActiveLibraryIDSetYet bool
 }
 
+type DebugUIState struct {
+	ShowAboutWindow       bool
+	ShowDebugLogWindow    bool
+	ShowIDStackToolWindow bool
+	ShowMetricsWindow     bool
+}
+
 // The app doesn't allow for multiple windows open of the same type or multiple instances of a "page" (e.g. multiple library
 // scan windows), so we use single structs per each page type to hold the state of that page. Of course, if needed,
 // we can do arrays, but we don't need that extra overhead and flexibility.
@@ -68,6 +75,8 @@ type IndividualPageStates struct {
 	MediaManagement   mediastate.MediaState
 	SongManagement    songmanagementstate.SongManagementState
 	Sync              syncstate.SyncState
+
+	DebugUI DebugUIState
 }
 
 type ApplicationState struct {
@@ -91,6 +100,8 @@ type ApplicationState struct {
 	FontRegular *imgui.Font
 	FontBold    *imgui.Font
 	FontItalic  *imgui.Font
+
+	ScaleFactor float32
 
 	PageStates *IndividualPageStates
 }

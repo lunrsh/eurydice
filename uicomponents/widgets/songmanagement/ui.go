@@ -128,7 +128,7 @@ func DeleteModalRender(state *stateStructs.ApplicationState) {
 			var cursorY float32
 
 			if song.Image != nil {
-				imgui.Image(*song.Image, imgui.Vec2{X: 36, Y: 36})
+				imgui.Image(*song.Image, imgui.Vec2{X: 36 * state.ScaleFactor, Y: 36 * state.ScaleFactor})
 				imgui.SameLine()
 
 				cursorX = imgui.CursorPosX()
@@ -359,9 +359,6 @@ func Render(state *stateStructs.ApplicationState) {
 		multiSelectIO := imgui.BeginMultiSelectV(multiSelectFlags, state.PageStates.SongManagement.SelectionStorage.Size(), int32(len(state.PageStates.SongManagement.Songs)))
 		state.PageStates.SongManagement.SelectionStorage.ApplyRequests(multiSelectIO)
 
-		// Fetch UI scale
-		scale := imgui.CurrentIO().DisplayFramebufferScale()
-
 		for songIndex, song := range state.PageStates.SongManagement.Songs {
 			imgui.TableNextRow()
 
@@ -389,7 +386,7 @@ func Render(state *stateStructs.ApplicationState) {
 			var cursorY float32
 
 			if song.Image != nil {
-				imgui.Image(*song.Image, imgui.Vec2{X: 18 * scale.X, Y: 18 * scale.Y})
+				imgui.Image(*song.Image, imgui.Vec2{X: 36 * state.ScaleFactor, Y: 36 * state.ScaleFactor})
 				imgui.SameLine()
 
 				cursorX = imgui.CursorPosX()

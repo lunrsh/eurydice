@@ -47,4 +47,4 @@ tasks:
 
   dev:
     - task: build
-    - EURYDICE_LOG_LEVEL=debug EURYDICE_NO_CRASH_DIALOG=1 {{if eq .GOOS "windows"}}./eurydice.exe{{else}}./eurydice{{end}}
+    - EURYDICE_LOG_LEVEL=debug EURYDICE_NO_CRASH_DIALOG=1 EURYDICE_SHOW_IMGUI_DEBUG=1 {{if eq .GOOS "windows"}}./eurydice.exe{{else}}./eurydice{{end}}

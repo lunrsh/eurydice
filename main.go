@@ -52,11 +52,13 @@ func init() {
 }
 
 func mainLoop() {
+	// Initialize the theming if needed
 	if !appState.HasThemeInitialized && !appState.Config.JSONConfig.HighContrast {
 		themes.SetupCatppuccinMochaTheme(appState)
 		appState.HasThemeInitialized = true
 	}
 
+	appState.ScaleFactor = imgui.FontSize() / imgui.CurrentStyle().FontSizeBase()
 	appState.CurrentFrame++ // Frame counter, used for modals
 
 	// Menu bar
@@ -118,6 +120,32 @@ func mainLoop() {
 			imgui.EndMenu()
 		} else {
 			appState.IsMenubarOpen = false
+		}
+
+		if os.Getenv("EURYDICE_SHOW_IMGUI_DEBUG") != "" {
+			if imgui.BeginMenu("UI Debug") {
+				appState.IsMenubarOpen = true
+
+				if imgui.MenuItemBool("Toggle imgui's About Window") {
+					appState.PageStates.DebugUI.ShowAboutWindow = !appState.PageStates.DebugUI.ShowAboutWindow
+				}
+
+				if imgui.MenuItemBool("Toggle Debug Log Window") {
+					appState.PageStates.DebugUI.ShowDebugLogWindow = !appState.PageStates.DebugUI.ShowDebugLogWindow
+				}
+
+				if imgui.MenuItemBool("Toggle UI Stack Tool Window") {
+					appState.PageStates.DebugUI.ShowIDStackToolWindow = !appState.PageStates.DebugUI.ShowIDStackToolWindow
+				}
+
+				if imgui.MenuItemBool("Toggle Metrics Window") {
+					appState.PageStates.DebugUI.ShowMetricsWindow = !appState.PageStates.DebugUI.ShowMetricsWindow
+				}
+
+				imgui.EndMenu()
+			} else {
+				appState.IsMenubarOpen = false
+			}
 		}
 
 		if shouldOpenMetadataToFileConfirmationPopup {
@@ -344,6 +372,23 @@ func mainLoop() {
 		} else {
 			imgui.EndPopup()
 		}
+	}
+
+	// Show debug UI last so they're always on top in the stack
+	if appState.PageStates.DebugUI.ShowAboutWindow {
+		imgui.ShowAboutWindow()
+	}
+
+	if appState.PageStates.DebugUI.ShowDebugLogWindow {
+		imgui.ShowDebugLogWindow()
+	}
+
+	if appState.PageStates.DebugUI.ShowIDStackToolWindow {
+		imgui.ShowIDStackToolWindow()
+	}
+
+	if appState.PageStates.DebugUI.ShowMetricsWindow {
+		imgui.ShowMetricsWindow()
 	}
 }
 
