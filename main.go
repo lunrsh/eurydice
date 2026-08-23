@@ -122,8 +122,8 @@ func mainLoop() {
 			appState.IsMenubarOpen = false
 		}
 
-		if os.Getenv("EURYDICE_SHOW_IMGUI_DEBUG") != "" {
-			if imgui.BeginMenu("UI Debug") {
+		if os.Getenv("EURYDICE_SHOW_DEBUG_UI") != "" {
+			if imgui.BeginMenu("Debug") {
 				appState.IsMenubarOpen = true
 
 				if imgui.MenuItemBool("Toggle imgui's About Window") {
@@ -140,6 +140,12 @@ func mainLoop() {
 
 				if imgui.MenuItemBool("Toggle Metrics Window") {
 					appState.PageStates.DebugUI.ShowMetricsWindow = !appState.PageStates.DebugUI.ShowMetricsWindow
+				}
+
+				imgui.Separator()
+
+				if imgui.MenuItemBool("Initiate Crash") {
+					panic("manually initiated crash")
 				}
 
 				imgui.EndMenu()
@@ -595,8 +601,10 @@ func main() {
 			appState.CurrentImguiBackend.SetBgColor(imgui.Vec4{X: 0, Y: 0, Z: 0, W: 0})
 		}
 
-		imgui.CurrentIO().SetConfigDpiScaleFonts(true)
-		imgui.CurrentIO().SetConfigDpiScaleViewports(true)
+		io := imgui.CurrentIO()
+
+		io.SetConfigDpiScaleFonts(true)
+		io.SetConfigDpiScaleViewports(true)
 
 		themes.EnumerateAndInitializeFonts(appState)
 
