@@ -128,11 +128,13 @@ func DeleteModalRender(state *stateStructs.ApplicationState) {
 			var cursorY float32
 
 			if song.Image != nil {
-				imgui.Image(*song.Image, imgui.Vec2{X: 36 * state.ScaleFactor, Y: 36 * state.ScaleFactor})
+				imageBoxSize := 36 * state.ScaleFactor
+
+				imgui.Image(*song.Image, imgui.Vec2{X: imageBoxSize, Y: imageBoxSize})
 				imgui.SameLine()
 
 				cursorX = imgui.CursorPosX()
-				cursorY = imgui.CursorPosY() + (12 - (imgui.FrameHeight() * 0.5))
+				cursorY = imgui.CursorPosY() + (2 * state.ScaleFactor) // ScaleFactor here can never backfire, I'm sure... yeah...
 
 				imgui.SetCursorPosY(cursorY)
 			} else {
@@ -386,11 +388,13 @@ func Render(state *stateStructs.ApplicationState) {
 			var cursorY float32
 
 			if song.Image != nil {
-				imgui.Image(*song.Image, imgui.Vec2{X: 36 * state.ScaleFactor, Y: 36 * state.ScaleFactor})
+				imageBoxSize := 36 * state.ScaleFactor
+
+				imgui.Image(*song.Image, imgui.Vec2{X: imageBoxSize, Y: imageBoxSize})
 				imgui.SameLine()
 
 				cursorX = imgui.CursorPosX()
-				cursorY = imgui.CursorPosY() + (12 - (imgui.FrameHeight() * 0.5))
+				cursorY = imgui.CursorPosY() + (2 * state.ScaleFactor) // ScaleFactor here can never backfire, I'm sure... yeah...
 
 				imgui.SetCursorPosY(cursorY)
 			} else {
