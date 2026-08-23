@@ -8,12 +8,28 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	stateStructs "git.lunr.sh/luna/eurydice/state"
 	"git.lunr.sh/luna/eurydice/state/database"
 	"git.lunr.sh/luna/eurydice/state/syncstate"
 )
+
+// Various regular expressions used for sanitizing file paths and names
+var (
+	removeAnyOffendingCharsRegex *regexp.Regexp = regexp.MustCompile("[^a-zA-Z0-9 ]+")
+	removeJustSpecialCharsRegex  *regexp.Regexp = regexp.MustCompile("[\\\\/:*?\"<>|]")
+)
+
+// Sanitizes the path for the song based on the metadata version
+func SanitizePath(metadataVersion int, name string) string {
+	if metadataVersion == syncstate.EDCOnDeviceMetadataVersion1 {
+		return removeAnyOffendingCharsRegex.ReplaceAllString(name, "_")
+	} else {
+		return removeJustSpecialCharsRegex.ReplaceAllString(name, "_")
+	}
+}
 
 // Calculates the (new) file extension for the song based on the audio quality setting
 func calculateFileExtension(state *stateStructs.ApplicationState, song *database.Song) string {
@@ -31,9 +47,9 @@ func calculateFileExtension(state *stateStructs.ApplicationState, song *database
 func calculateRelativePath(state *stateStructs.ApplicationState, song *database.Song) string {
 	fileEnding := calculateFileExtension(state, song)
 
-	artistNameNoSpecialChars := removeSpecialCharsRegex.ReplaceAllString(song.PrimaryArtist.Name, "_")
-	recordNameNoSpecialChars := removeSpecialCharsRegex.ReplaceAllString(song.Record.Name, "_")
-	songNameNoSpecialChars := removeSpecialCharsRegex.ReplaceAllString(song.Title, "_")
+	artistNameNoSpecialChars := SanitizePath(state.PageStates.Sync.DeviceMetadata.Version, song.PrimaryArtist.Name)
+	recordNameNoSpecialChars := SanitizePath(state.PageStates.Sync.DeviceMetadata.Version, song.Record.Name)
+	songNameNoSpecialChars := SanitizePath(state.PageStates.Sync.DeviceMetadata.Version, song.Title)
 
 	return filepath.Join("Songs", artistNameNoSpecialChars, recordNameNoSpecialChars, songNameNoSpecialChars+fileEnding)
 }

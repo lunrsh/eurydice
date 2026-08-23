@@ -10,7 +10,6 @@ import (
 	"image"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"slices"
 	"strconv"
@@ -30,24 +29,12 @@ import (
 	"go.senan.xyz/taglib"
 )
 
-var removeSpecialCharsRegex *regexp.Regexp = regexp.MustCompile("[^a-zA-Z0-9 ]+")
-
 // Fetches the songs to sync from the device metadata, returning:
 //   - a map of song IDs to songs
 //   - a map of song IDs to whether they need to be synced
 //   - a slice of songs to delete
 //   - a slice of song metadata
-func fetchSongsToSync(state *stateStructs.ApplicationState, metadataPath string) (map[uint]*database.Song, map[uint]bool, []*syncstate.SongMetadata, error) {
-	state.PageStates.Sync.DeviceMetadata = &syncstate.SyncMetadata{}
-
-	if file, err := os.ReadFile(metadataPath); err == nil {
-		if err := json.Unmarshal(file, state.PageStates.Sync.DeviceMetadata); err != nil {
-			panic(fmt.Sprintf("Failed to parse Eurydice on-device metadata: %v", err))
-		}
-	} else {
-		state.Logger.Debug("Sync->backingThread: Failed to read Eurydice metadata, starting local device metadata from scratch")
-	}
-
+func fetchSongsToSync(state *stateStructs.ApplicationState) (map[uint]*database.Song, map[uint]bool, []*syncstate.SongMetadata, error) {
 	songsToSync := map[uint]*database.Song{}         // Map of all songs we need to actually sync to the device
 	songNamesToSong := map[string][]*database.Song{} // Map of song names to song, for quick lookup by name in the metadata enumeration
 
@@ -84,7 +71,7 @@ func fetchSongsToSync(state *stateStructs.ApplicationState, metadataPath string)
 				songsToSync[playlistSong.SongID] = playlistSong.Song
 
 				// Remove all special characters from the songNamesToSong to fix path issues
-				titleNoSpecialChars := removeSpecialCharsRegex.ReplaceAllString(playlistSong.Song.Title, "_")
+				titleNoSpecialChars := SanitizePath(state.PageStates.Sync.DeviceMetadata.Version, playlistSong.Song.Title)
 
 				if _, ok := songNamesToSong[titleNoSpecialChars]; !ok {
 					songNamesToSong[titleNoSpecialChars] = []*database.Song{}
@@ -233,7 +220,9 @@ func fetchSongsToSync(state *stateStructs.ApplicationState, metadataPath string)
 		if !hasFoundOurself {
 			songTitle := filepath.Base(song.RelativePath)
 			songTitle = songTitle[:strings.Index(songTitle, ".")]
-			songTitle = removeSpecialCharsRegex.ReplaceAllString(songTitle, "_")
+
+			// Sanitize the song title to remove any special characters
+			songTitle = SanitizePath(state.PageStates.Sync.DeviceMetadata.Version, songTitle)
 
 			if foundSongs, ok := songNamesToSong[songTitle]; ok {
 				// We found a matching song title, but now we need to check the metadata with taglib to verify that this song
@@ -335,8 +324,8 @@ func copySongs(state *stateStructs.ApplicationState, songsToSync map[uint]*datab
 		state.Logger.Debug("Sync->backingThread: Creating directory for song")
 
 		// Remove all special characters from artist, record, and song names, to ensure there is no filesystem issues
-		artistNameNoSpecialChars := removeSpecialCharsRegex.ReplaceAllString(song.PrimaryArtist.Name, "_")
-		recordNameNoSpecialChars := removeSpecialCharsRegex.ReplaceAllString(song.Record.Name, "_")
+		artistNameNoSpecialChars := SanitizePath(state.PageStates.Sync.DeviceMetadata.Version, song.PrimaryArtist.Name)
+		recordNameNoSpecialChars := SanitizePath(state.PageStates.Sync.DeviceMetadata.Version, song.Record.Name)
 
 		directoryPath := filepath.Join(state.PageStates.Sync.SelectedDevice.Mountpoint, "Songs", artistNameNoSpecialChars, recordNameNoSpecialChars)
 		songPath := calculateRelativePath(state, song)
@@ -676,12 +665,14 @@ func syncPlaylists(state *stateStructs.ApplicationState, library *database.Libra
 			playlistFilePath := ""
 			playlistDuplicateFilenameCount := 1
 
+			sanitizedPlaylistName := SanitizePath(state.PageStates.Sync.DeviceMetadata.Version, playlist.Playlist.Name)
+
 			// Find a unique playlist filename that doesn't already exist on the device
 			for {
 				if playlistDuplicateFilenameCount > 1 {
-					playlistFilePath = filepath.Join("Playlists", fmt.Sprintf("%s #%d.m3u8", playlist.Playlist.Name, playlistDuplicateFilenameCount))
+					playlistFilePath = filepath.Join("Playlists", fmt.Sprintf("%s #%d.m3u8", sanitizedPlaylistName, playlistDuplicateFilenameCount))
 				} else {
-					playlistFilePath = filepath.Join("Playlists", playlist.Playlist.Name+".m3u8")
+					playlistFilePath = filepath.Join("Playlists", sanitizedPlaylistName+".m3u8")
 				}
 
 				if _, err := os.Stat(filepath.Join(state.PageStates.Sync.SelectedDevice.Mountpoint, playlistFilePath)); err == nil {
@@ -707,15 +698,17 @@ func syncPlaylists(state *stateStructs.ApplicationState, library *database.Libra
 				return fmt.Errorf("failed to remove old playlist with outdated name: %w", err)
 			}
 
+			cleanedPlaylistName := SanitizePath(state.PageStates.Sync.DeviceMetadata.Version, playlist.Playlist.Name)
+
 			playlistFilePath := ""
 			playlistDuplicateFilenameCount := 1
 
 			// Find a unique playlist filename that doesn't already exist on the device
 			for {
 				if playlistDuplicateFilenameCount > 1 {
-					playlistFilePath = filepath.Join("Playlists", fmt.Sprintf("%s #%d.m3u8", playlist.Playlist.Name, playlistDuplicateFilenameCount))
+					playlistFilePath = filepath.Join("Playlists", fmt.Sprintf("%s #%d.m3u8", cleanedPlaylistName, playlistDuplicateFilenameCount))
 				} else {
-					playlistFilePath = filepath.Join("Playlists", playlist.Playlist.Name+".m3u8")
+					playlistFilePath = filepath.Join("Playlists", cleanedPlaylistName+".m3u8")
 				}
 
 				if _, err := os.Stat(filepath.Join(state.PageStates.Sync.SelectedDevice.Mountpoint, playlistFilePath)); err == nil {
@@ -903,7 +896,27 @@ func backingThread(state *stateStructs.ApplicationState) {
 	state.Logger.Debugf("Sync->backingThread: Fetching Eurydice metadata from device %s", state.PageStates.Sync.SelectedDevice.Name)
 
 	eurydiceMetadataPath := filepath.Join(state.PageStates.Sync.SelectedDevice.Mountpoint, ".eurydice.json")
-	songsToSync, songsThatDoNotNeedMetadata, songsToDelete, err := fetchSongsToSync(state, eurydiceMetadataPath)
+
+	state.PageStates.Sync.DeviceMetadata = &syncstate.SyncMetadata{}
+
+	if file, err := os.ReadFile(eurydiceMetadataPath); err == nil {
+		if err := json.Unmarshal(file, state.PageStates.Sync.DeviceMetadata); err != nil {
+			panic(fmt.Sprintf("Failed to parse Eurydice on-device metadata: %v", err))
+		}
+
+		// This should be 0 if the metadata if we're running version 1 anyways, but it doesn't hurt to check I guess (maybe if we change the number in the future?)
+		// Also, it makes the code more clear, so keeping this - luna
+		if state.PageStates.Sync.DeviceMetadata.Version == 0 {
+			state.PageStates.Sync.DeviceMetadata.Version = syncstate.EDCOnDeviceMetadataVersion1
+		}
+	} else {
+		state.Logger.Debug("Sync->backingThread: Failed to read Eurydice metadata, starting local device metadata from scratch")
+		state.PageStates.Sync.DeviceMetadata.Version = syncstate.EDCMetadataLatest
+	}
+
+	state.Logger.Debugf("Sync->backingThread: Parsing Eurydice metadata")
+
+	songsToSync, songsThatDoNotNeedMetadata, songsToDelete, err := fetchSongsToSync(state)
 
 	if err != nil {
 		panic(fmt.Sprintf("Failed to fetch songs to sync: %v", err))
@@ -963,6 +976,7 @@ func backingThread(state *stateStructs.ApplicationState) {
 	}
 
 	// Clean up app state
+	state.PageStates.Sync.DeviceMetadata = &syncstate.SyncMetadata{}
 	state.PageStates.Sync.DeviceList = []*syncstate.SyncDevice{}
 	state.PageStates.Sync.SelectedDevice = nil
 	state.PageStates.Sync.DeviceMetadata = nil
