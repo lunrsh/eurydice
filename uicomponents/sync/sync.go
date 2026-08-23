@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -107,6 +108,12 @@ func fetchSongsToSync(state *stateStructs.ApplicationState, metadataPath string)
 	// - what songs to add
 	// And also updates on-device metadata if any updates are needed
 	for _, song := range state.PageStates.Sync.DeviceMetadata.Songs {
+		if runtime.GOOS == "windows" {
+			state.PageStates.Sync.CurrentSongName = "(device)\\" + song.RelativePath // Fucking Windows
+		} else {
+			state.PageStates.Sync.CurrentSongName = "(device)/" + song.RelativePath
+		}
+
 		// Rebuild the installation list to remove or add any new installations of this song
 		// Seperate slice so we don't interfere with the original list mid-interation
 		rebuiltInstallationList := make([]*syncstate.InstallMetadata, 0, len(song.InstalledFrom))
@@ -166,7 +173,6 @@ func fetchSongsToSync(state *stateStructs.ApplicationState, metadataPath string)
 			}
 
 			// Check if the song is already installed on this device and is, therefore, feasibly the same file. If so, don't copy the song
-			// TODO: Also take metadata into account!
 			if song.QualityLevel == state.PageStates.Sync.AudioQuality {
 				if songFromDatabase, ok := songsToSync[installation.SongID]; ok {
 					rebuiltInstallationList = append(rebuiltInstallationList, installation)
@@ -238,15 +244,39 @@ func fetchSongsToSync(state *stateStructs.ApplicationState, metadataPath string)
 					state.Logger.Warnf("Failed to read tags for song '%s': %v. Deleting and rebuilding...", songTitle, err)
 
 					// Update the metadata hash and the relative path to the song
-					//song.MetadataHash = calculateMetadataHash(s)
-					//song.RelativePath = calculateRelativePath(state, foundSongs)
+					song.MetadataHash = calculateMetadataHash(foundSongs[0])
+					song.RelativePath = calculateRelativePath(state, foundSongs[0])
+					song.QualityLevel = state.PageStates.Sync.AudioQuality
+
+					rebuiltInstallationList = append(rebuiltInstallationList, &syncstate.InstallMetadata{
+						SongID:         foundSongs[0].ID,
+						LibraryID:      state.Config.ActiveLibraryID,
+						InstallationID: state.Config.JSONConfig.InstallationID,
+					})
+
+					songsThatDoNotNeedMetadata[foundSongs[0].ID] = true
+					continue
 				}
 
 				// Now, narrow down from here
 				for _, foundSong := range foundSongs {
 					// If we don't match the album or artist, it's not us, so we skip it. Else, it is us!
-					if tags[taglib.Album][0] != foundSong.Record.Name ||
-						tags[taglib.Artist][0] != foundSong.PrimaryArtist.Name {
+					var album, artist string
+
+					if albumTags, ok := tags[taglib.Album]; ok && len(albumTags) > 0 {
+						album = albumTags[0]
+					} else {
+						album = "Unknown Album"
+					}
+
+					if artistTags, ok := tags[taglib.Artist]; ok && len(artistTags) > 0 {
+						artist = artistTags[0]
+					} else {
+						artist = "Unknown Artist"
+					}
+
+					if album != foundSong.Record.Name ||
+						artist != foundSong.PrimaryArtist.Name {
 						continue
 					}
 
@@ -266,8 +296,6 @@ func fetchSongsToSync(state *stateStructs.ApplicationState, metadataPath string)
 					} else {
 						delete(songsToSync, foundSong.ID)
 					}
-
-					songsThatDoNotNeedMetadata[foundSong.ID] = true
 				}
 			}
 		}
