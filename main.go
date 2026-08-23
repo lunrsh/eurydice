@@ -215,9 +215,7 @@ func mainLoop() {
 			}
 		}
 
-		scaling := imgui.CurrentIO().DisplayFramebufferScale()
-
-		imgui.SetCursorPosX(imgui.ContentRegionAvail().X - (sync.ItemWidth / 2) + scaling.X)
+		imgui.SetCursorPosX(imgui.WindowSize().X - sync.ItemWidth)
 		sync.RenderButton(appState)
 
 		imgui.EndMainMenuBar()
