@@ -447,7 +447,7 @@ func Render(state *stateStructs.ApplicationState) {
 			imgui.SetCursorPos(beforeSelectableCursorPos)
 
 			// Align vertically centered
-			imgui.SetCursorPosY(imgui.CursorPosY() + 6.5 + ((endSongSize - startSongSize) / 2) - imgui.TextLineHeight())
+			imgui.SetCursorPosY(imgui.CursorPosY() + ((endSongSize - startSongSize) / 2) - (imgui.TextLineHeight() / 2))
 
 			if state.PageStates.SongManagement.IsCurrentlyDisplayingPlaylist {
 				displayedIndex := utilities.WrapText(strconv.Itoa(song.Index + 1))
@@ -463,7 +463,7 @@ func Render(state *stateStructs.ApplicationState) {
 
 			// Render the record column last
 			imgui.TableSetColumnIndex(2)
-			imgui.SetCursorPosY(imgui.CursorPosY() + 6.5 + ((endSongSize - startSongSize) / 2) - imgui.TextLineHeight())
+			imgui.SetCursorPosY(imgui.CursorPosY() + ((endSongSize - startSongSize) / 2) - (imgui.TextLineHeight() / 2))
 
 			imgui.Text(utilities.WrapText(song.Record))
 		}
