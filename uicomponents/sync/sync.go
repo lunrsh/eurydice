@@ -597,7 +597,12 @@ func copySongs(state *stateStructs.ApplicationState, songsToSync map[uint]*datab
 
 // Syncs the playlists on the device, removing any that no longer exist and adding any new ones, merging if necessary
 func syncPlaylists(state *stateStructs.ApplicationState, library *database.Library) error {
-	// First, remove any playlists that no longer exist on the device, and add any new ones
+	// First, create the Playlists folder if it doesn't exist
+	if err := os.MkdirAll(filepath.Join(state.PageStates.Sync.SelectedDevice.Mountpoint, "Playlists"), 0755); err != nil {
+		return fmt.Errorf("failed to create Playlists folder: %w", err)
+	}
+
+	// Then, remove any playlists that no longer exist on the device, and add any new ones
 	if state.PageStates.Sync.DeleteOldPlaylists {
 		rebuiltOnDevicePlaylistList := make([]*syncstate.PlaylistMetadata, 0, len(state.PageStates.Sync.DeviceMetadata.Playlists))
 
@@ -631,7 +636,7 @@ func syncPlaylists(state *stateStructs.ApplicationState, library *database.Libra
 		state.PageStates.Sync.DeviceMetadata.Playlists = rebuiltOnDevicePlaylistList
 	}
 
-	// Then, iterate over the playlists to sync them
+	// After that, iterate over the playlists to sync them
 	for _, playlist := range state.PageStates.Sync.PlaylistList {
 		if !playlist.ShouldSync {
 			continue
