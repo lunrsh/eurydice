@@ -4,6 +4,8 @@ package songmanagement
 import "C"
 
 import (
+	"context"
+	"encoding/binary"
 	"fmt"
 	"slices"
 	"strconv"
@@ -16,6 +18,7 @@ import (
 	"git.lunr.sh/luna/eurydice/state/widgetstate/songmanagementstate"
 	"git.lunr.sh/luna/eurydice/utilities"
 	"github.com/AllenDang/cimgui-go/imgui"
+	"golang.design/x/clipboard"
 )
 
 const tableFlags = imgui.TableFlagsSizingFixedFit |
@@ -28,6 +31,57 @@ const tableFlags = imgui.TableFlagsSizingFixedFit |
 
 const multiSelectFlags = imgui.MultiSelectFlagsClearOnEscape | imgui.MultiSelectFlagsBoxSelect1d
 
+func Copy(state *stateStructs.ApplicationState) {
+	markerSlice := []byte{}        // Internal; used for pasting into other panes
+	textSlice := strings.Builder{} // External; text copying for if people want to paste their song list elsewhere
+
+	// I don't feel like fighting this library, and plus, we need to walk through visible items ANYWAYS to get their database IDs,
+	// so we just loop through all the visible items. Sorry!
+
+	for songIndex, song := range state.PageStates.SongManagement.Songs {
+		if state.PageStates.SongManagement.SelectionStorage.Contains(imgui.ID(songIndex)) {
+			markerSlice = binary.LittleEndian.AppendUint64(markerSlice, uint64((mediastate.StateIDSong<<32)|song.SongID)) // we use uint64 because of a design flaw in markers
+
+			textSlice.WriteString(strings.Join(song.Artists, ", "))
+			textSlice.WriteString(" - ")
+			textSlice.WriteString(song.Name)
+			textSlice.WriteRune('\n')
+		}
+	}
+
+	clipboard.WriteAll(
+		context.Background(),
+
+		clipboard.Item{Format: state.EurydiceClipboardRegistration, Bytes: markerSlice},
+		clipboard.Item{Format: clipboard.FmtText, Bytes: []byte(textSlice.String())},
+	)
+}
+
+func Paste(state *stateStructs.ApplicationState) error {
+	if !state.PageStates.SongManagement.IsCurrentlyDisplayingPlaylist {
+		return nil
+	}
+
+	// Read the markers from the clipboard
+	markers, err := clipboard.ReadAs(context.Background(), state.EurydiceClipboardRegistration, utilities.ClipboardDecoder)
+
+	if err != nil {
+		fmt.Errorf("Failed to read clipboard: %v", err)
+		return nil // clipboard read or parsing failed, which can happen for a variety of valid reasons, so abort silently
+	}
+
+	// Add songs and reinitialize the song list
+	if err := utilities.AddSongsToPlaylist(state, markers, state.PageStates.SongManagement.PlaylistID); err != nil {
+		return fmt.Errorf("failed to add songs to playlist: %w", err)
+	}
+
+	if err := BootstrapIndex(state, state.PageStates.SongManagement.PlaylistID); err != nil {
+		return fmt.Errorf("failed to re-bootstrap song index: %w", err)
+	}
+
+	return nil
+}
+
 func checkAndExecuteDragAndDrop(state *stateStructs.ApplicationState) {
 	if imgui.BeginDragDropSourceV(imgui.DragDropFlagsSourceNoHoldToOpenOthers) {
 		dragDropPayload := imgui.DragDropPayload()
@@ -39,21 +93,21 @@ func checkAndExecuteDragAndDrop(state *stateStructs.ApplicationState) {
 			dragDropMemory := C.malloc(C.size_t(dragDropSize))
 			dragDropWrapper = (*mediastate.DragDropWrapper)(dragDropMemory)
 
-			originalMarkerSlice := []int{}
+			originalMarkerSlice := []uint{}
 
 			// I don't feel like fighting this library, and plus, we need to walk through visible items ANYWAYS to get their database IDs,
 			// so we just loop through all the visible items. Sorry!
 
 			for songIndex, song := range state.PageStates.SongManagement.Songs {
 				if state.PageStates.SongManagement.SelectionStorage.Contains(imgui.ID(songIndex)) {
-					originalMarkerSlice = append(originalMarkerSlice, (mediastate.StateIDSong<<32)|int(song.SongID))
+					originalMarkerSlice = append(originalMarkerSlice, (mediastate.StateIDSong<<32)|song.SongID)
 				}
 			}
 
 			// Manually allocate memory for the marker slice and copy the original slice into it so the slice doesn't get GCed
 			// This code is NASTY, but it works
 			dragDropWrapper.MarkerMemPtr = C.malloc(C.size_t(unsafe.Sizeof(int(0)) * uintptr(len(originalMarkerSlice))))
-			dragDropWrapper.Markers = unsafe.Slice((*int)(dragDropWrapper.MarkerMemPtr), len(originalMarkerSlice))
+			dragDropWrapper.Markers = unsafe.Slice((*uint)(dragDropWrapper.MarkerMemPtr), len(originalMarkerSlice))
 			copy(dragDropWrapper.Markers, originalMarkerSlice)
 
 			imgui.SetDragDropPayload("media_browser_item", uintptr(dragDropMemory), uint64(dragDropSize))
@@ -213,6 +267,15 @@ func Render(state *stateStructs.ApplicationState) {
 	// Set focused state
 	if imgui.IsWindowFocusedV(imgui.FocusedFlagsRootAndChildWindows) {
 		state.PageStates.SongManagement.IsFocused = true
+
+		if utilities.IsCopying() {
+			Copy(state)
+		}
+
+		// We don't want to paste into a non-existent playlist
+		if utilities.IsPasting() && state.PageStates.SongManagement.IsCurrentlyDisplayingPlaylist {
+			Paste(state)
+		}
 	} else if !state.IsMenubarOpen { // It unfocuses when the menubar is open, which we don't want for tracking purposes
 		state.PageStates.SongManagement.IsFocused = false
 	}
@@ -254,9 +317,15 @@ func Render(state *stateStructs.ApplicationState) {
 
 		if dragDropPayload.CData != nil && dragDropPayload.Delivery() {
 			// Add songs to playlist
-			if err := utilities.HandleSongDragDrop(state, dragDropPayload, state.PageStates.SongManagement.PlaylistID); err != nil {
+			dragDropWrapper := (*mediastate.DragDropWrapper)(dragDropPayload.CData.Data)
+
+			if err := utilities.AddSongsToPlaylist(state, dragDropWrapper.Markers, state.PageStates.SongManagement.PlaylistID); err != nil {
 				state.Logger.Errorf("Failed to handle song drag drop: %v", err)
 			}
+
+			// Clean up our manual memory allocations, except for dragDropPayload.CData.Data, as that is managed by
+			// the drag and drop system in imgui itself
+			C.free(dragDropWrapper.MarkerMemPtr)
 
 			// Reinitialize the index
 			if err := BootstrapIndex(state, state.PageStates.SongManagement.PlaylistID); err != nil {

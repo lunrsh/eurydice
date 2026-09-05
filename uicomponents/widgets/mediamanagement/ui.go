@@ -1,18 +1,204 @@
 package mediamanagement
 
+// #include <stdlib.h>
+import "C"
+
 import (
+	"context"
+	"encoding/binary"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/AllenDang/cimgui-go/imgui"
+	"golang.design/x/clipboard"
 
 	stateStructs "git.lunr.sh/luna/eurydice/state"
+	"git.lunr.sh/luna/eurydice/state/database"
 	"git.lunr.sh/luna/eurydice/state/widgetstate/mediastate"
 	"git.lunr.sh/luna/eurydice/utilities"
 )
 
 const multiSelectFlags = imgui.MultiSelectFlagsClearOnEscape | imgui.MultiSelectFlagsBoxSelect2d
+
+func Copy(state *stateStructs.ApplicationState) {
+	markerSlice := []byte{}        // Internal; used for pasting into other panes
+	textSlice := strings.Builder{} // External; text copying for if people want to paste their song list elsewhere
+
+	// I don't feel like fighting this library, and plus, we need to walk through visible items ANYWAYS to get their database IDs,
+	// so we just loop through all the visible items. Sorry!
+
+	if state.PageStates.MediaManagement.SortMethod == mediastate.SortAlbum {
+		for _, record := range state.PageStates.MediaManagement.Records {
+			if record.ShouldHide {
+				continue // can't select hidden things!
+			}
+
+			if state.PageStates.MediaManagement.SelectionStorage.Contains(record.ImguiID) {
+				markerSlice = binary.LittleEndian.AppendUint64(markerSlice, uint64(mediastate.ConvertNodeInformationToIntMarker(record))) // we use uint64 because of a design flaw in markers
+
+				textSlice.WriteString("Record: ")
+				textSlice.WriteString(record.AuthoringArtist.ArtistName)
+				textSlice.WriteString(" - ")
+				textSlice.WriteString(record.Title)
+				textSlice.WriteRune('\n')
+			}
+
+			for _, song := range record.Songs {
+				if state.PageStates.MediaManagement.SelectionStorage.Contains(song.ImguiID) {
+					artists := ""
+
+					for _, artist := range song.Artists {
+						artists += artist.ArtistName + ", "
+					}
+
+					textSlice.WriteString("Song: ")
+					textSlice.WriteString(artists[:len(artists)-2])
+					textSlice.WriteString(" - ")
+					textSlice.WriteString(song.Title)
+					textSlice.WriteRune('\n')
+
+					markerSlice = binary.LittleEndian.AppendUint64(markerSlice, uint64(mediastate.ConvertNodeInformationToIntMarker(song)))
+				}
+			}
+		}
+	} else {
+		for _, artist := range state.PageStates.MediaManagement.Artists {
+			if artist.ShouldHide {
+				continue // can't select hidden things!
+			}
+
+			if state.PageStates.MediaManagement.SelectionStorage.Contains(artist.ImguiID) {
+				textSlice.WriteString("Artist: ")
+				textSlice.WriteString(artist.ArtistName)
+				textSlice.WriteRune('\n')
+
+				markerSlice = binary.LittleEndian.AppendUint64(markerSlice, uint64(mediastate.ConvertNodeInformationToIntMarker(artist)))
+			}
+
+			for _, record := range artist.Records {
+				if record.ShouldHide {
+					continue
+				}
+
+				if state.PageStates.MediaManagement.SelectionStorage.Contains(record.ImguiID) {
+					textSlice.WriteString("Record: ")
+					textSlice.WriteString(record.AuthoringArtist.ArtistName)
+					textSlice.WriteString(" - ")
+					textSlice.WriteString(record.Title)
+					textSlice.WriteRune('\n')
+
+					markerSlice = binary.LittleEndian.AppendUint64(markerSlice, uint64(mediastate.ConvertNodeInformationToIntMarker(record)))
+				}
+
+				for _, song := range record.Songs {
+					if state.PageStates.MediaManagement.SelectionStorage.Contains(song.ImguiID) {
+						artists := ""
+
+						for _, artist := range song.Artists {
+							artists += artist.ArtistName + ", "
+						}
+
+						textSlice.WriteString("Song: ")
+						textSlice.WriteString(artists[:len(artists)-2])
+						textSlice.WriteString(" - ")
+						textSlice.WriteString(song.Title)
+						textSlice.WriteRune('\n')
+
+						markerSlice = binary.LittleEndian.AppendUint64(markerSlice, uint64(mediastate.ConvertNodeInformationToIntMarker(song)))
+					}
+				}
+			}
+		}
+	}
+
+	clipboard.WriteAll(
+		context.Background(),
+
+		clipboard.Item{Format: state.EurydiceClipboardRegistration, Bytes: markerSlice},
+		clipboard.Item{Format: clipboard.FmtText, Bytes: []byte(textSlice.String())},
+	)
+}
+
+func Paste(state *stateStructs.ApplicationState) error {
+	// This one's slightly weird.
+	// We don't need to actually paste, because this pane is read-only.
+	//
+	// HOWEVER, something we could do is select any of the songs in the pane, which can be very useful in some cases!
+	// So this is what this code does: it reads the markers from the clipboard and selects any matching songs in the pane.
+
+	// Read the markers from the clipboard
+	markers, err := clipboard.ReadAs(context.Background(), state.EurydiceClipboardRegistration, utilities.ClipboardDecoder)
+
+	if err != nil {
+		fmt.Errorf("Failed to read clipboard: %v", err)
+		return nil // clipboard read or parsing failed, which can happen for a variety of valid reasons, so abort silently
+	}
+
+	return ingestMarkersForPasteOrDrop(state, markers)
+}
+
+// ingestMarkersForPasteOrDrop selects any matching songs in the pane based on the markers from either the clipboard or drag/drop
+func ingestMarkersForPasteOrDrop(state *stateStructs.ApplicationState, markers []uint) error {
+	state.PageStates.MediaManagement.SelectionStorage.Clear()
+
+	for _, marker := range markers {
+		// Fucking shit, it needs an imgui.ID to work
+		// We should migrate this fucking shit to use the markers sometime...
+		//
+		// TODO: above
+
+		kind := marker >> 32
+		id := marker & 0xffffffff
+
+		switch kind {
+		case mediastate.StateIDSong:
+			state.PageStates.MediaManagement.SelectionStorage.SetItemSelected(imgui.InternalImHashStrV(fmt.Sprintf("##Song%d", id), 0, 0), true)
+
+			// Now we find the parents by querying the database and then select them also. god.
+			song := &database.Song{}
+
+			if err := state.Config.Database.Where("id = ?", id).First(song).Error; err != nil {
+				return fmt.Errorf("failed to find record that's a parent of song %d: %v", id, err)
+			}
+
+			// Select the parent record
+			recordImguiID := imgui.InternalImHashStrV(fmt.Sprintf("##Record%d", song.RecordID), 0, 0)
+			state.PageStates.MediaManagement.SelectionStorage.SetItemSelected(recordImguiID, true)
+
+			copyPasteTreeNodesToOpen[recordImguiID] = true
+
+			// Depending on the sort order, also select the artist
+			if state.PageStates.MediaManagement.SortMethod == mediastate.SortArtistThenAlbum {
+				artistImguiID := imgui.InternalImHashStrV(fmt.Sprintf("##Artist%d", song.PrimaryArtistID), 0, 0)
+				state.PageStates.MediaManagement.SelectionStorage.SetItemSelected(artistImguiID, true)
+
+				copyPasteTreeNodesToOpen[artistImguiID] = true
+			}
+		case mediastate.StateIDRecord:
+			state.PageStates.MediaManagement.SelectionStorage.SetItemSelected(imgui.InternalImHashStrV(fmt.Sprintf("##Record%d", id), 0, 0), true)
+
+			if state.PageStates.MediaManagement.SortMethod == mediastate.SortArtistThenAlbum {
+				record := &database.Record{}
+
+				if err := state.Config.Database.Where("id = ?", id).First(record).Error; err != nil {
+					return fmt.Errorf("failed to find record that's a parent of song %d: %v", id, err)
+				}
+
+				// Select the parent record
+				artistImguiID := imgui.InternalImHashStrV(fmt.Sprintf("##Artist%d", record.ArtistID), 0, 0)
+
+				state.PageStates.MediaManagement.SelectionStorage.SetItemSelected(artistImguiID, true)
+				copyPasteTreeNodesToOpen[artistImguiID] = true
+			}
+		case mediastate.StateIDArtist:
+			state.PageStates.MediaManagement.SelectionStorage.SetItemSelected(imgui.InternalImHashStrV(fmt.Sprintf("##Artist%d", id), 0, 0), true)
+		}
+	}
+
+	return nil
+}
 
 // Recursively opens or closes items in the media management tree, given a node to start from, and a selection state.
 func recursivelyOpenOrCloseItems(state *stateStructs.ApplicationState, node any, selected bool) error {
@@ -141,7 +327,7 @@ func getIDFromInterface(node any) (imgui.ID, error) {
 }
 
 // From a given request item data, figure out which node it refers to and return it as an interface
-func getNodeFromRequestItem(state *stateStructs.ApplicationState, data int64) any {
+func getNodeFromRequestItem(state *stateStructs.ApplicationState, data uint) any {
 	kind := data >> 32
 	id := data & 0xffffffff
 
@@ -268,8 +454,8 @@ func applySelectionRequests(multiSelectIO *imgui.MultiSelectIO, state *stateStru
 				state.PageStates.MediaManagement.SelectionStorage.Clear()
 			}
 		} else if request.Type() == imgui.SelectionRequestTypeSetRange {
-			firstNode := getNodeFromRequestItem(state, int64(request.RangeFirstItem()))
-			lastNode := getNodeFromRequestItem(state, int64(request.RangeLastItem()))
+			firstNode := getNodeFromRequestItem(state, uint(request.RangeFirstItem()))
+			lastNode := getNodeFromRequestItem(state, uint(request.RangeLastItem()))
 
 			node := firstNode
 			var nodeID imgui.ID
@@ -363,10 +549,37 @@ func Render(state *stateStructs.ApplicationState) {
 
 	imgui.BeginChildStrV("##MediaManagementScrollArea", imgui.ContentRegionAvail(), 0, imgui.WindowFlagsNoTitleBar)
 
+	// Handle copy and paste
 	if imgui.IsWindowFocusedV(imgui.FocusedFlagsRootAndChildWindows) {
+		if utilities.IsCopying() {
+			Copy(state)
+		}
+
+		if utilities.IsPasting() {
+			Paste(state)
+		}
+
 		state.PageStates.MediaManagement.IsFocused = true
 	} else if !state.IsMenubarOpen { // It unfocuses when the menubar is open, which we don't want for tracking purposes
 		state.PageStates.MediaManagement.IsFocused = false
+	}
+
+	// Handle drag and drop
+	if imgui.InternalBeginDragDropTargetCustom(imgui.InternalCurrentWindow().InnerRect(), imgui.IDStr("##MediaManagementScrollArea")) {
+		dragDropPayload := imgui.AcceptDragDropPayload("media_browser_item")
+
+		if dragDropPayload.CData != nil && dragDropPayload.Delivery() {
+			// Add songs to playlist
+			dragDropWrapper := (*mediastate.DragDropWrapper)(dragDropPayload.CData.Data)
+
+			if err := ingestMarkersForPasteOrDrop(state, dragDropWrapper.Markers); err != nil {
+				state.Logger.Error("Failed to ingest markers: %v", err)
+			}
+
+			C.free(dragDropWrapper.MarkerMemPtr)
+		}
+
+		imgui.EndDragDropTarget()
 	}
 
 	// Initialize multiselection

@@ -17,6 +17,7 @@ import (
 	"github.com/AllenDang/cimgui-go/imgui"
 	_ "github.com/AllenDang/cimgui-go/impl/glfw"
 	"github.com/charmbracelet/log"
+	"golang.design/x/clipboard"
 	"gorm.io/gorm"
 )
 
@@ -93,8 +94,9 @@ type ApplicationState struct {
 
 	HasThemeInitialized bool
 
-	MarkerCopyBuffer []int
-	IsMenubarOpen    bool // hack because opening the menubar deselects things
+	IsMenubarOpen bool // hack because opening the menubar deselects things
+
+	EurydiceClipboardRegistration clipboard.Format
 
 	FontIcons   *imgui.Font
 	FontRegular *imgui.Font

@@ -29,6 +29,7 @@ import (
 	_ "github.com/AllenDang/cimgui-go/impl/glfw"
 	"github.com/charmbracelet/log"
 	"github.com/muesli/termenv"
+	"golang.design/x/clipboard"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -72,8 +73,10 @@ func mainLoop() {
 			shouldOpenFileToMetadataPopup = false
 		)
 
+		isAnyMenubarOpen := false
+
 		if imgui.BeginMenu("File") {
-			appState.IsMenubarOpen = true
+			isAnyMenubarOpen = true
 
 			if imgui.MenuItemBool("Sync Metadata to Files") {
 				shouldOpenMetadataToFileConfirmationPopup = true
@@ -86,28 +89,37 @@ func mainLoop() {
 			imgui.Separator()
 
 			neitherOfTheSongPanelsAreFocused := !appState.PageStates.MediaManagement.IsFocused && !appState.PageStates.SongManagement.IsFocused
+			weDoNotHaveASelection := appState.PageStates.MediaManagement.SelectionStorage.Size() == 0 && appState.PageStates.SongManagement.SelectionStorage.Size() == 0
 
-			if neitherOfTheSongPanelsAreFocused {
+			if neitherOfTheSongPanelsAreFocused || weDoNotHaveASelection {
 				imgui.BeginDisabled()
 			}
 
-			if imgui.MenuItemBool("Copy") {
-
+			if imgui.MenuItemBool("Copy (Ctrl+C)") {
+				if appState.PageStates.MediaManagement.IsFocused {
+					mediamanagement.Copy(appState)
+				} else {
+					songmanagement.Copy(appState)
+				}
 			}
 
-			if neitherOfTheSongPanelsAreFocused {
+			if neitherOfTheSongPanelsAreFocused || weDoNotHaveASelection {
 				imgui.EndDisabled()
 			}
 
-			if len(appState.MarkerCopyBuffer) == 0 || neitherOfTheSongPanelsAreFocused {
+			if neitherOfTheSongPanelsAreFocused {
 				imgui.BeginDisabled()
 			}
 
-			if imgui.MenuItemBool("Paste") {
-
+			if imgui.MenuItemBool("Paste (Ctrl+V)") {
+				if appState.PageStates.MediaManagement.IsFocused {
+					mediamanagement.Paste(appState)
+				} else {
+					songmanagement.Paste(appState)
+				}
 			}
 
-			if len(appState.MarkerCopyBuffer) == 0 || neitherOfTheSongPanelsAreFocused {
+			if neitherOfTheSongPanelsAreFocused {
 				imgui.EndDisabled()
 			}
 
@@ -118,13 +130,11 @@ func mainLoop() {
 			}
 
 			imgui.EndMenu()
-		} else {
-			appState.IsMenubarOpen = false
 		}
 
 		if os.Getenv("EURYDICE_SHOW_DEBUG_UI") != "" {
 			if imgui.BeginMenu("Debug") {
-				appState.IsMenubarOpen = true
+				isAnyMenubarOpen = true
 
 				if imgui.MenuItemBool("Toggle imgui's About Window") {
 					appState.PageStates.DebugUI.ShowAboutWindow = !appState.PageStates.DebugUI.ShowAboutWindow
@@ -149,10 +159,11 @@ func mainLoop() {
 				}
 
 				imgui.EndMenu()
-			} else {
-				appState.IsMenubarOpen = false
 			}
 		}
+
+		// Close the menubar if no menu was opened
+		appState.IsMenubarOpen = isAnyMenubarOpen
 
 		if shouldOpenMetadataToFileConfirmationPopup {
 			imgui.OpenPopupStr("Confirmation | Metadata to Files")
@@ -593,6 +604,15 @@ func main() {
 	if err != nil {
 		panic(fmt.Sprintf("Failed to initialize UI: %v", err))
 	}
+
+	// Attempt to initialize the clipboard
+	err = clipboard.Init()
+
+	if err != nil {
+		panic(fmt.Sprintf("Failed to initialize clipboard: %v", err))
+	}
+
+	appState.EurydiceClipboardRegistration = clipboard.Register("application/sh.lunr.eurydice.clip")
 
 	appState.CurrentImguiBackend.SetAfterCreateContextHook(func() {
 		if !appState.Config.JSONConfig.HighContrast {
