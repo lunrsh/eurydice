@@ -31,4 +31,6 @@ type SongManagementState struct {
 
 	DisableDeleteModal bool
 	SongsToDelete      []*SongInList
+
+	IsFocused bool
 }

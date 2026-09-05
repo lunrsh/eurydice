@@ -43,8 +43,8 @@ vars:
 
 tasks:
   build:
-    - 'CC="zig cc {{.PLATFORM_CC_ARGS}}" CXX="zig c++ {{.PLATFORM_CC_ARGS}}" GOOS="{{.GOOS}}" GOARCH="{{.GOARCH}}" CGO_LDFLAGS="{{.PLATFORM_LD_ARGS}} $NIX_LDFLAGS" go build -v -ldflags "-linkmode external {{if eq .GOOS "windows"}}-H=windows{{end}} -s -w" -o {{.OUTPUT_FILE}} .'
+    - 'CC="zig cc {{.PLATFORM_CC_ARGS}}" CXX="zig c++ {{.PLATFORM_CC_ARGS}}" GOOS="{{.GOOS}}" GOARCH="{{.GOARCH}}" CGO_LDFLAGS="{{.PLATFORM_LD_ARGS}} $NIX_LDFLAGS" go build -v -ldflags "-linkmode external {{if eq .GOOS "windows"}}-H=windowsgui{{end}} -s -w" -o {{.OUTPUT_FILE}} .'
 
   dev:
     - task: build
-    - EURYDICE_LOG_LEVEL=debug EURYDICE_NO_CRASH_DIALOG=1 {{if eq .GOOS "windows"}}./eurydice.exe{{else}}./eurydice{{end}}
+    - EURYDICE_LOG_LEVEL=debug EURYDICE_NO_CRASH_DIALOG=1 EURYDICE_SHOW_DEBUG_UI=1 {{if eq .GOOS "windows"}}./eurydice.exe{{else}}./eurydice{{end}}

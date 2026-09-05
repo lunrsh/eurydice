@@ -16,6 +16,8 @@ var commonTreeNodeFlags = imgui.TreeNodeFlagsFramePadding |
 	imgui.TreeNodeFlagsSpanAvailWidth |
 	imgui.TreeNodeFlagsNavLeftJumpsToParent
 
+var copyPasteTreeNodesToOpen = make(map[imgui.ID]bool)
+
 func closeRecordAndUnselect(state *stateStructs.ApplicationState, record *mediastate.RecordState) {
 	imgui.InternalTreeNodeSetOpen(record.ImguiID, false)
 	state.PageStates.MediaManagement.SelectionStorage.SetItemSelected(record.ImguiID, false)
@@ -45,7 +47,7 @@ func checkAndExecuteDragAndDrop(state *stateStructs.ApplicationState) {
 			dragDropMemory := C.malloc(C.size_t(dragDropSize))
 			dragDropWrapper = (*mediastate.DragDropWrapper)(dragDropMemory)
 
-			originalMarkerSlice := []int{}
+			originalMarkerSlice := []uint{}
 
 			// I don't feel like fighting this library, and plus, we need to walk through visible items ANYWAYS to get their database IDs,
 			// so we just loop through all the visible items. Sorry!
@@ -97,7 +99,7 @@ func checkAndExecuteDragAndDrop(state *stateStructs.ApplicationState) {
 			// Manually allocate memory for the marker slice and copy the original slice into it so the slice doesn't get GCed
 			// This code is NASTY, but it works
 			dragDropWrapper.MarkerMemPtr = C.malloc(C.size_t(unsafe.Sizeof(int(0)) * uintptr(len(originalMarkerSlice))))
-			dragDropWrapper.Markers = unsafe.Slice((*int)(dragDropWrapper.MarkerMemPtr), len(originalMarkerSlice))
+			dragDropWrapper.Markers = unsafe.Slice((*uint)(dragDropWrapper.MarkerMemPtr), len(originalMarkerSlice))
 			copy(dragDropWrapper.Markers, originalMarkerSlice)
 
 			imgui.SetDragDropPayload("media_browser_item", uintptr(dragDropMemory), uint64(dragDropSize))
@@ -132,10 +134,10 @@ func renderArtist(state *stateStructs.ApplicationState, artist *mediastate.Artis
 	}
 
 	// This is used to initialize the artist's ImguiID if it hasn't been set yet, and also for the tree node text ID
-	artistID := "##Artist" + strconv.Itoa(int(artist.ID))
+	artistID := fmt.Sprintf("##Artist%d", artist.ID)
 
 	if artist.ImguiID == 0 {
-		artist.ImguiID = imgui.IDStr(artistID)
+		artist.ImguiID = imgui.InternalImHashStrV(artistID, 0, 0)
 	}
 
 	// Select the artist if it's in the selection storage
@@ -143,6 +145,11 @@ func renderArtist(state *stateStructs.ApplicationState, artist *mediastate.Artis
 
 	if state.PageStates.MediaManagement.SelectionStorage.Contains(artist.ImguiID) {
 		flags |= imgui.TreeNodeFlagsSelected
+
+		if copyPasteTreeNodesToOpen[artist.ImguiID] {
+			imgui.SetNextItemOpenV(true, imgui.CondAppearing)
+			delete(copyPasteTreeNodesToOpen, artist.ImguiID)
+		}
 	}
 
 	imgui.SetNextItemSelectionUserData(imgui.SelectionUserData(mediastate.ConvertNodeInformationToIntMarker(artist)))
@@ -214,10 +221,10 @@ func renderRecord(state *stateStructs.ApplicationState, record *mediastate.Recor
 	}
 
 	// This is used to initialize the record's ImguiID if it hasn't been set yet, and also for the tree node text ID
-	recordID := "##Record" + strconv.Itoa(int(record.ID))
+	recordID := fmt.Sprintf("##Record%d", record.ID)
 
 	if record.ImguiID == 0 {
-		record.ImguiID = imgui.IDStr(recordID)
+		record.ImguiID = imgui.InternalImHashStrV(recordID, 0, 0)
 	}
 
 	if record.ArtID != "" && record.Image == nil {
@@ -230,9 +237,9 @@ func renderRecord(state *stateStructs.ApplicationState, record *mediastate.Recor
 	}
 
 	if record.Image != nil {
-		imgui.Image(*record.Image, imgui.Vec2{X: 64, Y: 64})
+		imgui.Image(*record.Image, imgui.Vec2{X: 64 * state.ScaleFactor, Y: 64 * state.ScaleFactor})
 		imgui.SameLine()
-		imgui.SetCursorPosY(imgui.CursorPosY() + (32 - (imgui.FrameHeight() * 0.5)))
+		imgui.SetCursorPosY(imgui.CursorPosY() + ((32 * state.ScaleFactor) - (imgui.FrameHeight() * 0.5)))
 	}
 
 	// Select the record if it's in the selection storage
@@ -240,6 +247,11 @@ func renderRecord(state *stateStructs.ApplicationState, record *mediastate.Recor
 
 	if state.PageStates.MediaManagement.SelectionStorage.Contains(record.ImguiID) {
 		flags |= imgui.TreeNodeFlagsSelected
+
+		if copyPasteTreeNodesToOpen[record.ImguiID] {
+			imgui.SetNextItemOpenV(true, imgui.CondAppearing)
+			delete(copyPasteTreeNodesToOpen, record.ImguiID)
+		}
 	}
 
 	imgui.SetNextItemSelectionUserData(imgui.SelectionUserData(mediastate.ConvertNodeInformationToIntMarker(record)))
@@ -308,7 +320,7 @@ func renderSong(state *stateStructs.ApplicationState, song *mediastate.SongState
 	}
 
 	if song.ImguiID == 0 {
-		song.ImguiID = imgui.IDStr("##Song" + strconv.Itoa(int(song.ID)))
+		song.ImguiID = imgui.InternalImHashStrV(fmt.Sprintf("##Song%d", song.ID), 0, 0)
 	}
 
 	if song.ArtID != "" && song.Image == nil {
@@ -321,9 +333,9 @@ func renderSong(state *stateStructs.ApplicationState, song *mediastate.SongState
 	}
 
 	if song.Image != nil {
-		imgui.Image(*song.Image, imgui.Vec2{X: 32, Y: 32})
+		imgui.Image(*song.Image, imgui.Vec2{X: 32 * state.ScaleFactor, Y: 32 * state.ScaleFactor})
 		imgui.SameLine()
-		imgui.SetCursorPosY(imgui.CursorPosY() + 8)
+		imgui.SetCursorPosY(imgui.CursorPosY() + (8 * state.ScaleFactor))
 	}
 
 	isSongSelected := state.PageStates.MediaManagement.SelectionStorage.Contains(song.ImguiID)

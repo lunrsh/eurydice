@@ -1,5 +1,7 @@
 ![Banner with a photo of an iPod, Eurydice, and a Eurydice logo edited on top of everything](https://git.lunr.sh/luna/eurydice/media/branch/main/assets/banner.jpg)
 
+"Hack your technology to be the way you want it." ~ [*Janus Cycle*, 2025](https://youtu.be/g89SDR9T8Hs?t=1113)
+
 [![Build Status](https://git.lunr.sh/luna/eurydice/actions/workflows/build-app.yaml/badge.svg)](https://git.lunr.sh/luna/eurydice/actions)
 [![GoDoc](https://godoc.org/git.lunr.sh/luna/eurydice?status.svg)](https://godoc.org/git.lunr.sh/luna/eurydice)
 [![License](https://img.shields.io/badge/license-BSD--3--Clause-green)](https://git.lunr.sh/luna/eurydice/src/branch/main/app/LICENSE)

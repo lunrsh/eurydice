@@ -8,13 +8,10 @@ import (
 
 	stateStructs "git.lunr.sh/luna/eurydice/state"
 	"git.lunr.sh/luna/eurydice/state/database"
-	"git.lunr.sh/luna/eurydice/state/widgetstate/mediastate"
-	"github.com/AllenDang/cimgui-go/imgui"
 )
 
-func HandleSongDragDrop(state *stateStructs.ApplicationState, dragDropPayload *imgui.Payload, activePlaylist uint) error {
-	dragDropWrapper := (*mediastate.DragDropWrapper)(dragDropPayload.CData.Data)
-	songList, err := GetSongListFromMarkers(state, dragDropWrapper.Markers)
+func AddSongsToPlaylist(state *stateStructs.ApplicationState, markers []uint, activePlaylist uint) error {
+	songList, err := GetSongListFromMarkers(state, markers)
 
 	if err != nil {
 		return fmt.Errorf("failed to get song list from markers: %w", err)
@@ -54,8 +51,5 @@ func HandleSongDragDrop(state *stateStructs.ApplicationState, dragDropPayload *i
 		return fmt.Errorf("failed to add %d songs to playlist", failCount)
 	}
 
-	// Clean up our manual memory allocations, except for dragDropPayload.CData.Data, as that is managed by
-	// the drag and drop system in imgui itself
-	C.free(dragDropWrapper.MarkerMemPtr)
 	return nil
 }

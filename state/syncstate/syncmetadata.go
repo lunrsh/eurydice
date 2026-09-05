@@ -29,4 +29,13 @@ type PlaylistMetadata struct {
 type SyncMetadata struct {
 	Songs     []*SongMetadata
 	Playlists []*PlaylistMetadata
+
+	Version int
 }
+
+const (
+	EDCOnDeviceMetadataVersion1 int = iota
+	EDCOnDeviceMetadataVersion2
+)
+
+const EDCMetadataLatest = EDCOnDeviceMetadataVersion2

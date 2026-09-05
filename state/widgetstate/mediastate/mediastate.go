@@ -99,6 +99,8 @@ type MediaState struct {
 
 	IntentToSearch         bool // Whether the user has requested a search. Gets set to false after the search is completed
 	TimeSinceSearchRequest time.Time
+
+	IsFocused bool
 }
 
 const (

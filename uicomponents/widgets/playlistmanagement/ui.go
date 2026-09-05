@@ -1,10 +1,14 @@
 package playlistmanagement
 
+// #include <stdlib.h>
+import "C"
+
 import (
 	"fmt"
 
 	stateStructs "git.lunr.sh/luna/eurydice/state"
 	"git.lunr.sh/luna/eurydice/state/database"
+	"git.lunr.sh/luna/eurydice/state/widgetstate/mediastate"
 	"git.lunr.sh/luna/eurydice/themes"
 	"git.lunr.sh/luna/eurydice/uicomponents/widgets/songmanagement"
 	"git.lunr.sh/luna/eurydice/utilities"
@@ -180,9 +184,15 @@ func Render(state *stateStructs.ApplicationState) {
 
 				if dragDropPayload.CData != nil && dragDropPayload.Delivery() {
 					// Add songs to playlist
-					if err := utilities.HandleSongDragDrop(state, dragDropPayload, playlist.ID); err != nil {
+					dragDropWrapper := (*mediastate.DragDropWrapper)(dragDropPayload.CData.Data)
+
+					if err := utilities.AddSongsToPlaylist(state, dragDropWrapper.Markers, playlist.ID); err != nil {
 						state.Logger.Errorf("Failed to handle song drag drop: %v", err)
 					}
+
+					// Clean up our manual memory allocations, except for dragDropPayload.CData.Data, as that is managed by
+					// the drag and drop system in imgui itself
+					C.free(dragDropWrapper.MarkerMemPtr)
 
 					if state.PageStates.SongManagement.PlaylistID == playlist.ID {
 						// Reinitialize the index, since we're active right now

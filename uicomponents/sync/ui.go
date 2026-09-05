@@ -37,7 +37,20 @@ func RenderSyncProgressModal(state *stateStructs.ApplicationState) {
 			imgui.CloseCurrentPopup()
 		}
 	case syncstate.StepFetchingData:
+		currentSongName := state.PageStates.Sync.CurrentSongName
+
+		if len(currentSongName) > 92 {
+			// Truncate characters but leave room for the ellipsis prefix
+			currentSongName = "..." + currentSongName[len(currentSongName)-(92-3):]
+		}
+
 		imgui.Text("Grabbing metadata from the connected device and Eurydice...\n")
+		imgui.Text("Song: ")
+		imgui.SameLine()
+		imgui.PushFont(state.FontBold, 14)
+		imgui.Text(currentSongName)
+		imgui.PopFont()
+
 		imgui.Separator()
 		imgui.SetCursorPosY(imgui.CursorPosY() + 1) // Do this because it's not exactly the same
 
@@ -68,7 +81,7 @@ func RenderSyncProgressModal(state *stateStructs.ApplicationState) {
 		if estimatedTimeRemaining != 0 {
 			estimatedTimeRemaining /= time.Duration(totalElementsGoingIntoAverage)                                                   // Get the average duration per element
 			estimatedTimeRemaining *= time.Duration(state.PageStates.Sync.TotalSongsToSync - state.PageStates.Sync.TotalSongsSynced) // Multiply by the number of songs remaining to sync
-			estimatedTimeRemaining = estimatedTimeRemaining.Round(time.Second)                                                       // Average to the second to remove milliseconds
+			estimatedTimeRemaining = estimatedTimeRemaining.Round(time.Second)                                                       // Average to the second to remove milliseconds from the display
 
 			displayedTimeRemaining = fmt.Sprintf("~%s remaining", estimatedTimeRemaining.String())
 		} else {
@@ -77,9 +90,9 @@ func RenderSyncProgressModal(state *stateStructs.ApplicationState) {
 
 		currentSongName := state.PageStates.Sync.CurrentSongName
 
-		if len(currentSongName) > 50 {
+		if len(currentSongName) > 92 {
 			// Truncate characters but leave room for the ellipsis prefix
-			currentSongName = "..." + currentSongName[len(currentSongName)-(50-3):]
+			currentSongName = "..." + currentSongName[len(currentSongName)-(92-3):]
 		}
 
 		imgui.Text(fmt.Sprintf("Syncing song: %s (%s)\n", currentSongName, displayedTimeRemaining))
@@ -97,9 +110,9 @@ func RenderSyncProgressModal(state *stateStructs.ApplicationState) {
 	case syncstate.StepDeletingOldSongs:
 		currentSongName := state.PageStates.Sync.CurrentSongName
 
-		if len(currentSongName) > 50 {
+		if len(currentSongName) > 92 {
 			// Truncate characters but leave room for the ellipsis prefix
-			currentSongName = "..." + currentSongName[len(currentSongName)-(50-3):]
+			currentSongName = "..." + currentSongName[len(currentSongName)-(92-3):]
 		}
 
 		imgui.Text(fmt.Sprintf("Removing song: %s\n", currentSongName))
@@ -267,9 +280,7 @@ func RenderButton(state *stateStructs.ApplicationState) {
 		RenderSyncProgressModal(state)
 	}
 
-	//imgui.PushStyleVarFloat(imgui.StyleVarFrameRounding, 0)
-
-	ItemWidth = imgui.CalcTextSize("Sync to Device").X + 20
+	ItemWidth = imgui.CalcTextSize("Sync to Device").X + (20 * state.ScaleFactor)
 
 	switch state.PageStates.Sync.StepNo {
 	case syncstate.StepIdle:
@@ -421,6 +432,4 @@ func RenderButton(state *stateStructs.ApplicationState) {
 
 		state.PageStates.Sync.StepNo = syncstate.StepIdle
 	}
-
-	//imgui.PopStyleVar()
 }

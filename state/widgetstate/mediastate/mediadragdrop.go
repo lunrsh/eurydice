@@ -3,9 +3,9 @@ package mediastate
 import "unsafe"
 
 const (
-	StateIDArtist = 1
-	StateIDRecord = 2
-	StateIDSong   = 3
+	StateIDArtist uint = iota + 1
+	StateIDRecord
+	StateIDSong
 )
 
 // Converts the passed in node to an int marker representing its type.
@@ -26,14 +26,14 @@ const (
 //			case StateIDRecord:
 //			case StateIDSong:
 //			}
-func ConvertNodeInformationToIntMarker(node any) int {
+func ConvertNodeInformationToIntMarker(node any) uint {
 	switch matchedNode := node.(type) {
 	case *ArtistState:
-		return (StateIDArtist << 32) | int(matchedNode.ID)
+		return (StateIDArtist << 32) | matchedNode.ID
 	case *RecordState:
-		return (StateIDRecord << 32) | int(matchedNode.ID)
+		return (StateIDRecord << 32) | matchedNode.ID
 	case *SongState:
-		return (StateIDSong << 32) | int(matchedNode.ID)
+		return (StateIDSong << 32) | matchedNode.ID
 	default:
 		return 0
 	}
@@ -42,6 +42,6 @@ func ConvertNodeInformationToIntMarker(node any) int {
 // Wrapper used as a holder for the IntMarkers used in drag-and-drop operations.
 // Done this way so we can manually allocate everything to ensure it doesn't get GC-ed during use (a real possibility)
 type DragDropWrapper struct {
-	Markers      []int
+	Markers      []uint
 	MarkerMemPtr unsafe.Pointer
 }

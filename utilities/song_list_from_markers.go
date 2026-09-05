@@ -10,7 +10,7 @@ import (
 )
 
 // Gets a full list of songs from a list of markers
-func GetSongListFromMarkers(state *stateStructs.ApplicationState, markerList []int) ([]*database.Song, error) {
+func GetSongListFromMarkers(state *stateStructs.ApplicationState, markerList []uint) ([]*database.Song, error) {
 	// We're most likely going to grow, as some markers can be records/artists, but we still preallocate just as a general guess
 	songList := make([]*database.Song, 0, len(markerList))
 
