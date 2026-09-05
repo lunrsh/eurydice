@@ -190,6 +190,20 @@ func RenderSyncSetupModal(state *stateStructs.ApplicationState) {
 
 	imgui.ComboStrarr("##SelectedDevice", &state.PageStates.Sync.UISelectedVolumeIndex, displayedDeviceList, int32(len(displayedDeviceList)))
 
+	imgui.AlignTextToFramePadding()
+	imgui.Text("Storage Usage:")
+	imgui.SameLine()
+
+	imgui.ProgressBarV(
+		float32(state.PageStates.Sync.DeviceList[state.PageStates.Sync.UISelectedVolumeIndex].UsagePercent/100),
+		imgui.Vec2{X: imgui.ContentRegionAvail().X, Y: 0},
+		fmt.Sprintf("%.0f%%", state.PageStates.Sync.DeviceList[state.PageStates.Sync.UISelectedVolumeIndex].UsagePercent),
+	)
+
+	imgui.Spacing()
+	imgui.Separator()
+	imgui.Spacing()
+
 	displayedAudioQualityList := []string{
 		"Same Quality, Same File Size",
 		"Low Quality, Small File Size (MP3, 128kbps)",
@@ -309,9 +323,17 @@ func RenderButton(state *stateStructs.ApplicationState) {
 					}
 				}
 
+				diskUsage, err := disk.Usage(partition.Mountpoint)
+
+				if err != nil {
+					state.Logger.Errorf("Failed to get disk usage for %s: %v", partition.Mountpoint, err)
+					continue
+				}
+
 				state.PageStates.Sync.DeviceList = append(state.PageStates.Sync.DeviceList, &syncstate.SyncDevice{
-					Mountpoint: partition.Mountpoint,
-					Name:       partition.Device,
+					Mountpoint:   partition.Mountpoint,
+					Name:         partition.Device,
+					UsagePercent: diskUsage.UsedPercent,
 				})
 
 				state.Logger.Infof("Found a matching Rockbox device: %s (%s)", partition.Device, partition.Mountpoint)

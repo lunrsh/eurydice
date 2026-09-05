@@ -7,8 +7,9 @@ import (
 )
 
 type SyncDevice struct {
-	Mountpoint string
-	Name       string
+	Mountpoint   string
+	Name         string
+	UsagePercent float64
 }
 
 type SyncPlaylist struct {
