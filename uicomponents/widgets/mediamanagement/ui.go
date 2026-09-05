@@ -165,15 +165,11 @@ func ingestMarkersForPasteOrDrop(state *stateStructs.ApplicationState, markers [
 
 			// Select the parent record
 			recordImguiID := imgui.InternalImHashStrV(fmt.Sprintf("##Record%d", song.RecordID), 0, 0)
-			state.PageStates.MediaManagement.SelectionStorage.SetItemSelected(recordImguiID, true)
-
 			copyPasteTreeNodesToOpen[recordImguiID] = true
 
 			// Depending on the sort order, also select the artist
 			if state.PageStates.MediaManagement.SortMethod == mediastate.SortArtistThenAlbum {
 				artistImguiID := imgui.InternalImHashStrV(fmt.Sprintf("##Artist%d", song.PrimaryArtistID), 0, 0)
-				state.PageStates.MediaManagement.SelectionStorage.SetItemSelected(artistImguiID, true)
-
 				copyPasteTreeNodesToOpen[artistImguiID] = true
 			}
 		case mediastate.StateIDRecord:
@@ -188,8 +184,6 @@ func ingestMarkersForPasteOrDrop(state *stateStructs.ApplicationState, markers [
 
 				// Select the parent record
 				artistImguiID := imgui.InternalImHashStrV(fmt.Sprintf("##Artist%d", record.ArtistID), 0, 0)
-
-				state.PageStates.MediaManagement.SelectionStorage.SetItemSelected(artistImguiID, true)
 				copyPasteTreeNodesToOpen[artistImguiID] = true
 			}
 		case mediastate.StateIDArtist:

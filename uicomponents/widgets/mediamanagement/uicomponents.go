@@ -145,11 +145,15 @@ func renderArtist(state *stateStructs.ApplicationState, artist *mediastate.Artis
 
 	if state.PageStates.MediaManagement.SelectionStorage.Contains(artist.ImguiID) {
 		flags |= imgui.TreeNodeFlagsSelected
+	}
 
-		if copyPasteTreeNodesToOpen[artist.ImguiID] {
-			imgui.SetNextItemOpenV(true, imgui.CondAppearing)
-			delete(copyPasteTreeNodesToOpen, artist.ImguiID)
-		}
+	// Open the tree node if it's in the copy-paste tree nodes to open
+	//
+	// It may not be selected, which is okay, because in most cases the user won't necessarily want the entire
+	// artist's discography / album's songs to be selected
+	if copyPasteTreeNodesToOpen[artist.ImguiID] {
+		imgui.SetNextItemOpenV(true, imgui.CondAppearing)
+		delete(copyPasteTreeNodesToOpen, artist.ImguiID)
 	}
 
 	imgui.SetNextItemSelectionUserData(imgui.SelectionUserData(mediastate.ConvertNodeInformationToIntMarker(artist)))
@@ -247,11 +251,15 @@ func renderRecord(state *stateStructs.ApplicationState, record *mediastate.Recor
 
 	if state.PageStates.MediaManagement.SelectionStorage.Contains(record.ImguiID) {
 		flags |= imgui.TreeNodeFlagsSelected
+	}
 
-		if copyPasteTreeNodesToOpen[record.ImguiID] {
-			imgui.SetNextItemOpenV(true, imgui.CondAppearing)
-			delete(copyPasteTreeNodesToOpen, record.ImguiID)
-		}
+	// Open the tree node if it's in the copy-paste tree nodes to open
+	//
+	// It may not be selected, which is okay, because in most cases the user won't necessarily want the entire
+	// artist's discography / album's songs to be selected
+	if copyPasteTreeNodesToOpen[record.ImguiID] {
+		imgui.SetNextItemOpenV(true, imgui.CondAppearing)
+		delete(copyPasteTreeNodesToOpen, record.ImguiID)
 	}
 
 	imgui.SetNextItemSelectionUserData(imgui.SelectionUserData(mediastate.ConvertNodeInformationToIntMarker(record)))
