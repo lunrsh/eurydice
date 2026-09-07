@@ -75,7 +75,7 @@ func SetupCatppuccinMochaTheme(state *stateStructs.ApplicationState) {
 	colors[imgui.ColDockingEmptyBg] = Base
 	colors[imgui.ColPlotLines] = Blue
 	colors[imgui.ColPlotLinesHovered] = Peach
-	colors[imgui.ColPlotHistogram] = Peach
+	colors[imgui.ColPlotHistogram] = Surface2
 	colors[imgui.ColPlotHistogramHovered] = Green
 	colors[imgui.ColTableHeaderBg] = Surface0
 	colors[imgui.ColTableBorderStrong] = Surface1
