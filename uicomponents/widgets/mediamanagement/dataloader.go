@@ -25,7 +25,7 @@ func BootstrapIndex(state *stateStructs.ApplicationState) error {
 		allArtists := []database.Artist{}
 		unknownArtists := []*mediastate.ArtistState{}
 
-		if err := state.Config.Database.Preload("PrimarySongs").Where("library_id = ?", state.Config.ActiveLibraryID).Find(&allArtists).Error; err != nil {
+		if err := state.Config.Database.Preload("PrimarySongs").Where("library_id = ?", state.Config.ActiveLibrary.ID).Find(&allArtists).Error; err != nil {
 			return fmt.Errorf("failed to find all artists: %w", err)
 		}
 
@@ -63,7 +63,7 @@ func BootstrapIndex(state *stateStructs.ApplicationState) error {
 		allArtists := []database.Artist{}
 		unknownRecords := []*mediastate.RecordState{}
 
-		if err := state.Config.Database.Preload("PrimarySongs").Where("library_id = ?", state.Config.ActiveLibraryID).Find(&allArtists).Error; err != nil {
+		if err := state.Config.Database.Preload("PrimarySongs").Where("library_id = ?", state.Config.ActiveLibrary.ID).Find(&allArtists).Error; err != nil {
 			return fmt.Errorf("failed to find all artists: %w", err)
 		}
 
@@ -111,7 +111,7 @@ func BootstrapIndex(state *stateStructs.ApplicationState) error {
 
 		allArtists := []database.Artist{}
 
-		if err := state.Config.Database.Preload("PrimarySongs").Where("library_id = ?", state.Config.ActiveLibraryID).Find(&allArtists).Error; err != nil {
+		if err := state.Config.Database.Preload("PrimarySongs").Where("library_id = ?", state.Config.ActiveLibrary.ID).Find(&allArtists).Error; err != nil {
 			return fmt.Errorf("failed to find all artists: %w", err)
 		}
 
@@ -165,7 +165,7 @@ func DynLoadRecords(state *stateStructs.ApplicationState, artist *mediastate.Art
 	// Fetch corresponding records for the artist from the database, incl. songs for their ArtIDs
 	allRecordsFromArtist := []database.Record{}
 
-	if err := state.Config.Database.Preload("Songs").Where("library_id = ? AND artist_id = ?", state.Config.ActiveLibraryID, artist.ID).Find(&allRecordsFromArtist).Error; err != nil {
+	if err := state.Config.Database.Preload("Songs").Where("library_id = ? AND artist_id = ?", state.Config.ActiveLibrary.ID, artist.ID).Find(&allRecordsFromArtist).Error; err != nil {
 		return nil, fmt.Errorf("failed to find records for artist %s: %w", artist.ArtistName, err)
 	}
 
@@ -197,7 +197,7 @@ func DynLoadSongs(state *stateStructs.ApplicationState, record *mediastate.Recor
 	// Fetch songs for this record
 	allSongsOnThisRecord := []database.Song{}
 
-	if err := state.Config.Database.Preload("CollabArtists").Where("library_id = ? AND record_id = ?", state.Config.ActiveLibraryID, record.ID).Find(&allSongsOnThisRecord).Error; err != nil {
+	if err := state.Config.Database.Preload("CollabArtists").Where("library_id = ? AND record_id = ?", state.Config.ActiveLibrary.ID, record.ID).Find(&allSongsOnThisRecord).Error; err != nil {
 		return nil, fmt.Errorf("failed to find songs for record %d: %w", record.ID, err)
 	}
 

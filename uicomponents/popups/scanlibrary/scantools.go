@@ -32,7 +32,7 @@ import (
 func speculateSongRecordIndex(state *stateStructs.ApplicationState, recordName string, artistName string) int {
 	artist := &database.Artist{}
 
-	if err := state.Config.Database.Model(&database.Artist{}).Where("library_id = ? AND name = ?", state.Config.ActiveLibraryID, artistName).First(artist).Error; err != nil {
+	if err := state.Config.Database.Model(&database.Artist{}).Where("library_id = ? AND name = ?", state.Config.ActiveLibrary.ID, artistName).First(artist).Error; err != nil {
 		state.Logger.Warnf("ScanLibrary->backingThread->indexNewMusic->speculateSongRecordIndex: Failed to find artist: %v", err)
 		return 0
 	}
@@ -103,7 +103,7 @@ func FindNonindexedMusic(state *stateStructs.ApplicationState, allMusicFound []s
 
 		state.PageStates.LibraryScan.CurrentSongPath = relativeMusicPath
 
-		if err := state.Config.Database.Where("library_id = ? AND relative_path_from_library = ?", state.Config.ActiveLibraryID, relativeMusicPath).First(attemptingToMatchEntry).Error; err != nil {
+		if err := state.Config.Database.Where("library_id = ? AND relative_path_from_library = ?", state.Config.ActiveLibrary.ID, relativeMusicPath).First(attemptingToMatchEntry).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
 				state.Logger.Debugf("ScanLibrary->backingThread->findNonindexedMusic: found new song '%s'", musicPath)
 				uniqueMusicFound = append(uniqueMusicFound, musicPath)
@@ -190,7 +190,7 @@ func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 				)
 
 				songInformation := &database.Song{
-					LibraryID:               state.Config.ActiveLibraryID,
+					LibraryID:               state.Config.ActiveLibrary.ID,
 					RelativePathFromLibrary: strings.TrimPrefix(songPath, state.Config.JSONConfig.LibraryPath),
 				}
 
@@ -316,11 +316,11 @@ func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 						databaseLockMutex.Lock()
 					}
 
-					if err = state.Config.Database.Where("library_id = ? AND name = ?", state.Config.ActiveLibraryID, artistName).First(&foundArtists[i]).Error; err != nil {
+					if err = state.Config.Database.Where("library_id = ? AND name = ?", state.Config.ActiveLibrary.ID, artistName).First(&foundArtists[i]).Error; err != nil {
 						if err == gorm.ErrRecordNotFound {
 							// Create a new artist!
 							state.Logger.Debugf("ScanLibrary->backingThread->indexNewMusic: Creating new artist '%s'\n", artistName)
-							foundArtists[i] = &database.Artist{Name: artistName, LibraryID: state.Config.ActiveLibraryID}
+							foundArtists[i] = &database.Artist{Name: artistName, LibraryID: state.Config.ActiveLibrary.ID}
 
 							state.Config.Database.Create(&foundArtists[i])
 						} else {
@@ -345,12 +345,12 @@ func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 					databaseLockMutex.Lock()
 				}
 
-				if err = state.Config.Database.Where("library_id = ? AND name = ? AND artist_id = ?", state.Config.ActiveLibraryID, songRecord, foundArtists[0].ID).First(foundRecord).Error; err != nil {
+				if err = state.Config.Database.Where("library_id = ? AND name = ? AND artist_id = ?", state.Config.ActiveLibrary.ID, songRecord, foundArtists[0].ID).First(foundRecord).Error; err != nil {
 					if err == gorm.ErrRecordNotFound {
 						// Create a new record
 						state.Logger.Debugf("ScanLibrary->backingThread->indexNewMusic: Creating new record '%s'\n", songRecord)
 						foundRecord.Name = songRecord
-						foundRecord.LibraryID = state.Config.ActiveLibraryID
+						foundRecord.LibraryID = state.Config.ActiveLibrary.ID
 						foundRecord.ArtistID = foundArtists[0].ID
 
 						state.Config.Database.Create(foundRecord)
@@ -440,7 +440,7 @@ func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 						PlaylistID: state.Config.JSONConfig.AutoAddToPlaylistID,
 						SongID:     songInformation.ID,
 						Song:       songInformation,
-						LibraryID:  state.Config.ActiveLibraryID,
+						LibraryID:  state.Config.ActiveLibrary.ID,
 					})
 				}
 
@@ -525,7 +525,7 @@ func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 func CleanupDatabase(state *stateStructs.ApplicationState, musicFound []string) error {
 	allSongs := []database.Song{}
 
-	if err := state.Config.Database.Where("library_id = ?", state.Config.ActiveLibraryID).Find(&allSongs).Error; err != nil {
+	if err := state.Config.Database.Where("library_id = ?", state.Config.ActiveLibrary.ID).Find(&allSongs).Error; err != nil {
 		return fmt.Errorf("failed to find all songs: %w", err)
 	}
 

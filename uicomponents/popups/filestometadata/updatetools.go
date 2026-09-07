@@ -30,13 +30,7 @@ func updateSongs(state *stateStructs.ApplicationState, songs []*database.Song, r
 	relativePathsOfSongsToKeep := make([]string, 0, len(songs)) // We keep track of the songs to keep, to pass in to the cleanup code
 
 	// Before we do anything, we fetch the current active library path, so we can get the path to songs
-	library := &database.Library{}
 	state.Logger.Debug("Sync->backingThread: Fetching library path")
-
-	if err := state.Config.Database.Where("id = ?", state.Config.ActiveLibraryID).First(library).Error; err != nil {
-		panic(fmt.Sprintf("Failed to get library: %v", err))
-	}
-
 	cpuThreadCount := runtime.NumCPU()
 
 	delegatedSongsPerThread := make([][]*database.Song, cpuThreadCount)
@@ -85,7 +79,7 @@ func updateSongs(state *stateStructs.ApplicationState, songs []*database.Song, r
 				// Check on the song's file existence on disk, just to ensure that it does properly exist still incase it was moved after indexing
 				state.Logger.Debugf("MetadataToFiles->backingThread->updateSongs: Ensuring file exists on disk for '%s'", song.Title)
 
-				if _, err := os.Stat(filepath.Join(library.LibraryPath, song.RelativePathFromLibrary)); err != nil {
+				if _, err := os.Stat(filepath.Join(state.Config.ActiveLibrary.LibraryPath, song.RelativePathFromLibrary)); err != nil {
 					if errors.Is(err, os.ErrNotExist) {
 						state.Logger.Errorf("MetadataToFiles->backingThread->updateSongs: File does not exist on disk for '%s'. Deleting from database, and skipping", song.Title)
 						state.PageStates.FTMUpdate.TotalSongsUpdated++
@@ -98,7 +92,7 @@ func updateSongs(state *stateStructs.ApplicationState, songs []*database.Song, r
 				state.Logger.Debugf("MetadataToFiles->backingThread->updateSongs: Fetching song metadata from disk for '%s'", song.Title)
 
 				// Read tags
-				songTags, err := taglib.ReadTags(filepath.Join(library.LibraryPath, song.RelativePathFromLibrary))
+				songTags, err := taglib.ReadTags(filepath.Join(state.Config.ActiveLibrary.LibraryPath, song.RelativePathFromLibrary))
 
 				if err != nil {
 					state.Logger.Debugf("MetadataToFiles->backingThread->updateSongs: Failed to read tags for '%s': %v", song.Title, err)
@@ -160,10 +154,10 @@ func updateSongs(state *stateStructs.ApplicationState, songs []*database.Song, r
 						state.Logger.Debugf("FilesToMetadata->backingThread->updateSongs: Fetching artist '%s'", artistStr)
 						databaseLockMutex.Lock()
 
-						if err = state.Config.Database.Where("name = ? AND library_id = ?", artistStr, state.Config.ActiveLibraryID).First(&artist).Error; err != nil {
+						if err = state.Config.Database.Where("name = ? AND library_id = ?", artistStr, state.Config.ActiveLibrary.ID).First(&artist).Error; err != nil {
 							if errors.Is(err, gorm.ErrRecordNotFound) {
 								state.Logger.Debugf("FilesToMetadata->backingThread->updateSongs: Creating new artist '%s'", artistStr)
-								artist = &database.Artist{Name: artistStr, LibraryID: state.Config.ActiveLibraryID}
+								artist = &database.Artist{Name: artistStr, LibraryID: state.Config.ActiveLibrary.ID}
 
 								state.Config.Database.Create(&artist)
 							} else {
@@ -189,10 +183,10 @@ func updateSongs(state *stateStructs.ApplicationState, songs []*database.Song, r
 
 					state.Logger.Debugf("FilesToMetadata->backingThread->updateSongs: Fetching record '%s'", songRecordStr)
 
-					if err = state.Config.Database.Where("name = ? AND artist_id = ? AND library_id = ?", songRecordStr, songArtists[0].ID, state.Config.ActiveLibraryID).First(&songRecord).Error; err != nil {
+					if err = state.Config.Database.Where("name = ? AND artist_id = ? AND library_id = ?", songRecordStr, songArtists[0].ID, state.Config.ActiveLibrary.ID).First(&songRecord).Error; err != nil {
 						if errors.Is(err, gorm.ErrRecordNotFound) {
 							state.Logger.Debugf("FilesToMetadata->backingThread->updateSongs: Creating new record '%s'", songRecordStr)
-							songRecord = &database.Record{Name: songRecordStr, LibraryID: state.Config.ActiveLibraryID}
+							songRecord = &database.Record{Name: songRecordStr, LibraryID: state.Config.ActiveLibrary.ID}
 
 							state.Config.Database.Create(&songRecord)
 						} else {
@@ -279,7 +273,7 @@ func updateSongs(state *stateStructs.ApplicationState, songs []*database.Song, r
 
 				// Write the album art to local storage
 				// Nested if statements because if we return or continue we won't write to the database. Sorry.
-				if imageBytes, err := taglib.ReadImage(filepath.Join(library.LibraryPath, song.RelativePathFromLibrary)); err == nil {
+				if imageBytes, err := taglib.ReadImage(filepath.Join(state.Config.ActiveLibrary.LibraryPath, song.RelativePathFromLibrary)); err == nil {
 					if imageData, _, err := image.Decode(bytes.NewReader(imageBytes)); err == nil {
 						md5Hash := md5.New()
 
@@ -399,7 +393,7 @@ func backingThread(state *stateStructs.ApplicationState) {
 	records := map[string]*database.Record{}
 	artists := map[string]*database.Artist{}
 
-	if err := state.Config.Database.Where("library_id = ?", state.Config.ActiveLibraryID).Find(&songs).Error; err != nil {
+	if err := state.Config.Database.Where("library_id = ?", state.Config.ActiveLibrary.ID).Find(&songs).Error; err != nil {
 		panic(fmt.Sprintf("Failed to fetch songs: %v", err))
 	}
 

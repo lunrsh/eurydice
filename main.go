@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +14,7 @@ import (
 	"git.lunr.sh/luna/eurydice/state"
 	"git.lunr.sh/luna/eurydice/state/database"
 	"git.lunr.sh/luna/eurydice/themes"
+	"git.lunr.sh/luna/eurydice/uicomponents/popups/devicemanagement"
 	"git.lunr.sh/luna/eurydice/uicomponents/popups/filestometadata"
 	"git.lunr.sh/luna/eurydice/uicomponents/popups/firstboot"
 	"git.lunr.sh/luna/eurydice/uicomponents/popups/metadatatofiles"
@@ -63,6 +63,7 @@ func mainLoop() {
 	appState.CurrentFrame++ // Frame counter, used for modals
 
 	// Menu bar
+	// This code is messy. Sorry... - luna
 	if imgui.BeginMainMenuBar() {
 		// HACKS: because imgui doesn't want to fire the OpenPopup for some reason, we just set a variable and call it later
 		var (
@@ -71,6 +72,8 @@ func mainLoop() {
 
 			shouldOpenMetadataToFilePopup = false
 			shouldOpenFileToMetadataPopup = false
+
+			shouldOpenDeviceManagementPopup = false
 		)
 
 		isAnyMenubarOpen := false
@@ -132,6 +135,16 @@ func mainLoop() {
 			imgui.EndMenu()
 		}
 
+		if imgui.BeginMenu("Device") {
+			isAnyMenubarOpen = true
+
+			if imgui.MenuItemBool("Manage Connected Devices") {
+				shouldOpenDeviceManagementPopup = true
+			}
+
+			imgui.EndMenu()
+		}
+
 		if os.Getenv("EURYDICE_SHOW_DEBUG_UI") != "" {
 			if imgui.BeginMenu("Debug") {
 				isAnyMenubarOpen = true
@@ -165,6 +178,7 @@ func mainLoop() {
 		// Close the menubar if no menu was opened
 		appState.IsMenubarOpen = isAnyMenubarOpen
 
+		// FTM and MTF popup shenanigans
 		if shouldOpenMetadataToFileConfirmationPopup {
 			imgui.OpenPopupStr("Confirmation | Metadata to Files")
 		} else if shouldOpenFileToMetadataConfirmationPopup {
@@ -221,6 +235,32 @@ func mainLoop() {
 			filestometadata.Render(appState)
 		}
 
+		if imgui.BeginPopupModalV("Error | Device Management", nil, imgui.WindowFlagsAlwaysAutoResize) {
+			imgui.Text(appState.PageStates.DeviceMgmt.ErrHint + "\n")
+
+			if imgui.ButtonV("Close", imgui.Vec2{}) {
+				imgui.CloseCurrentPopup()
+				imgui.EndPopup()
+
+				if appState.PageStates.DeviceMgmt.IsErrRecoverable {
+					imgui.OpenPopupStr("Device Management")
+				}
+			} else {
+				imgui.EndPopup()
+			}
+		}
+
+		if shouldOpenDeviceManagementPopup {
+			imgui.OpenPopupStr("Device Management")
+		}
+
+		if imgui.BeginPopupModalV("Device Management", nil, imgui.WindowFlagsAlwaysAutoResize) {
+			devicemanagement.Render(appState)
+		}
+
+		imgui.SetCursorPosX(imgui.WindowSize().X - sync.ItemWidth)
+		sync.RenderButton(appState)
+
 		if imgui.BeginPopupModalV("Error | Sync", nil, imgui.WindowFlagsAlwaysAutoResize) {
 			imgui.Text(appState.PageStates.Sync.ErrHint + "\n")
 
@@ -231,9 +271,6 @@ func mainLoop() {
 				imgui.EndPopup()
 			}
 		}
-
-		imgui.SetCursorPosX(imgui.WindowSize().X - sync.ItemWidth)
-		sync.RenderButton(appState)
 
 		imgui.EndMainMenuBar()
 	}
@@ -309,9 +346,9 @@ func mainLoop() {
 	}
 
 	// set up the active library ID if it hasn't been set yet, but only if we're not in setup
-	if !appState.Config.ActiveLibraryIDSetYet && !appState.PageStates.FirstBoot.HasFirstbootPageOpenedAlready {
-		libraryInformation := &database.Library{}
-		libraryRequest := appState.Config.Database.Where("library_path = ?", appState.Config.JSONConfig.LibraryPath).First(libraryInformation)
+	if appState.Config.ActiveLibrary == nil && !appState.PageStates.FirstBoot.HasFirstbootPageOpenedAlready {
+		appState.Config.ActiveLibrary = &database.Library{}
+		libraryRequest := appState.Config.Database.Where("library_path = ?", appState.Config.JSONConfig.LibraryPath).First(appState.Config.ActiveLibrary)
 
 		if libraryRequest.Error != nil {
 			if libraryRequest.Error == gorm.ErrRecordNotFound {
@@ -341,22 +378,14 @@ func mainLoop() {
 					}
 				}
 
-				libraryInformation = &database.Library{
-					LibraryPath: appState.Config.JSONConfig.LibraryPath,
-				}
-
-				appState.Config.Database.Create(libraryInformation)
-
-				appState.Config.ActiveLibraryID = libraryInformation.ID
-				appState.Config.ActiveLibraryIDSetYet = true
+				appState.Config.ActiveLibrary.LibraryPath = appState.Config.JSONConfig.LibraryPath
+				appState.Config.Database.Create(appState.Config.ActiveLibrary)
 			} else {
 				panic(fmt.Sprintf("Failed to find music library in database: %s", libraryRequest.Error.Error()))
 			}
 		}
 
-		appState.Config.ActiveLibraryID = libraryInformation.ID
-		appState.Logger.Debugf("got library id: %d", libraryInformation.ID)
-		appState.Config.ActiveLibraryIDSetYet = true
+		appState.Logger.Debugf("Fetched library w/ ID %d", appState.Config.ActiveLibrary.ID)
 	}
 
 	// open the popup if the local library needs to be scanned and it's set to scan on launch, but only if we're not in setup
@@ -592,8 +621,7 @@ func main() {
 
 			AppStatePath: applicationStatePath,
 
-			Database:    songDatabase,
-			DatabaseCtx: context.Background(),
+			Database: songDatabase,
 		},
 
 		PageStates: &state.IndividualPageStates{},

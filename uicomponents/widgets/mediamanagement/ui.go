@@ -132,7 +132,7 @@ func Paste(state *stateStructs.ApplicationState) error {
 	markers, err := clipboard.ReadAs(context.Background(), state.EurydiceClipboardRegistration, utilities.ClipboardDecoder)
 
 	if err != nil {
-		fmt.Errorf("Failed to read clipboard: %v", err)
+		state.Logger.Errorf("Failed to read clipboard: %v", err)
 		return nil // clipboard read or parsing failed, which can happen for a variety of valid reasons, so abort silently
 	}
 

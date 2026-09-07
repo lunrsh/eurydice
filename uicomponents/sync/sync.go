@@ -110,7 +110,7 @@ func fetchSongsToSync(state *stateStructs.ApplicationState) (map[uint]*database.
 
 		for _, installation := range song.InstalledFrom {
 			// Skip installations/libraries that currently do not match our instance of Eurydice. It's not our place to judge right now!
-			if installation.InstallationID != state.Config.JSONConfig.InstallationID || installation.LibraryID != state.Config.ActiveLibraryID {
+			if installation.InstallationID != state.Config.JSONConfig.InstallationID || installation.LibraryID != state.Config.ActiveLibrary.ID {
 				rebuiltInstallationList = append(rebuiltInstallationList, installation)
 				continue
 			}
@@ -239,7 +239,7 @@ func fetchSongsToSync(state *stateStructs.ApplicationState) (map[uint]*database.
 
 					rebuiltInstallationList = append(rebuiltInstallationList, &syncstate.InstallMetadata{
 						SongID:         foundSongs[0].ID,
-						LibraryID:      state.Config.ActiveLibraryID,
+						LibraryID:      state.Config.ActiveLibrary.ID,
 						InstallationID: state.Config.JSONConfig.InstallationID,
 					})
 
@@ -271,7 +271,7 @@ func fetchSongsToSync(state *stateStructs.ApplicationState) (map[uint]*database.
 
 					rebuiltInstallationList = append(rebuiltInstallationList, &syncstate.InstallMetadata{
 						SongID:         foundSong.ID,
-						LibraryID:      state.Config.ActiveLibraryID,
+						LibraryID:      state.Config.ActiveLibrary.ID,
 						InstallationID: state.Config.JSONConfig.InstallationID,
 					})
 
@@ -306,8 +306,9 @@ func fetchSongsToSync(state *stateStructs.ApplicationState) (map[uint]*database.
 }
 
 // Copies the songs to the device, handling transcoding and metadata updates
-func copySongs(state *stateStructs.ApplicationState, songsToSync map[uint]*database.Song, songsThatDoNotNeedMetadata map[uint]bool, eurydiceMetadataPath string, library *database.Library) error {
+func copySongs(state *stateStructs.ApplicationState, songsToSync map[uint]*database.Song, songsThatDoNotNeedMetadata map[uint]bool, eurydiceMetadataPath string) error {
 	state.PageStates.Sync.TotalSongsToSync = len(songsToSync)
+	state.PageStates.Sync.TotalSongsSynced = 0
 
 	state.PageStates.Sync.EstimatedTimeRollingAverages = make([]time.Duration, 10)
 	state.PageStates.Sync.CurrentTimeIndex = 0
@@ -360,7 +361,7 @@ func copySongs(state *stateStructs.ApplicationState, songsToSync map[uint]*datab
 		if state.PageStates.Sync.AudioQuality == int32(syncstate.AudioOriginalQuality) {
 			state.Logger.Debug("Sync->backingThread: Copying song")
 
-			if err := copySong(filepath.Join(library.LibraryPath, song.RelativePathFromLibrary), filepath.Join(state.PageStates.Sync.SelectedDevice.Mountpoint, songPath)); err != nil {
+			if err := copySong(filepath.Join(state.Config.ActiveLibrary.LibraryPath, song.RelativePathFromLibrary), filepath.Join(state.PageStates.Sync.SelectedDevice.Mountpoint, songPath)); err != nil {
 				unwrappedErr := errors.Unwrap(err)
 
 				// ...someone please clean this check up
@@ -387,7 +388,7 @@ func copySongs(state *stateStructs.ApplicationState, songsToSync map[uint]*datab
 		} else {
 			state.Logger.Debug("Sync->backingThread: Transcoding song")
 
-			if err := transcodeSong(state, filepath.Join(library.LibraryPath, song.RelativePathFromLibrary), filepath.Join(state.PageStates.Sync.SelectedDevice.Mountpoint, songPath)); err != nil {
+			if err := transcodeSong(state, filepath.Join(state.Config.ActiveLibrary.LibraryPath, song.RelativePathFromLibrary), filepath.Join(state.PageStates.Sync.SelectedDevice.Mountpoint, songPath)); err != nil {
 				unwrappedErr := errors.Unwrap(err)
 
 				if errors.Is(unwrappedErr, syscall.EIO) ||
@@ -557,7 +558,7 @@ func copySongs(state *stateStructs.ApplicationState, songsToSync map[uint]*datab
 				InstalledFrom: []*syncstate.InstallMetadata{
 					{
 						SongID:         song.ID,
-						LibraryID:      state.Config.ActiveLibraryID,
+						LibraryID:      state.Config.ActiveLibrary.ID,
 						InstallationID: state.Config.JSONConfig.InstallationID,
 					},
 				},
@@ -596,7 +597,7 @@ func copySongs(state *stateStructs.ApplicationState, songsToSync map[uint]*datab
 }
 
 // Syncs the playlists on the device, removing any that no longer exist and adding any new ones, merging if necessary
-func syncPlaylists(state *stateStructs.ApplicationState, library *database.Library) error {
+func syncPlaylists(state *stateStructs.ApplicationState) error {
 	// First, create the Playlists folder if it doesn't exist
 	if err := os.MkdirAll(filepath.Join(state.PageStates.Sync.SelectedDevice.Mountpoint, "Playlists"), 0755); err != nil {
 		return fmt.Errorf("failed to create Playlists folder: %w", err)
@@ -608,7 +609,7 @@ func syncPlaylists(state *stateStructs.ApplicationState, library *database.Libra
 
 		for _, onDevicePlaylist := range state.PageStates.Sync.DeviceMetadata.Playlists {
 			// These playlists aren't owned by us, so let's move on...
-			if onDevicePlaylist.InstallationID != state.Config.JSONConfig.InstallationID || onDevicePlaylist.LibraryID != state.Config.ActiveLibraryID {
+			if onDevicePlaylist.InstallationID != state.Config.JSONConfig.InstallationID || onDevicePlaylist.LibraryID != state.Config.ActiveLibrary.ID {
 				rebuiltOnDevicePlaylistList = append(rebuiltOnDevicePlaylistList, onDevicePlaylist)
 				continue
 			}
@@ -648,7 +649,7 @@ func syncPlaylists(state *stateStructs.ApplicationState, library *database.Libra
 
 		for _, playlistMetadata := range state.PageStates.Sync.DeviceMetadata.Playlists {
 			// Skip playlist entries that aren't ours
-			if playlistMetadata.InstallationID != state.Config.JSONConfig.InstallationID || playlistMetadata.LibraryID != state.Config.ActiveLibraryID {
+			if playlistMetadata.InstallationID != state.Config.JSONConfig.InstallationID || playlistMetadata.LibraryID != state.Config.ActiveLibrary.ID {
 				continue
 			}
 
@@ -659,7 +660,7 @@ func syncPlaylists(state *stateStructs.ApplicationState, library *database.Libra
 		}
 
 		if playlistMetadataEntry == nil {
-			snapshotFolder := filepath.Join(".eurydice", "playlistsnapshot", strconv.Itoa(int(state.Config.JSONConfig.InstallationID)), strconv.Itoa(int(state.Config.ActiveLibraryID)))
+			snapshotFolder := filepath.Join(".eurydice", "playlistsnapshot", strconv.Itoa(int(state.Config.JSONConfig.InstallationID)), strconv.Itoa(int(state.Config.ActiveLibrary.ID)))
 
 			if err := os.MkdirAll(filepath.Join(state.PageStates.Sync.SelectedDevice.Mountpoint, snapshotFolder), 0755); err != nil {
 				return fmt.Errorf("failed to create playlist directory: %w", err)
@@ -690,7 +691,7 @@ func syncPlaylists(state *stateStructs.ApplicationState, library *database.Libra
 
 			playlistMetadataEntry = &syncstate.PlaylistMetadata{
 				PlaylistID:     playlist.Playlist.ID,
-				LibraryID:      state.Config.ActiveLibraryID,
+				LibraryID:      state.Config.ActiveLibrary.ID,
 				InstallationID: state.Config.JSONConfig.InstallationID,
 
 				RelativePath: playlistFilePath,
@@ -791,7 +792,7 @@ func syncPlaylists(state *stateStructs.ApplicationState, library *database.Libra
 						// The first character is a slash, so we remove that
 						if songInMetadata, ok := songPathToSongs[song.FilePath[1:]]; ok {
 							for _, installation := range songInMetadata.InstalledFrom {
-								if installation.InstallationID != state.Config.JSONConfig.InstallationID || installation.LibraryID != state.Config.ActiveLibraryID {
+								if installation.InstallationID != state.Config.JSONConfig.InstallationID || installation.LibraryID != state.Config.ActiveLibrary.ID {
 									continue
 								}
 
@@ -849,7 +850,7 @@ func syncPlaylists(state *stateStructs.ApplicationState, library *database.Libra
 					if len(playlist.Playlist.Songs) <= songIndex {
 						playlistSong := &database.PlaylistSong{
 							SortIndex:  songIndex,
-							LibraryID:  library.ID,
+							LibraryID:  state.Config.ActiveLibrary.ID,
 							SongID:     uint(songID),
 							PlaylistID: playlist.Playlist.ID,
 						}
@@ -933,14 +934,9 @@ func backingThread(state *stateStructs.ApplicationState) {
 	state.PageStates.Sync.StepNo = syncstate.StepCopyingSongs
 
 	// Get the library info (to get the library path)
-	library := &database.Library{}
 	state.Logger.Debug("Sync->backingThread: Fetching library path")
 
-	if err := state.Config.Database.Where("id = ?", state.Config.ActiveLibraryID).First(library).Error; err != nil {
-		panic(fmt.Sprintf("Failed to get library: %v", err))
-	}
-
-	if err := copySongs(state, songsToSync, songsThatDoNotNeedMetadata, eurydiceMetadataPath, library); err != nil {
+	if err := copySongs(state, songsToSync, songsThatDoNotNeedMetadata, eurydiceMetadataPath); err != nil {
 		panic(fmt.Sprintf("Failed to copy songs: %v", err))
 	}
 
@@ -958,13 +954,12 @@ func backingThread(state *stateStructs.ApplicationState) {
 
 			state.PageStates.Sync.TotalSongsSynced++
 		}
-
 	}
 
 	// Step 4: sync playlists
 	state.PageStates.Sync.StepNo = syncstate.StepSyncingPlaylists
 
-	if err := syncPlaylists(state, library); err != nil {
+	if err := syncPlaylists(state); err != nil {
 		panic(fmt.Sprintf("Failed to sync playlists: %v", err))
 	}
 

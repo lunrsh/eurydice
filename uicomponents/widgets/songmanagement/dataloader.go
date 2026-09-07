@@ -23,7 +23,7 @@ func BootstrapIndex(state *stateStructs.ApplicationState, playlistID uint) error
 	playlist := &database.Playlist{}
 
 	// Get all required details about the song, incl. collaborators, main artist, and what record we're on
-	if err := state.Config.Database.Preload("Songs.Song.CollabArtists").Preload("Songs.Song.PrimaryArtist").Preload("Songs.Song.Record").Where("library_id = ? AND id = ?", state.Config.ActiveLibraryID, playlistID).First(playlist).Error; err != nil {
+	if err := state.Config.Database.Preload("Songs.Song.CollabArtists").Preload("Songs.Song.PrimaryArtist").Preload("Songs.Song.Record").Where("library_id = ? AND id = ?", state.Config.ActiveLibrary.ID, playlistID).First(playlist).Error; err != nil {
 		return fmt.Errorf("failed to fetch songs in playlist: %w", err)
 	}
 
@@ -72,7 +72,7 @@ func LoadAllSongs(state *stateStructs.ApplicationState) error {
 	// We have a list of all the songs we have found, so we can get a list of who has this song in their playlist
 	foundSongs := map[uint]*songmanagementstate.SongInList{} // map of song ID to song in list
 
-	if err := state.Config.Database.Preload("Playlist").Preload("Song.CollabArtists").Preload("Song.PrimaryArtist").Preload("Song.Record").Where("library_id = ?", state.Config.ActiveLibraryID).Find(&songs).Error; err != nil {
+	if err := state.Config.Database.Preload("Playlist").Preload("Song.CollabArtists").Preload("Song.PrimaryArtist").Preload("Song.Record").Where("library_id = ?", state.Config.ActiveLibrary.ID).Find(&songs).Error; err != nil {
 		return fmt.Errorf("failed to fetch song list: %w", err)
 	}
 

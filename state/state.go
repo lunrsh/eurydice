@@ -2,9 +2,9 @@
 package state
 
 import (
-	"context"
-
+	"git.lunr.sh/luna/eurydice/state/database"
 	"git.lunr.sh/luna/eurydice/state/popupstate/ftmstate"
+	"git.lunr.sh/luna/eurydice/state/popupstate/mgmtstate"
 	"git.lunr.sh/luna/eurydice/state/popupstate/mtfstate"
 	"git.lunr.sh/luna/eurydice/state/popupstate/scanstate"
 	"git.lunr.sh/luna/eurydice/state/popupstate/setupstate"
@@ -49,11 +49,8 @@ type ConfigState struct {
 
 	AppStatePath string
 
-	Database    *gorm.DB
-	DatabaseCtx context.Context
-
-	ActiveLibraryID       uint
-	ActiveLibraryIDSetYet bool
+	Database *gorm.DB
+	ActiveLibrary *database.Library
 }
 
 type DebugUIState struct {
@@ -71,6 +68,7 @@ type IndividualPageStates struct {
 	LibraryScan scanstate.ScanState
 	FTMUpdate   ftmstate.FTMUpdateState
 	MTFUpdate   mtfstate.MTFUpdateState
+	DeviceMgmt  mgmtstate.MgmtState
 
 	PlaylistSelection playlistselectionstate.PlaylistSelectionState
 	MediaManagement   mediastate.MediaState

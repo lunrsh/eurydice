@@ -16,7 +16,7 @@ func BootstrapIndex(state *stateStructs.ApplicationState) error {
 	allVisibleNamedPlaylists := []*playlistselectionstate.PlaylistState{}
 	unnamedPlaylists := []*playlistselectionstate.PlaylistState{}
 
-	if err := state.Config.Database.Where("library_id = ?", state.Config.ActiveLibraryID).Find(&allPlaylists).Error; err != nil {
+	if err := state.Config.Database.Where("library_id = ?", state.Config.ActiveLibrary.ID).Find(&allPlaylists).Error; err != nil {
 		return fmt.Errorf("failed to load playlists: %w", err)
 	}
 

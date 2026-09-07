@@ -351,7 +351,7 @@ func RenderButton(state *stateStructs.ApplicationState) {
 			namedPlaylists := []*syncstate.SyncPlaylist{}
 			unnamedPlaylists := []*syncstate.SyncPlaylist{}
 
-			if err := state.Config.Database.Where("library_id = ?", state.Config.ActiveLibraryID).Find(&playlistsFromDatabase).Error; err != nil {
+			if err := state.Config.Database.Where("library_id = ?", state.Config.ActiveLibrary.ID).Find(&playlistsFromDatabase).Error; err != nil {
 				state.Logger.Errorf("Failed to get playlists: %v", err)
 			}
 

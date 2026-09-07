@@ -40,7 +40,7 @@ func AddSongsToPlaylist(state *stateStructs.ApplicationState, markers []uint, ac
 			SortIndex:  currentIndex,
 			SongID:     song.ID,
 			PlaylistID: activePlaylist,
-			LibraryID:  state.Config.ActiveLibraryID,
+			LibraryID:  state.Config.ActiveLibrary.ID,
 		}).Error; err != nil {
 			failCount++
 			state.Logger.Errorf("Failed to add song (%s) to playlist: %s", song.Title, err.Error())

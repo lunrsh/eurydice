@@ -22,12 +22,7 @@ func updateSongs(state *stateStructs.ApplicationState, songs []*database.Song, r
 	relativePathsOfSongsToKeep := make([]string, 0, len(songs)) // We keep track of the songs to keep, to pass in to the cleanup code
 
 	// Before we do anything, we fetch the current active library path, so we can get the path to songs
-	library := &database.Library{}
 	state.Logger.Debug("Sync->backingThread: Fetching library path")
-
-	if err := state.Config.Database.Where("id = ?", state.Config.ActiveLibraryID).First(library).Error; err != nil {
-		panic(fmt.Sprintf("Failed to get library: %v", err))
-	}
 
 	cpuThreadCount := runtime.NumCPU()
 
@@ -75,7 +70,7 @@ func updateSongs(state *stateStructs.ApplicationState, songs []*database.Song, r
 				// Check on the song's file existence on disk, just to ensure that it does properly exist still incase it was moved after indexing
 				state.Logger.Debugf("MetadataToFiles->backingThread->updateSongs: Ensuring file exists on disk for '%s'", song.Title)
 
-				if _, err := os.Stat(filepath.Join(library.LibraryPath, song.RelativePathFromLibrary)); err != nil {
+				if _, err := os.Stat(filepath.Join(state.Config.ActiveLibrary.LibraryPath, song.RelativePathFromLibrary)); err != nil {
 					if errors.Is(err, os.ErrNotExist) {
 						state.Logger.Errorf("MetadataToFiles->backingThread->updateSongs: File does not exist on disk for '%s'. Deleting from database, and skipping", song.Title)
 						state.PageStates.MTFUpdate.TotalSongsUpdated++
@@ -179,7 +174,7 @@ func updateSongs(state *stateStructs.ApplicationState, songs []*database.Song, r
 				// Write tags to the song
 				state.Logger.Debug("MetadataToFiles->backingThread->updateSongs: Writing updated tags to song")
 
-				if err := taglib.WriteTags(filepath.Join(library.LibraryPath, song.RelativePathFromLibrary), newTags, taglib.Clear); err != nil {
+				if err := taglib.WriteTags(filepath.Join(state.Config.ActiveLibrary.LibraryPath, song.RelativePathFromLibrary), newTags, taglib.Clear); err != nil {
 					panic(fmt.Sprintf("Failed to write tags to song '%s': %v", song.Title, err))
 				}
 
@@ -194,7 +189,7 @@ func updateSongs(state *stateStructs.ApplicationState, songs []*database.Song, r
 
 					state.Logger.Debug("MetadataToFiles->backingThread->updateSongs: Applying album art to song")
 
-					if err := taglib.WriteImage(filepath.Join(library.LibraryPath, song.RelativePathFromLibrary), albumArt); err != nil {
+					if err := taglib.WriteImage(filepath.Join(state.Config.ActiveLibrary.LibraryPath, song.RelativePathFromLibrary), albumArt); err != nil {
 						panic(fmt.Sprintf("Failed to write album art to song '%s': %v", song.Title, err))
 					}
 				}
@@ -231,7 +226,7 @@ func backingThread(state *stateStructs.ApplicationState) {
 	records := map[uint]*database.Record{}
 	artists := map[uint]*database.Artist{}
 
-	if err := state.Config.Database.Where("library_id = ?", state.Config.ActiveLibraryID).Find(&songs).Error; err != nil {
+	if err := state.Config.Database.Where("library_id = ?", state.Config.ActiveLibrary.ID).Find(&songs).Error; err != nil {
 		panic(fmt.Sprintf("Failed to fetch songs: %v", err))
 	}
 

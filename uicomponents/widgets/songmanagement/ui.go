@@ -31,6 +31,8 @@ const tableFlags = imgui.TableFlagsSizingFixedFit |
 
 const multiSelectFlags = imgui.MultiSelectFlagsClearOnEscape | imgui.MultiSelectFlagsBoxSelect1d
 
+var greyText = imgui.Vec4{X: 172.0 / 255, Y: 172.0 / 255, Z: 172.0 / 255, W: 255.0 / 255}
+
 func Copy(state *stateStructs.ApplicationState) {
 	markerSlice := []byte{}        // Internal; used for pasting into other panes
 	textSlice := strings.Builder{} // External; text copying for if people want to paste their song list elsewhere
@@ -66,7 +68,7 @@ func Paste(state *stateStructs.ApplicationState) error {
 	markers, err := clipboard.ReadAs(context.Background(), state.EurydiceClipboardRegistration, utilities.ClipboardDecoder)
 
 	if err != nil {
-		fmt.Errorf("Failed to read clipboard: %v", err)
+		state.Logger.Errorf("Failed to read clipboard: %v", err)
 		return nil // clipboard read or parsing failed, which can happen for a variety of valid reasons, so abort silently
 	}
 
@@ -202,7 +204,7 @@ func DeleteModalRender(state *stateStructs.ApplicationState) {
 				imgui.SetCursorPosY(cursorY + imgui.TextLineHeight() + 2) // Add some pixels for padding
 			}
 
-			imgui.TextColored(imgui.Vec4{X: 172.0 / 255, Y: 172.0 / 255, Z: 172.0 / 255, W: 255.0 / 255}, utilities.WrapText(strings.Join(song.Artists, ", ")))
+			imgui.TextColored(greyText, utilities.WrapText(strings.Join(song.Artists, ", ")))
 		}
 
 		imgui.EndTable()
@@ -477,7 +479,7 @@ func Render(state *stateStructs.ApplicationState) {
 				imgui.SetCursorPosY(cursorY + imgui.TextLineHeight() + 2) // Add some pixels for padding
 			}
 
-			imgui.TextColored(imgui.Vec4{X: 172.0 / 255, Y: 172.0 / 255, Z: 172.0 / 255, W: 255.0 / 255}, utilities.WrapText(strings.Join(song.Artists, ", ")))
+			imgui.TextColored(greyText, utilities.WrapText(strings.Join(song.Artists, ", ")))
 			endSongSize := imgui.CursorPosY()
 
 			// Render the index column next

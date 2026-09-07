@@ -68,7 +68,7 @@ func Render(state *stateStructs.ApplicationState) {
 
 	if imgui.ButtonV("Create Playlist", contentRegion) {
 		if err := state.Config.Database.Create(&database.Playlist{
-			LibraryID: state.Config.ActiveLibraryID,
+			LibraryID: state.Config.ActiveLibrary.ID,
 		}).Error; err != nil {
 			panic(fmt.Sprintf("Failed to create playlist: %v", err))
 		}
