@@ -300,22 +300,22 @@ func Render(state *stateStructs.ApplicationState) {
 
 	imgui.SameLine()
 
-	// We set padding to 1px by 1px to make it not have padding, but also not have any weird artifacts around the edges
-	// Thanks, imgui!
-	imgui.PushStyleVarVec2(imgui.StyleVarWindowPadding, imgui.Vec2{X: 2.5, Y: 2.5})
+	// Remove any padding for the table
+	imgui.PushStyleVarVec2(imgui.StyleVarWindowPadding, imgui.Vec2{X: 3, Y: 3})
 
-	if imgui.BeginChildStrV("##SongListContainer", imgui.Vec2{X: imgui.ContentRegionAvail().X, Y: 300}, imgui.ChildFlagsBorders, 0) {
+	if imgui.BeginChildStrV("##SongListContainer", imgui.Vec2{X: 0, Y: 300}, imgui.ChildFlagsBorders, 0) {
 		if imgui.BeginTableV("##SongList", 1, tableFlags, imgui.ContentRegionAvail(), 0) {
-			imgui.TableSetupScrollFreeze(0, 1)
-			imgui.TableSetupColumnV(" Song", imgui.TableColumnFlagsWidthStretch, 0, imgui.IDStr("##Song"))
-			imgui.TableHeadersRow()
+			imgui.TableSetupColumnV("", imgui.TableColumnFlagsWidthStretch, 0, imgui.IDStr("##Song"))
 
-			for _, song := range state.PageStates.DeviceMgmt.DisplayedSongs {
+			for songIndex, song := range state.PageStates.DeviceMgmt.DisplayedSongs {
 				imgui.TableNextRow()
 				imgui.TableSetColumnIndex(0)
 
+				// Offset the artwork some more
+				imgui.SetCursorPosX(imgui.CursorPosX() + 3)
+
 				// If we're visible, and image is nil but we have an ArtID, try to load the image
-				if imgui.IsItemVisible() && song.Image == nil && song.ArtID != "" {
+				if (imgui.IsItemVisible() || songIndex == 0) && song.Image == nil && song.ArtID != "" {
 					state.Logger.Debugf("Dynamically loading image for song '%s'", song.Name)
 
 					var err error

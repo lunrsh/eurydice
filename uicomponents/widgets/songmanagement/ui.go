@@ -156,59 +156,68 @@ func DeleteModalRender(state *stateStructs.ApplicationState) {
 	imgui.Spacing()
 	imgui.Spacing()
 
-	if imgui.BeginTableV("##DeletionList", 1, tableFlags&^imgui.TableFlagsSortable, imgui.Vec2{X: 0, Y: 300}, 0) {
-		imgui.TableSetupScrollFreeze(0, 1)
-		imgui.TableSetupColumnV("Song", imgui.TableColumnFlagsWidthStretch, 0, imgui.IDStr("##Song"))
-		imgui.TableHeadersRow()
+	imgui.PushStyleVarVec2(imgui.StyleVarWindowPadding, imgui.Vec2{X: 3, Y: 3})
 
-		for _, song := range state.PageStates.SongManagement.SongsToDelete {
-			imgui.TableNextRow()
-			imgui.TableSetColumnIndex(0)
+	if imgui.BeginChildStrV("##DeletionListContainer", imgui.Vec2{X: 0, Y: 300}, imgui.ChildFlagsBorders, 0) {
+		if imgui.BeginTableV("##DeletionList", 1, tableFlags&^imgui.TableFlagsSortable&^imgui.TableFlagsBorders, imgui.ContentRegionAvail(), 0) {
+			imgui.TableSetupColumnV("", imgui.TableColumnFlagsWidthStretch, 0, imgui.IDStr("##Song"))
 
-			// If we're visible, and image is nil but we have an ArtID, try to load the image
-			if imgui.IsItemVisible() && song.Image == nil && song.ArtID != "" {
-				state.Logger.Debugf("Dynamically loading image for song '%s'", song.Name)
+			for songIndex, song := range state.PageStates.SongManagement.SongsToDelete {
+				imgui.TableNextRow()
+				imgui.TableSetColumnIndex(0)
 
-				var err error
+				// Offset the artwork some more
+				imgui.SetCursorPosX(imgui.CursorPosX() + 3)
 
-				song.Image, err = utilities.LoadImageFromArtID(state, song.ArtID)
+				// If we're visible, and image is nil but we have an ArtID, try to load the image
+				if (imgui.IsItemVisible() || songIndex == 0) && song.Image == nil && song.ArtID != "" {
+					state.Logger.Debugf("Dynamically loading image for song '%s'", song.Name)
 
-				if err != nil {
-					panic(fmt.Sprintf("Failed to load image for song '%s': %s", song.Name, err.Error()))
+					var err error
+
+					song.Image, err = utilities.LoadImageFromArtID(state, song.ArtID)
+
+					if err != nil {
+						panic(fmt.Sprintf("Failed to load image for song '%s': %s", song.Name, err.Error()))
+					}
 				}
+
+				// I hope that I'm never allowed to write UI code ever again.
+				// Used to align the album art description
+				var cursorX float32
+				var cursorY float32
+
+				if song.Image != nil {
+					imageBoxSize := 36 * state.ScaleFactor
+
+					imgui.Image(*song.Image, imgui.Vec2{X: imageBoxSize, Y: imageBoxSize})
+					imgui.SameLine()
+
+					cursorX = imgui.CursorPosX()
+					cursorY = imgui.CursorPosY() + (2 * state.ScaleFactor) // ScaleFactor here can never backfire, I'm sure... yeah...
+
+					imgui.SetCursorPosY(cursorY)
+				} else {
+					cursorX = imgui.CursorPosX()
+				}
+
+				imgui.Text(utilities.WrapText(song.Name))
+				imgui.SetCursorPosX(cursorX)
+
+				if song.Image != nil {
+					imgui.SetCursorPosY(cursorY + imgui.TextLineHeight() + 2) // Add some pixels for padding
+				}
+
+				imgui.TextColored(greyText, utilities.WrapText(strings.Join(song.Artists, ", ")))
 			}
 
-			// I hope that I'm never allowed to write UI code ever again.
-			// Used to align the album art description
-			var cursorX float32
-			var cursorY float32
-
-			if song.Image != nil {
-				imageBoxSize := 36 * state.ScaleFactor
-
-				imgui.Image(*song.Image, imgui.Vec2{X: imageBoxSize, Y: imageBoxSize})
-				imgui.SameLine()
-
-				cursorX = imgui.CursorPosX()
-				cursorY = imgui.CursorPosY() + (2 * state.ScaleFactor) // ScaleFactor here can never backfire, I'm sure... yeah...
-
-				imgui.SetCursorPosY(cursorY)
-			} else {
-				cursorX = imgui.CursorPosX()
-			}
-
-			imgui.Text(utilities.WrapText(song.Name))
-			imgui.SetCursorPosX(cursorX)
-
-			if song.Image != nil {
-				imgui.SetCursorPosY(cursorY + imgui.TextLineHeight() + 2) // Add some pixels for padding
-			}
-
-			imgui.TextColored(greyText, utilities.WrapText(strings.Join(song.Artists, ", ")))
+			imgui.EndTable()
 		}
 
-		imgui.EndTable()
+		imgui.EndChild()
 	}
+
+	imgui.PopStyleVar()
 
 	imgui.Spacing()
 	imgui.Spacing()
