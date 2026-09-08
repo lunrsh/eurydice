@@ -24,6 +24,7 @@ func deleteBackingThread(state *stateStructs.ApplicationState) {
 
 	// If we're deleting the associated songs, read the playlist contents from disk, so we can figure out which songs to delete (if not needed anymore)
 	if state.PageStates.DeviceMgmt.DeletionDeleteAssociatedSongs {
+		state.Logger.Debug("Reading playlist contents from disk")
 		playlistContentsOnDisk, err := os.ReadFile(filepath.Join(state.PageStates.DeviceMgmt.SelectedDevice.Mountpoint, state.PageStates.DeviceMgmt.PlaylistToDelete.RelativePath))
 
 		if err != nil {
@@ -38,6 +39,8 @@ func deleteBackingThread(state *stateStructs.ApplicationState) {
 	}
 
 	// Step 1: delete the playlists themselves from disk
+	state.Logger.Debug("Deleting playlist + snapshot from disk")
+
 	// Delete the main playlist file
 	if err := os.Remove(filepath.Join(state.PageStates.DeviceMgmt.SelectedDevice.Mountpoint, state.PageStates.DeviceMgmt.PlaylistToDelete.RelativePath)); err != nil {
 		panic(fmt.Sprintf("Failed to delete playlist: %s", err))
@@ -46,6 +49,32 @@ func deleteBackingThread(state *stateStructs.ApplicationState) {
 	// The snapshot contains a snapshot of the playlist contents, but without user modifications, so we need to remove it too.
 	if err := os.Remove(filepath.Join(state.PageStates.DeviceMgmt.SelectedDevice.Mountpoint, state.PageStates.DeviceMgmt.PlaylistToDelete.SnapshotPath)); err != nil {
 		panic(fmt.Sprintf("Failed to delete playlist: %s", err))
+	}
+
+	// Delete the playlist from the metadata
+	newPlaylists := make([]*syncstate.PlaylistMetadata, 0, len(state.PageStates.DeviceMgmt.MetadataOnDevice.Playlists)-1)
+
+	for _, playlist := range state.PageStates.DeviceMgmt.MetadataOnDevice.Playlists {
+		if playlist == state.PageStates.DeviceMgmt.PlaylistToDelete {
+			continue
+		}
+
+		newPlaylists = append(newPlaylists, playlist)
+	}
+
+	state.PageStates.DeviceMgmt.MetadataOnDevice.Playlists = newPlaylists
+
+	// Sync the metadata to the device
+	marshalledMetadata, err := json.Marshal(state.PageStates.DeviceMgmt.MetadataOnDevice)
+
+	state.Logger.Debug("Writing updated metadata to disk")
+
+	if err != nil {
+		panic(fmt.Sprintf("Failed to marshal metadata to JSON to copy to the device: %v", err))
+	}
+
+	if err := os.WriteFile(filepath.Join(state.PageStates.DeviceMgmt.SelectedDevice.Mountpoint, ".eurydice.json"), marshalledMetadata, 0644); err != nil {
+		panic(fmt.Sprintf("Failed to write metadata to device: %v", err))
 	}
 
 	// Step 2: if enabled, iterate over all the songs in the playlist,
@@ -71,11 +100,13 @@ func deleteBackingThread(state *stateStructs.ApplicationState) {
 	for _, playlistEntryInMetadata := range state.PageStates.DeviceMgmt.MetadataOnDevice.Playlists {
 		// We're just trying to find candidates *from the exact same copy of Eurydice* that we're deleting.
 		if playlistEntryInMetadata.InstallationID == state.PageStates.DeviceMgmt.PlaylistToDelete.InstallationID && playlistEntryInMetadata.LibraryID == state.PageStates.DeviceMgmt.PlaylistToDelete.LibraryID {
-			if playlistEntryInMetadata.PlaylistHash == state.PageStates.DeviceMgmt.PlaylistToDelete.PlaylistHash {
+			if playlistEntryInMetadata == state.PageStates.DeviceMgmt.PlaylistToDelete {
 				continue // skip ourselves
 			}
 
-			playlistContentsOnDisk, err := os.ReadFile(filepath.Join(state.PageStates.DeviceMgmt.SelectedDevice.Mountpoint, state.PageStates.DeviceMgmt.PlaylistToDelete.RelativePath))
+			state.Logger.Debugf("Found playlist entry to search for in metadata: %s", playlistEntryInMetadata.LastKnownName)
+
+			playlistContentsOnDisk, err := os.ReadFile(filepath.Join(state.PageStates.DeviceMgmt.SelectedDevice.Mountpoint, playlistEntryInMetadata.RelativePath))
 
 			if err != nil {
 				panic(fmt.Sprintf("Failed to read playlist contents: %s", err))
@@ -90,6 +121,7 @@ func deleteBackingThread(state *stateStructs.ApplicationState) {
 			// Delete any songs that we have marked for deletion and are still referenced in other playlists
 			for _, song := range playlistContents {
 				if songEntriesToDelete[song.FilePath] {
+					state.Logger.Debugf("Not deleting song '%s' due to it being referenced in another playlist", song.DisplayName)
 					delete(songEntriesToDelete, song.FilePath)
 				}
 			}
@@ -110,8 +142,9 @@ func deleteBackingThread(state *stateStructs.ApplicationState) {
 		rebuiltSongMap[song.RelativePath] = song
 	}
 
+	state.Logger.Debug("Rebuilt song map for deletion. Iterating over song entries to delete installations from")
+
 	for songEntry, _ := range songEntriesToDelete {
-		// TODO: this is inefficient as FUCK, but we need to just get this shit working.
 		songFound, ok := rebuiltSongMap[songEntry[1:]] // Rockbox's paths start with an extra slash due to M3U& handling, so we cut the extra character off
 
 		if !ok {
@@ -123,6 +156,7 @@ func deleteBackingThread(state *stateStructs.ApplicationState) {
 
 		for _, installation := range songFound.InstalledFrom {
 			if installation.InstallationID == state.PageStates.DeviceMgmt.PlaylistToDelete.InstallationID && installation.LibraryID == state.PageStates.DeviceMgmt.PlaylistToDelete.LibraryID {
+				state.Logger.Debugf("Removing ourselves from installation list for song path '%s' in playlist to delete", songEntry)
 				continue // remove ourselves from the installation list by skipping us!
 			}
 
@@ -147,7 +181,7 @@ func deleteBackingThread(state *stateStructs.ApplicationState) {
 	state.PageStates.DeviceMgmt.MetadataOnDevice.Songs = rebuiltSongList
 
 	// Now, sync the metadata to the device
-	marshalledMetadata, err := json.Marshal(state.PageStates.DeviceMgmt.MetadataOnDevice)
+	marshalledMetadata, err = json.Marshal(state.PageStates.DeviceMgmt.MetadataOnDevice)
 
 	if err != nil {
 		panic(fmt.Sprintf("Failed to marshal metadata to JSON to copy to the device: %v", err))
@@ -157,6 +191,8 @@ func deleteBackingThread(state *stateStructs.ApplicationState) {
 		panic(fmt.Sprintf("Failed to write metadata to device: %v", err))
 	}
 
+	state.Logger.Debug("Synced updated metadata to device")
+
 	// Finally, iterate and delete the songs
 	for _, songOnDisk := range songsOnDiskToRemove {
 		songPath := filepath.Join(state.PageStates.DeviceMgmt.SelectedDevice.Mountpoint, songOnDisk)
@@ -164,6 +200,8 @@ func deleteBackingThread(state *stateStructs.ApplicationState) {
 		if err := os.Remove(songPath); err != nil {
 			panic(fmt.Sprintf("Failed to delete song from device: %v", err))
 		}
+
+		state.Logger.Debugf("Deleted song '%s' from device", songOnDisk)
 
 		// If the housing directories are empty, remove them too
 		for {
@@ -175,6 +213,7 @@ func deleteBackingThread(state *stateStructs.ApplicationState) {
 			}
 
 			if len(entries) == 0 {
+				state.Logger.Debugf("Removed empty directory '%s'", songPath)
 				os.Remove(songPath)
 			} else {
 				break
@@ -183,7 +222,7 @@ func deleteBackingThread(state *stateStructs.ApplicationState) {
 	}
 
 	// Reset the storage display by scanning and updating devices
-	scanAndUpdateDevices(state)
+	state.Logger.Debug("Done with threaded tasks, scanning and updating devices in main thread now (once handoff is registered)")
 
 	// We're done!
 	state.PageStates.DeviceMgmt.DeletionIsDone = true

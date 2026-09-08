@@ -174,14 +174,32 @@ func populateSongsFromGivenPlaylist(state *stateStructs.ApplicationState, playli
 	return nil
 }
 
+// Cleans up state upon closure
+func cleanupState(state *stateStructs.ApplicationState) {
+	state.PageStates.DeviceMgmt.Devices = []*mgmtstate.MgmtDevice{}
+	state.PageStates.DeviceMgmt.DisplayedSongs = []*mgmtstate.DisplayedSong{}
+
+	state.PageStates.DeviceMgmt.DisplayedPlaylist = nil
+	state.PageStates.DeviceMgmt.MetadataOnDevice = nil
+	state.PageStates.DeviceMgmt.SelectedDevice = nil
+
+	state.PageStates.DeviceMgmt.UISelectedDeviceIndex = 0
+}
+
 func renderDeletingPlaylistPopup(state *stateStructs.ApplicationState) {
 	if state.PageStates.DeviceMgmt.DeletionIsDone {
+		state.Logger.Debug("Handoff detected. Rescanning devices to update the free storage display")
+
 		state.PageStates.DeviceMgmt.DeletionIsDone = false
 		state.PageStates.DeviceMgmt.DeletionDeleteAssociatedSongs = false
 		state.PageStates.DeviceMgmt.PlaylistToDelete = nil
 
+		scanAndUpdateDevices(state)
+
 		imgui.CloseCurrentPopup()
 		imgui.EndPopup()
+
+		return
 	}
 
 	imgui.Text("Deleting playlist...\n")
@@ -198,7 +216,7 @@ func Render(state *stateStructs.ApplicationState) {
 	if imgui.BeginPopupModalV("Delete Playlist? | Device Management", nil, imgui.WindowFlagsAlwaysAutoResize) {
 		imgui.Text(fmt.Sprintf("Are you sure you want to delete the playlist '%s'?", state.PageStates.DeviceMgmt.PlaylistToDelete.LastKnownName))
 
-		if state.PageStates.DeviceMgmt.PlaylistToDelete.InstallationID != state.Config.JSONConfig.InstallationID || state.PageStates.DeviceMgmt.PlaylistToDelete.LibraryID != state.Config.ActiveLibrary.ID || true {
+		if state.PageStates.DeviceMgmt.PlaylistToDelete.InstallationID != state.Config.JSONConfig.InstallationID || state.PageStates.DeviceMgmt.PlaylistToDelete.LibraryID != state.Config.ActiveLibrary.ID {
 			imgui.Text("WARNING! This playlist is not associated with your current library. If this is a shared device, this will affect other people!")
 		}
 
@@ -244,6 +262,8 @@ func Render(state *stateStructs.ApplicationState) {
 				imgui.CloseCurrentPopup()
 				imgui.EndPopup()
 
+				cleanupState(state)
+
 				imgui.OpenPopupStr("Error | Device Management")
 
 				return
@@ -258,6 +278,8 @@ func Render(state *stateStructs.ApplicationState) {
 				imgui.CloseCurrentPopup()
 				imgui.EndPopup()
 
+				cleanupState(state)
+
 				imgui.OpenPopupStr("Error | Device Management")
 
 				return
@@ -270,6 +292,8 @@ func Render(state *stateStructs.ApplicationState) {
 
 					imgui.CloseCurrentPopup()
 					imgui.EndPopup()
+
+					cleanupState(state)
 
 					imgui.OpenPopupStr("Error | Device Management")
 
@@ -310,6 +334,8 @@ func Render(state *stateStructs.ApplicationState) {
 
 			imgui.CloseCurrentPopup()
 			imgui.EndPopup()
+
+			cleanupState(state)
 
 			imgui.OpenPopupStr("Error | Device Management")
 
@@ -396,6 +422,8 @@ func Render(state *stateStructs.ApplicationState) {
 		imgui.CloseCurrentPopup()
 		imgui.EndPopup()
 
+		cleanupState(state)
+
 		imgui.OpenPopupStr("Error | Device Management")
 
 		return
@@ -473,6 +501,7 @@ func Render(state *stateStructs.ApplicationState) {
 
 	if imgui.Button("Close") {
 		imgui.CloseCurrentPopup()
+		cleanupState(state)
 	}
 
 	imgui.EndPopup()

@@ -242,7 +242,10 @@ func mainLoop() {
 				imgui.CloseCurrentPopup()
 				imgui.EndPopup()
 
+				appState.PageStates.DeviceMgmt.ErrHint = ""
+
 				if appState.PageStates.DeviceMgmt.IsErrRecoverable {
+					appState.PageStates.DeviceMgmt.IsErrRecoverable = false
 					imgui.OpenPopupStr("Device Management")
 				}
 			} else {

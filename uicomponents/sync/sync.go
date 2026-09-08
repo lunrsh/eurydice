@@ -694,6 +694,8 @@ func syncPlaylists(state *stateStructs.ApplicationState) error {
 				LibraryID:      state.Config.ActiveLibrary.ID,
 				InstallationID: state.Config.JSONConfig.InstallationID,
 
+				LastKnownName: playlist.Playlist.Name,
+
 				RelativePath: playlistFilePath,
 				SnapshotPath: snapshotFilePath,
 			}
