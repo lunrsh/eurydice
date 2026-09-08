@@ -25,6 +25,12 @@ type MgmtState struct {
 	ErrHint          string
 	IsErrRecoverable bool
 
+	DisplayedPlaylist *syncstate.PlaylistMetadata
+	PlaylistToDelete  *syncstate.PlaylistMetadata
+
+	DeletionDeleteAssociatedSongs bool
+	DeletionIsDone                bool
+
 	Devices        []*MgmtDevice
 	SelectedDevice *MgmtDevice
 

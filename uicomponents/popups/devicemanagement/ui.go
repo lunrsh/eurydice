@@ -91,6 +91,7 @@ func scanAndUpdateDevices(state *stateStructs.ApplicationState) {
 
 func getMetadataOnDevice(state *stateStructs.ApplicationState) error {
 	// Reset state and then pull the metadata file on disk
+	state.PageStates.DeviceMgmt.DisplayedPlaylist = nil
 	state.PageStates.DeviceMgmt.MetadataOnDevice = &syncstate.SyncMetadata{}
 	metadataOnDevice, err := os.ReadFile(filepath.Join(state.PageStates.DeviceMgmt.SelectedDevice.Mountpoint, ".eurydice.json"))
 
@@ -168,10 +169,70 @@ func populateSongsFromGivenPlaylist(state *stateStructs.ApplicationState, playli
 		}
 	}
 
+	state.PageStates.DeviceMgmt.DisplayedPlaylist = playlist
+
 	return nil
 }
 
+func renderDeletingPlaylistPopup(state *stateStructs.ApplicationState) {
+	if state.PageStates.DeviceMgmt.DeletionIsDone {
+		state.PageStates.DeviceMgmt.DeletionIsDone = false
+		state.PageStates.DeviceMgmt.DeletionDeleteAssociatedSongs = false
+		state.PageStates.DeviceMgmt.PlaylistToDelete = nil
+
+		imgui.CloseCurrentPopup()
+		imgui.EndPopup()
+	}
+
+	imgui.Text("Deleting playlist...\n")
+	imgui.Separator()
+	imgui.SetCursorPosY(imgui.CursorPosY() + 1) // Do this because it's not exactly the same
+
+	imgui.ProgressBarV(float32(imgui.Time()*-0.25), imgui.Vec2{X: 600, Y: 0}, "Deleting...")
+	imgui.EndPopup()
+}
+
 func Render(state *stateStructs.ApplicationState) {
+	shouldOpenDeletionPopup := false // we call it after the popup because we need to wait for the popup to close before opening it
+
+	if imgui.BeginPopupModalV("Delete Playlist? | Device Management", nil, imgui.WindowFlagsAlwaysAutoResize) {
+		imgui.Text(fmt.Sprintf("Are you sure you want to delete the playlist '%s'?", state.PageStates.DeviceMgmt.PlaylistToDelete.LastKnownName))
+
+		if state.PageStates.DeviceMgmt.PlaylistToDelete.InstallationID != state.Config.JSONConfig.InstallationID || state.PageStates.DeviceMgmt.PlaylistToDelete.LibraryID != state.Config.ActiveLibrary.ID || true {
+			imgui.Text("WARNING! This playlist is not associated with your current library. If this is a shared device, this will affect other people!")
+		}
+
+		imgui.Spacing()
+		imgui.Checkbox("Delete unreferenced songs stored inside this playlist", &state.PageStates.DeviceMgmt.DeletionDeleteAssociatedSongs)
+		imgui.Spacing()
+
+		if imgui.Button("Delete") {
+			go deleteBackingThread(state)
+
+			imgui.CloseCurrentPopup()
+			state.PageStates.DeviceMgmt.DeletionIsDone = false
+
+			shouldOpenDeletionPopup = true
+		}
+
+		imgui.SameLine()
+
+		if imgui.Button("Cancel") {
+			imgui.CloseCurrentPopup()
+			state.PageStates.DeviceMgmt.PlaylistToDelete = nil
+		}
+
+		imgui.EndPopup()
+	}
+
+	if shouldOpenDeletionPopup {
+		imgui.OpenPopupStr("Deleting Playlist... | Device Management")
+	}
+
+	if imgui.BeginPopupModalV("Deleting Playlist... | Device Management", nil, imgui.WindowFlagsAlwaysAutoResize) {
+		renderDeletingPlaylistPopup(state)
+	}
+
 	if state.PageStates.DeviceMgmt.SelectedDevice == nil {
 		if len(state.PageStates.DeviceMgmt.Devices) > 0 {
 			state.PageStates.DeviceMgmt.SelectedDevice = state.PageStates.DeviceMgmt.Devices[0]
@@ -239,7 +300,21 @@ func Render(state *stateStructs.ApplicationState) {
 
 	if imgui.ComboStrarr("##SelectedDevice", &state.PageStates.DeviceMgmt.UISelectedDeviceIndex, displayedDeviceList, int32(len(displayedDeviceList))) {
 		state.PageStates.DeviceMgmt.SelectedDevice = state.PageStates.DeviceMgmt.Devices[state.PageStates.DeviceMgmt.UISelectedDeviceIndex]
-		getMetadataOnDevice(state)
+
+		if err := getMetadataOnDevice(state); err != nil {
+			state.PageStates.DeviceMgmt.UISelectedDeviceIndex = 0
+			state.PageStates.DeviceMgmt.SelectedDevice = state.PageStates.DeviceMgmt.Devices[state.PageStates.DeviceMgmt.UISelectedDeviceIndex]
+
+			state.PageStates.DeviceMgmt.ErrHint = fmt.Sprintf("Failed to get metadata on device: %v", err)
+			state.PageStates.DeviceMgmt.IsErrRecoverable = true
+
+			imgui.CloseCurrentPopup()
+			imgui.EndPopup()
+
+			imgui.OpenPopupStr("Error | Device Management")
+
+			return
+		}
 	}
 
 	imgui.SameLine()
@@ -264,19 +339,21 @@ func Render(state *stateStructs.ApplicationState) {
 	imgui.Separator()
 	imgui.Spacing()
 
+	shouldShowDeletionPopup := false
+
 	if imgui.BeginChildStrV("##PlaylistSelection", imgui.Vec2{X: 250, Y: 300}, imgui.ChildFlagsBorders, 0) {
 		for _, playlist := range state.PageStates.DeviceMgmt.MetadataOnDevice.Playlists {
-			cursorBefore := imgui.CursorPos()
+			playlistOrigin := playlist.InstallationID ^ playlist.LibraryID // generate a unique identifier for the playlist's origin
 
-			if imgui.SelectableBoolV(fmt.Sprintf("##%d%d", playlist.InstallationID^playlist.LibraryID, playlist.PlaylistID), false, 0, imgui.Vec2{X: 0, Y: imgui.TextLineHeight()}) {
+			// We create a selectable for each playlist
+			// We do custom text tricks so we can't just have a button/selectable directly
+			cursorBefore := imgui.CursorPos()
+			textWidth := imgui.ContentRegionAvail().X - 20
+
+			if imgui.SelectableBoolV(fmt.Sprintf("##%d%d", playlistOrigin, playlist.PlaylistID), state.PageStates.DeviceMgmt.DisplayedPlaylist == playlist, 0, imgui.Vec2{X: textWidth, Y: imgui.TextLineHeight()}) {
 				if err := populateSongsFromGivenPlaylist(state, playlist); err != nil {
 					state.PageStates.DeviceMgmt.ErrHint = fmt.Sprintf("Failed to get metadata on device: %v", err)
-					state.PageStates.DeviceMgmt.IsErrRecoverable = false
-
-					imgui.CloseCurrentPopup()
-					imgui.EndPopup()
-
-					imgui.OpenPopupStr("Error | Device Management")
+					state.PageStates.DeviceMgmt.IsErrRecoverable = true
 				}
 			}
 
@@ -293,9 +370,35 @@ func Render(state *stateStructs.ApplicationState) {
 			}
 
 			imgui.Text(playlist.LastKnownName)
+			imgui.SameLine()
+			imgui.SetCursorPosX(textWidth + 14 + 2)
+
+			imgui.PushFont(state.FontIcons, 14)
+
+			if imgui.SelectableBoolV(fmt.Sprintf("\uf2ed##%d%d", playlistOrigin, playlist.PlaylistID), false, 0, imgui.Vec2{X: 14, Y: 0}) {
+				state.PageStates.DeviceMgmt.PlaylistToDelete = playlist
+				shouldShowDeletionPopup = true
+			}
+
+			imgui.PopFont()
 		}
 
 		imgui.EndChild()
+	}
+
+	if shouldShowDeletionPopup {
+		imgui.OpenPopupStr("Delete Playlist? | Device Management")
+	}
+
+	// If there's an error, close the popup and open the error popup
+	// We don't call this from the child above, because that's technically a popup itself, so we would end up closing the wrong thing
+	if state.PageStates.DeviceMgmt.ErrHint != "" {
+		imgui.CloseCurrentPopup()
+		imgui.EndPopup()
+
+		imgui.OpenPopupStr("Error | Device Management")
+
+		return
 	}
 
 	imgui.SameLine()
