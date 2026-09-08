@@ -22,10 +22,9 @@ import (
 )
 
 type JSONConfig struct {
-	InstallationID           uint
-	LibraryPath              string
-	HasOOBEFinished          bool
-	UpdateLocalLibraryOnOpen bool
+	InstallationID  uint
+	LibraryPath     string
+	HasOOBEFinished bool
 
 	// Compromise: Just creating an all songs playlist and adding/removing dynamically is easier than
 	// making a system to delete songs within all songs. It'd also be confusing to the user.
@@ -49,7 +48,7 @@ type ConfigState struct {
 
 	AppStatePath string
 
-	Database *gorm.DB
+	Database      *gorm.DB
 	ActiveLibrary *database.Library
 }
 

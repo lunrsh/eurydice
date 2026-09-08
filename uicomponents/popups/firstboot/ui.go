@@ -91,20 +91,9 @@ func Render(state *stateStructs.ApplicationState) {
 	case 1:
 		imgui.Text("We need to ask these additional questions.\n\n")
 
-		imgui.Text("Should I update your local library every time I open?")
-		imgui.SameLine()
-		checkBoxCursorPosition := imgui.CursorScreenPos()
-
-		imgui.SetCursorScreenPos(imgui.Vec2{
-			X: checkBoxCursorPosition.X,
-			Y: checkBoxCursorPosition.Y - 3.5,
-		})
-
-		imgui.Checkbox("##UpdateLocalLibraryOnOpen", &state.Config.JSONConfig.UpdateLocalLibraryOnOpen)
-
 		imgui.Text("Should I automatically add new songs to a new playlist for syncing?")
 		imgui.SameLine()
-		checkBoxCursorPosition = imgui.CursorScreenPos()
+		checkBoxCursorPosition := imgui.CursorScreenPos()
 
 		imgui.SetCursorScreenPos(imgui.Vec2{
 			X: checkBoxCursorPosition.X,

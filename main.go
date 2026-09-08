@@ -299,6 +299,7 @@ func mainLoop() {
 	if docking.DockID == 0 {
 		workPos := viewport.WorkPos()
 		docking.DockID = imgui.InternalDockBuilderAddNodeV(0, imgui.DockNodeFlagsNone)
+
 		imgui.InternalDockBuilderSetNodeSize(docking.DockID, workSize)
 		imgui.InternalDockBuilderSetNodePos(docking.DockID, workPos)
 
@@ -389,7 +390,7 @@ func mainLoop() {
 	}
 
 	// open the popup if the local library needs to be scanned and it's set to scan on launch, but only if we're not in setup
-	if appState.Config.JSONConfig.UpdateLocalLibraryOnOpen && !appState.PageStates.FirstBoot.HasFirstbootPageOpenedAlready && !appState.PageStates.LibraryScan.HasLibraryScanPageOpenedAlready {
+	if !appState.PageStates.FirstBoot.HasFirstbootPageOpenedAlready && !appState.PageStates.LibraryScan.HasLibraryScanPageOpenedAlready {
 		appState.PageStates.LibraryScan.HasLibraryScanPageOpenedAlready = true
 		imgui.OpenPopupStr("Scanning Library...")
 		appState.Logger.Debug("Running library scanner")
