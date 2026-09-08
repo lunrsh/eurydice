@@ -4,7 +4,7 @@
 
 [![Build Status](https://git.lunr.sh/luna/eurydice/actions/workflows/build-app.yaml/badge.svg)](https://git.lunr.sh/luna/eurydice/actions)
 [![GoDoc](https://godoc.org/git.lunr.sh/luna/eurydice?status.svg)](https://godoc.org/git.lunr.sh/luna/eurydice)
-[![License](https://img.shields.io/badge/license-BSD--3--Clause-green)](https://git.lunr.sh/luna/eurydice/src/branch/main/app/LICENSE)
+[![License](https://img.shields.io/badge/license-Lesser%20GPL%20v3-green)](https://git.lunr.sh/luna/eurydice/src/branch/main/app/LICENSE)
 ![Love :3](https://img.shields.io/badge/made-with_love-purple)
 
 # Eurydice (Alpha 1)
