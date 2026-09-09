@@ -36,6 +36,7 @@ pushd /tmp/ffmpeg
     --ar="$AR" \
     --extra-cflags="-I/tmp/ffmpeg_dist/include" \
     --extra-ldflags="-L/tmp/ffmpeg_dist/lib" \
+    --extra-libs="-lm" \
 	--disable-shared \
 	--enable-static \
 	--disable-debug \
