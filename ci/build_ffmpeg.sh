@@ -25,7 +25,17 @@ popd
 git clone https://git.ffmpeg.org/ffmpeg.git /tmp/ffmpeg -b n8.1.2
 pushd /tmp/ffmpeg
 # from https://github.com/mcmtroffaes/ffmpeg-msvc-build/issues/5
-./configure --arch=x86_64 --target-os=mingw32 --prefix=/tmp/ffmpeg_dist --cross-prefix=x86_64-w64-mingw32- --cc="$CC" --cxx="$CXX" --ld="$LD" --extra-cflags="-I/tmp/ffmpeg_dist/include" --extra-ldflags="-L/tmp/ffmpeg_dist/lib" \
+./configure \
+    --arch=x86_64 \
+    --target-os=mingw32 \
+    --prefix=/tmp/ffmpeg_dist \
+    --cross-prefix=x86_64-w64-mingw32- \
+    --cc="$CC" \
+    --cxx="$CXX" \
+    --ld="$LD" \
+    --ar="$AR" \
+    --extra-cflags="-I/tmp/ffmpeg_dist/include" \
+    --extra-ldflags="-L/tmp/ffmpeg_dist/lib" \
 	--disable-shared \
 	--enable-static \
 	--disable-debug \
@@ -35,9 +45,6 @@ pushd /tmp/ffmpeg
 	--disable-doc \
 	--disable-avdevice \
 	--disable-swscale \
-	--disable-postproc \
-	--disable-ffmpeg \
-	--disable-ffplay \
 	--disable-iconv \
 	--disable-zlib \
 	--disable-bzlib \
