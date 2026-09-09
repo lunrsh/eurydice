@@ -27,6 +27,8 @@ pushd /tmp/ffmpeg
 # from https://github.com/mcmtroffaes/ffmpeg-msvc-build/issues/5
 set +euo pipefail
 
+# --extra-libs="-lm" \
+
 ./configure \
     --arch=x86_64 \
     --target-os=mingw32 \
@@ -38,7 +40,7 @@ set +euo pipefail
     --ar="$AR" \
     --extra-cflags="-I/tmp/ffmpeg_dist/include" \
     --extra-ldflags="-L/tmp/ffmpeg_dist/lib" \
-    --extra-libs="-lm" \
+    --disable-pie \
 	--disable-shared \
 	--enable-static \
 	--disable-debug \
