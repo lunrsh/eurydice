@@ -25,6 +25,8 @@ popd
 git clone https://git.ffmpeg.org/ffmpeg.git /tmp/ffmpeg -b n8.1.2
 pushd /tmp/ffmpeg
 # from https://github.com/mcmtroffaes/ffmpeg-msvc-build/issues/5
+set +euo pipefail
+
 ./configure \
     --arch=x86_64 \
     --target-os=mingw32 \
@@ -138,7 +140,17 @@ pushd /tmp/ffmpeg
 	--enable-parser=tak \
 	--enable-parser=vorbis
 
+HAS_FAILED=$?
+
 cat ffbuild/config.log
+
+if [ $HAS_FAILED -ne 0 ]; then
+    echo "Configuration failed!!"
+    exit 1
+fi
+
+set -euo pipefail
+
 make
 make install
 popd
