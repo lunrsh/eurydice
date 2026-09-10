@@ -41,7 +41,6 @@ set +euo pipefail
     --ar="$AR" \
     --extra-cflags="-I/tmp/ffmpeg_dist/include" \
     --extra-ldflags="-L/tmp/ffmpeg_dist/lib" \
-    --disable-pic \
 	--disable-shared \
 	--enable-static \
 	--disable-debug \
@@ -140,7 +139,9 @@ set +euo pipefail
 	--enable-parser=gsm \
 	--enable-parser=mpegaudio \
 	--enable-parser=tak \
-	--enable-parser=vorbis
+	--enable-parser=vorbis \
+	--extra-ldflags="-Wl,--ignore-unresolved-symbol" \
+    --disable-pic # wtf?
 
 HAS_FAILED=$?
 
