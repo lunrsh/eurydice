@@ -140,7 +140,7 @@ set +euo pipefail
 	--enable-parser=mpegaudio \
 	--enable-parser=tak \
 	--enable-parser=vorbis \
-	--extra-ldflags="-Wl,--ignore-unresolved-symbol" \
+	--extra-ldflags="-Wl,--ignore-unresolved-symbols" \
     --disable-pic # wtf?
 
 HAS_FAILED=$?
