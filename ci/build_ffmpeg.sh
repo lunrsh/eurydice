@@ -28,6 +28,7 @@ pushd /tmp/ffmpeg
 set +euo pipefail
 
 # --extra-libs="-lm" \
+# --disable-filters \
 
 ./configure \
     --arch=x86_64 \
@@ -40,7 +41,7 @@ set +euo pipefail
     --ar="$AR" \
     --extra-cflags="-I/tmp/ffmpeg_dist/include" \
     --extra-ldflags="-L/tmp/ffmpeg_dist/lib" \
-    --disable-pie \
+    --disable-pic \
 	--disable-shared \
 	--enable-static \
 	--disable-debug \
@@ -65,7 +66,6 @@ set +euo pipefail
 	--disable-nvenc \
 	--disable-dxva2 \
 	--disable-bsfs \
-	--disable-filters \
 	--disable-parsers \
 	--disable-indevs \
 	--disable-outdevs \
