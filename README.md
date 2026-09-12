@@ -64,7 +64,7 @@ With that aside, I hope you enjoy using Eurydice!
 
 ## Contributing
 
-See [CONTRIBUTING.md](https://git.lunr.sh/luna/eurydice/raw/branch/main/CONTRIBUTING.md) for more information on how to contribute to this project.
+See [CONTRIBUTING.md](https://git.lunr.sh/luna/eurydice/src/branch/main/CONTRIBUTING.md) for more information on how to contribute to this project.
 
 If you're on GitHub, [click here for the Forgejo repository](https://git.lunr.sh/luna/eurydice) where development is done!
 
