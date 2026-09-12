@@ -1,0 +1,80 @@
+# Based on Forgejo's template
+name: "1. Report a problem or need"
+description: Please start here and describe your situation.
+title: "problem: "
+labels: ["kind/uncategorized"]
+body:
+- type: markdown
+  attributes:
+    value: |
+      - Please speak English, as this is the language all maintainers can speak and write.
+      - Take a moment to [check if a similar problem has already been discussed in the past.](https://git.lunr.sh/luna/eurydice/issues?q=&type=all&sort=relevance&state=all&labels=&milestone=0&project=0&assignee=0&poster=0&archived=false). Feel free to add your own experience there, if applicable.
+- type: dropdown
+  id: can-reproduce
+  attributes:
+    label: Does your problem still exist on the latest Eurydice version?
+    description: |
+      Please try reproducing your problem on the latest Eurydice version, available [here](https://git.lunr.sh/eurydice/eurydice/releases).
+      If it still exists in the latest production build, please check the latest [nightly build](https://git.lunr.sh/luna/eurydice/actions).
+    options:
+    - "Yes, the problem still exists (tested on a nightly build)"
+    - "Yes, the problem still exists (tested on a build compiled from source. in this case, provide the exact commit hash)"
+    - "Unknown, I can't try it for some reason (please explain)"
+  validations:
+    required: true
+- type: textarea
+  id: environment
+  attributes:
+    label: About your usage of Eurydice
+    description: |
+      Please provide a brief description of your usage of Eurydice. What features are you utilizing the most? What are you trying to achieve? There is no clear guideline on how much you need to share here. You can be brief, but we value the insights you provide us to better understand your use case. Thank you very much!
+  validations:
+    required: true
+- type: textarea
+  id: description
+  attributes:
+    label: Problem description
+    description: |
+      Please describe your problem as a first-hand experience. Try to focus on the problem. You do not have to find a solution, you can leave this to us.
+      <details><summary>Further instructions</summary>
+
+      * Start by explaining what you want to achieve ("I wanted to find an issue to work on").
+      * Try to include steps that you took and that resulted in the current situation. ("I opened the issue tracker, clicked on …, then …").
+      * If there were moments of confusion, please describe them. ("There was a button saying … and I was not sure if it would do what I expect").
+      * If you want to do something and don't know how or if it is possible, explain the goal ("I would like to know if there are issues that meet the following criteria …").
+
+      </details>
+  validations:
+    required: true
+- type: textarea
+  id: workarounds
+  attributes:
+    label: Potential workarounds
+    description: |
+      If you found a solution to your problem, even if it is not great, please share your experiences with it.
+      <details><summary>Further instructions</summary>
+
+      * Start by explaining what you tried and how it worked out ("I used X and it gives me the results, but it takes a lot of time to click through the UI").
+      * What are the major problems with your workaround(s)? ("It takes long to get there", "It looks very ugly")
+
+      </details>
+- type: input
+  id: eurydice-ver
+  attributes:
+    label: Eurydice Version
+    description: Eurydice version (or commit reference) you are using or that you used to reproduce the bug on Eurydice.
+- type: textarea
+  id: versions
+  attributes:
+    label: Other details about your environment (software names and versions)
+    description: |
+      Please include details to help us understand your problem: operating system and version running Eurydice, syncing device (if applicable), Rockbox version (if applicable), any unusal aspects about your system (i.e. using a network share for song storage)
+  validations:
+    required: true
+- type: markdown
+  attributes:
+    value: |
+      ### Solutions
+
+      *Accepted solutions to address this problem will go here*
+  visible: [content]
