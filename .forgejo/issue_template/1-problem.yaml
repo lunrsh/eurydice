@@ -1,6 +1,6 @@
 # Based on Forgejo's template
-name: "1. Report a problem or need"
-description: Please start here and describe your situation.
+name: "Report a problem or need"
+description: Please start here and describe your issue with Eurydice.
 title: "problem: "
 labels: ["kind/uncategorized"]
 body:
@@ -8,7 +8,7 @@ body:
   attributes:
     value: |
       - Please speak English, as this is the language all maintainers can speak and write.
-      - Take a moment to [check if a similar problem has already been discussed in the past.](https://git.lunr.sh/luna/eurydice/issues?q=&type=all&sort=relevance&state=all&labels=&milestone=0&project=0&assignee=0&poster=0&archived=false). Feel free to add your own experience there, if applicable.
+      - Take a moment to [check if a similar problem has already been discussed in the past](https://git.lunr.sh/luna/eurydice/issues?q=&type=all&sort=relevance&state=all&labels=&milestone=0&project=0&assignee=0&poster=0&archived=false). Feel free to add your own experience there, if applicable.
 - type: dropdown
   id: can-reproduce
   attributes:
@@ -27,7 +27,8 @@ body:
   attributes:
     label: About your usage of Eurydice
     description: |
-      Please provide a brief description of your usage of Eurydice. What features are you utilizing the most? What are you trying to achieve? There is no clear guideline on how much you need to share here. You can be brief, but we value the insights you provide us to better understand your use case. Thank you very much!
+      Please provide a brief description of your usage of Eurydice.
+      There is no clear guideline on how much you need to share here. You can be brief, but we value the insights you provide us to better understand your use case, and what features are over/underutilized.
   validations:
     required: true
 - type: textarea
