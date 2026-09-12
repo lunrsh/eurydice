@@ -1,6 +1,6 @@
 # Based on Forgejo's template
 name: "Report a problem or need"
-description: Please start here and describe your issue with Eurydice.
+description: Please start here and describe your issue.
 title: "problem: "
 labels: ["kind/uncategorized"]
 body:
