@@ -520,17 +520,25 @@ func main() {
 	}()
 
 	// Initialize application state directories
-	globalConfigDirectory, err := os.UserConfigDir()
+	var applicationStatePath string
 
-	if err != nil {
-		panic(fmt.Sprintf("Failed to get config directory: %v", err))
+	// Allow overriding the application state path via environment variable
+	// This is used for Eurydice development, but it can be useful in other circumstances
+	if os.Getenv("EURYDICE_STATE_PATH") != "" {
+		applicationStatePath = os.Getenv("EURYDICE_STATE_PATH")
+	} else {
+		globalConfigDirectory, err := os.UserConfigDir()
+
+		if err != nil {
+			panic(fmt.Sprintf("Failed to get config directory: %v", err))
+		}
+
+		pathArguments := make([]string, 1+len(EurydiceSavePath))
+		pathArguments[0] = globalConfigDirectory
+		copy(pathArguments[1:], EurydiceSavePath)
+
+		applicationStatePath = filepath.Join(pathArguments...)
 	}
-
-	pathArguments := make([]string, 1+len(EurydiceSavePath))
-	pathArguments[0] = globalConfigDirectory
-	copy(pathArguments[1:], EurydiceSavePath)
-
-	applicationStatePath := filepath.Join(pathArguments...)
 
 	// First, make the main application state directory (since we're doing MkdirAll, also make config here to kill 2 birds with one stone)
 	if err = os.MkdirAll(filepath.Join(applicationStatePath, "config"), 0755); err != nil && !errors.Is(err, os.ErrExist) {
