@@ -21,6 +21,7 @@ Issues: [links to issue(s)]
 ### Compliance
 
 - [ ] I confirm that I make this contribution in accordance with [Eurydice's AI Policy](https://git.lunr.sh/luna/eurydice/src/branch/main/CONTRIBUTING.md).
+- [ ] If I have used an AI tool to assist Eurydice development, I have done so in a way outlined in Eurydice's AI policy as an allowed usecase. (translation & proofreading cases do not have to check this checkbox)
 
 ### Tests for Go changes
 
