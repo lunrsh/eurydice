@@ -7,7 +7,7 @@
 [![License](https://img.shields.io/badge/license-Lesser%20GPL%20v3-green)](https://git.lunr.sh/luna/eurydice/src/branch/main/app/LICENSE)
 ![Love :3](https://img.shields.io/badge/made-with_love-purple)
 
-# Eurydice (Alpha 1)
+# Eurydice (Alpha 2)
 
 Eurydice is a music and playlist manager for the modern age.
 
@@ -18,10 +18,6 @@ Eurydice lets you manage your music library with ease. It has intuitive music an
 Eurydice is planned to support both a plug-in system for playlist syncing with other services, as well as an RPC system for remote control and integration with other applications, like foobar2000 (also planned!), Rhythmbox, Strawberry, or any other music-playing app you wish.
 
 Eurydice is not perfect, however; it is still under *heavy* development and may have bugs or limitations. We welcome feedback and contributions from the community to help make this application better for all users.
-
-Contributions are open, but you need to request an account by emailing me first. This will be explained later in a `CONTRIBUTING.md` file.
-
-(if you're on GitHub, [click here for the Forgejo repository](https://git.lunr.sh/luna/eurydice) where development is done!)
 
 ### User Interface
 
@@ -67,6 +63,12 @@ After that, you can extract the archive and run Eurydice! Be sure to have a dedi
 With that aside, I hope you enjoy using Eurydice!
 
 ~ Luna, contributors, and the lunaworks project
+
+## Contributing
+
+See [CONTRIBUTING.md](https://git.lunr.sh/luna/eurydice/raw/branch/main/CONTRIBUTING.md) for more information on how to contribute to this project.
+
+If you're on GitHub, [click here for the Forgejo repository](https://git.lunr.sh/luna/eurydice) where development is done!
 
 ## Special Thanks
 
