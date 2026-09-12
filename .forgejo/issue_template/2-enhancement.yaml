@@ -1,0 +1,37 @@
+name: "Proposed enhancement to Eurydice"
+description: "[Advanced users only] Suggest a solution to one or multiple problems that may have already been reported."
+title: "enh: "
+labels: ["enhancement/feature"]
+body:
+- type: markdown
+  attributes:
+    value: |
+      - Please speak English, as this is the language all maintainers can speak and write.
+      - Be civil and respectful.
+- type: textarea
+  id: problems
+  attributes:
+    label: Existing problems this enhancement addresses
+    description: |
+       - <details>
+       - <summary>Read if your proposed enhancement relates to a bug or issue</summary>
+       - In this field, only list the issue numbers of the **existing** problems that your proposal addresses. **Do not add new descriptions.** If you haven't previously described a problem, please [complete step one of the workflow](https://git.lunr.sh/luna/eurydice/issues/new?template=.forgejo%2fissue_template%2f1-problem.yaml) and describe the bug you'd like to solve first.
+       - </details>
+       - <details>
+       - <summary>Read if your proposed enhancement does not relate to a bug or issue</summary>
+       - In this field, describe the enhancement you'd like to propose. **THIS CANNOT BE RELATED TO A BUG.** An acceptable example would be adding a new sort order to the UI. An unacceptable example would be changing functionality of sorting due to a crash.
+       - </details>
+  validations:
+    required: true
+- type: textarea
+  id: description
+  attributes:
+    label: Enhancement description
+    description: Describe the changes you suggest for Eurydice and explain how they address the problems.
+  validations:
+    required: true
+- type: textarea
+  id: details
+  attributes:
+    label: Details and notes
+    description: Feel free to supply additional information like technical considerations, link to alternative solutions, UI mockups etc.
