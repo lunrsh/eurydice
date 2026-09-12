@@ -13,14 +13,15 @@ body:
   attributes:
     label: Existing problems this enhancement addresses
     description: |
-       - <details>
-       - <summary>Read if your proposed enhancement relates to a bug or issue</summary>
-       - In this field, only list the issue numbers of the **existing** problems that your proposal addresses. **Do not add new descriptions.** If you haven't previously described a problem, please [complete step one of the workflow](https://git.lunr.sh/luna/eurydice/issues/new?template=.forgejo%2fissue_template%2f1-problem.yaml) and describe the bug you'd like to solve first.
-       - </details>
-       - <details>
-       - <summary>Read if your proposed enhancement does not relate to a bug or issue</summary>
-       - In this field, describe the enhancement you'd like to propose. **THIS CANNOT BE RELATED TO A BUG.** An acceptable example would be adding a new sort order to the UI. An unacceptable example would be changing functionality of sorting due to a crash.
-       - </details>
+      <details>
+      <summary>Read if your proposed enhancement relates to a bug or issue</summary>
+      In this field, only list the issue numbers of the **existing** problems that your proposal addresses. **Do not add new descriptions.** If you haven't previously described a problem, please [complete step one of the workflow](https://git.lunr.sh/luna/eurydice/issues/new?template=.forgejo%2fissue_template%2f1-problem.yaml) and describe the bug you'd like to solve first.
+      </details>
+
+      <details>
+      <summary>Read if your proposed enhancement does not relate to a bug or issue</summary>
+      In this field, describe the enhancement you'd like to propose. **THIS CANNOT BE RELATED TO A BUG.** An acceptable example would be adding a new sort order to the UI. An unacceptable example would be changing functionality of sorting due to a crash.
+      </details>
   validations:
     required: true
 - type: textarea
