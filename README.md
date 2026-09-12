@@ -54,11 +54,9 @@ Eurydice also supports that have a `Playlists/` directory and work over USB/SD-c
 
 ## Getting Started
 
-First, you'll need to download a copy of Eurydice from the [nightly releases](https://git.lunr.sh/luna/eurydice/actions). Go to that Actions link, click on the latest thing you see, and download the latest artifact that works for your platform.
+First, you'll need to download the latest release of Eurydice from the [releases page](https://git.lunr.sh/luna/eurydice/releases). Download the zip file for your platform.
 
 After that, you can extract the archive and run Eurydice! Be sure to have a dedicated folder just for your music, or issues may occur. 
-
-**WARNING**: On the second page of setup, be sure to check the option about re-scanning your music library. If not, you will be softlocked out of the application. This is a known issue and will be fixed in Alpha 2.
 
 With that aside, I hope you enjoy using Eurydice!
 
