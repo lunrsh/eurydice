@@ -55,14 +55,14 @@ func speculateSongRecordIndex(state *stateStructs.ApplicationState, recordName s
 func WalkToFindAllMusic(state *stateStructs.ApplicationState) ([]string, error) {
 	allMusicFound := []string{}
 
-	err := filepath.WalkDir(state.Config.JSONConfig.LibraryPath, func(path string, dirEntry fs.DirEntry, err error) error {
+	err := filepath.WalkDir(state.Config.ActiveLibrary.LibraryPath, func(path string, dirEntry fs.DirEntry, err error) error {
 		if err != nil {
 			state.Logger.Debugf("ScanLibrary->backingThread->walkToFindAllMusic: error walking path '%s': %s", path, err.Error())
 			return err
 		}
 
 		if dirEntry.IsDir() {
-			state.PageStates.LibraryScan.CurrentSongPath = strings.TrimPrefix(path, state.Config.JSONConfig.LibraryPath)
+			state.PageStates.LibraryScan.CurrentSongPath = strings.TrimPrefix(path, state.Config.ActiveLibrary.LibraryPath)
 			return nil
 		}
 
@@ -98,7 +98,7 @@ func FindNonindexedMusic(state *stateStructs.ApplicationState, allMusicFound []s
 	uniqueMusicFound := []string{}
 
 	for _, musicPath := range allMusicFound {
-		relativeMusicPath := strings.TrimPrefix(musicPath, state.Config.JSONConfig.LibraryPath)
+		relativeMusicPath := strings.TrimPrefix(musicPath, state.Config.ActiveLibrary.LibraryPath)
 		attemptingToMatchEntry := &database.Song{}
 
 		state.PageStates.LibraryScan.CurrentSongPath = relativeMusicPath
@@ -119,7 +119,7 @@ func FindNonindexedMusic(state *stateStructs.ApplicationState, allMusicFound []s
 // Given a list of nonindexed music, this function indexes new music.
 //
 // Used internally for scanning the library and indexing new music (backingThread, step 3).
-func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []string) error {
+func IndexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []string) error {
 	cpuThreadCount := runtime.NumCPU()
 
 	delegatedSongsPerThread := make([][]string, cpuThreadCount)
@@ -191,7 +191,7 @@ func indexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 
 				songInformation := &database.Song{
 					LibraryID:               state.Config.ActiveLibrary.ID,
-					RelativePathFromLibrary: strings.TrimPrefix(songPath, state.Config.JSONConfig.LibraryPath),
+					RelativePathFromLibrary: strings.TrimPrefix(songPath, state.Config.ActiveLibrary.LibraryPath),
 				}
 
 				if title, ok := properties[taglib.Title]; ok && len(title) > 0 {
@@ -534,7 +534,7 @@ func CleanupDatabase(state *stateStructs.ApplicationState, musicFound []string) 
 	songPathMap := make(map[string]bool, len(allSongs))
 
 	for _, path := range musicFound {
-		songPathMap[strings.TrimPrefix(path, state.Config.JSONConfig.LibraryPath)] = true
+		songPathMap[strings.TrimPrefix(path, state.Config.ActiveLibrary.LibraryPath)] = true
 	}
 
 	// First, clean up songs that are no longer in the filesystem
@@ -644,7 +644,7 @@ func backingThread(state *stateStructs.ApplicationState) {
 	}()
 
 	// Step 1: scan the filesystem
-	state.Logger.Debugf("ScanLibrary->backingThread: scanning library path '%s'", state.Config.JSONConfig.LibraryPath)
+	state.Logger.Debugf("ScanLibrary->backingThread: scanning library path '%s'", state.Config.ActiveLibrary.LibraryPath)
 	state.PageStates.LibraryScan.StepNo = scanstate.StepScanningFilesystem
 
 	allMusicFound, err := WalkToFindAllMusic(state)
@@ -652,8 +652,8 @@ func backingThread(state *stateStructs.ApplicationState) {
 	if err != nil {
 		// Special case: if we failed to scan the filesystem, it's more of an easy fix that needs less visible.
 		// So, we call Panic directly.
-		state.Logger.Errorf("ScanLibrary->backingThread: We are about to crash! Failed to scan library path '%s': %s", state.Config.JSONConfig.LibraryPath, err.Error())
-		oncrash.Panic("Eurydice crash handler", fmt.Sprintf("Failed to read the current library path (%s). Is it readable and accessible?", state.Config.JSONConfig.LibraryPath), state.Logger, state.LogFilePath)
+		state.Logger.Errorf("ScanLibrary->backingThread: We are about to crash! Failed to scan library path '%s': %s", state.Config.ActiveLibrary.LibraryPath, err.Error())
+		oncrash.Panic("Eurydice crash handler", fmt.Sprintf("Failed to read the current library path (%s). Is it readable and accessible?", state.Config.ActiveLibrary.LibraryPath), state.Logger, state.LogFilePath)
 	}
 
 	var uniqueMusicFound []string // hack to allow the goto statement to work
@@ -681,7 +681,7 @@ func backingThread(state *stateStructs.ApplicationState) {
 
 	state.PageStates.LibraryScan.StepNo = scanstate.StepAddingSongs
 
-	if err = indexNewMusic(state, uniqueMusicFound); err != nil {
+	if err = IndexNewMusic(state, uniqueMusicFound); err != nil {
 		panic(fmt.Sprintf("Failed to index new music: %v", err))
 	}
 

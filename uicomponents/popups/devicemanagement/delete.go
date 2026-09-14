@@ -28,13 +28,13 @@ func deleteBackingThread(state *stateStructs.ApplicationState) {
 		playlistContentsOnDisk, err := os.ReadFile(filepath.Join(state.PageStates.DeviceMgmt.SelectedDevice.Mountpoint, state.PageStates.DeviceMgmt.PlaylistToDelete.RelativePath))
 
 		if err != nil {
-			panic(fmt.Sprintf("Failed to read playlist contents: %s", err))
+			panic(fmt.Sprintf("Failed to read playlist contents: %v", err))
 		}
 
 		playlistContents, err = utilities.TinyPlaylistParser(string(playlistContentsOnDisk))
 
 		if err != nil {
-			panic(fmt.Sprintf("Failed to parse playlist contents: %s", err))
+			panic(fmt.Sprintf("Failed to parse playlist contents: %v", err))
 		}
 	}
 
@@ -43,12 +43,12 @@ func deleteBackingThread(state *stateStructs.ApplicationState) {
 
 	// Delete the main playlist file
 	if err := os.Remove(filepath.Join(state.PageStates.DeviceMgmt.SelectedDevice.Mountpoint, state.PageStates.DeviceMgmt.PlaylistToDelete.RelativePath)); err != nil {
-		panic(fmt.Sprintf("Failed to delete playlist: %s", err))
+		panic(fmt.Sprintf("Failed to delete playlist: %v", err))
 	}
 
 	// The snapshot contains a snapshot of the playlist contents, but without user modifications, so we need to remove it too.
 	if err := os.Remove(filepath.Join(state.PageStates.DeviceMgmt.SelectedDevice.Mountpoint, state.PageStates.DeviceMgmt.PlaylistToDelete.SnapshotPath)); err != nil {
-		panic(fmt.Sprintf("Failed to delete playlist: %s", err))
+		panic(fmt.Sprintf("Failed to delete playlist: %v", err))
 	}
 
 	// Delete the playlist from the metadata

@@ -126,7 +126,7 @@ func Render(state *stateStructs.ApplicationState) {
 				playlist.HasKeyboardFocusSetYet = true
 			}
 
-			imgui.InputTextWithHint("##PlaylistRename"+playlist.Name, "Playlist Name", &playlist.RenameBuf, 0, nil)
+			imgui.InputTextWithHint(fmt.Sprintf("##PlaylistRename%d", playlist.ID), "Playlist Name", &playlist.RenameBuf, 0, nil)
 
 			if imgui.IsItemDeactivatedAfterEdit() || imgui.IsKeyPressedBool(imgui.KeyEnter) {
 				playlist.IsRenaming = false
@@ -164,7 +164,7 @@ func Render(state *stateStructs.ApplicationState) {
 				imgui.PushStyleColorVec4(imgui.ColButton, themes.Base)
 			}
 
-			if imgui.ButtonV(playlist.Name, selectableSize) {
+			if imgui.ButtonV(fmt.Sprintf("%s##%d", playlist.Name, playlist.ID), selectableSize) {
 				if state.PageStates.SongManagement.PlaylistID != playlist.ID {
 					if err := songmanagement.BootstrapIndex(state, playlist.ID); err != nil {
 						panic(fmt.Sprintf("Failed to bootstrap song index: %v", err))
@@ -215,7 +215,7 @@ func Render(state *stateStructs.ApplicationState) {
 
 		imgui.PushFont(state.FontIcons, 14)
 
-		if imgui.SelectableBoolV("\uf2ed##"+playlist.Name, state.PageStates.PlaylistSelection.PlaylistToDelete != nil, 0, imgui.Vec2{X: 14, Y: 0}) {
+		if imgui.SelectableBoolV(fmt.Sprintf("\uf2ed##%d", playlist.ID), state.PageStates.PlaylistSelection.PlaylistToDelete != nil, 0, imgui.Vec2{X: 14, Y: 0}) {
 			if state.PageStates.PlaylistSelection.PlaylistDeleteModalDisabled {
 				if err := state.Config.Database.Where("playlist_id = ?", state.PageStates.PlaylistSelection.PlaylistToDelete.ID).Delete(&([]database.PlaylistSong{})).Error; err != nil {
 					panic(fmt.Sprintf("Failed to delete playlist contents: %v", err))
@@ -266,7 +266,7 @@ func Render(state *stateStructs.ApplicationState) {
 		imgui.PushFont(state.FontIcons, 14)
 		imgui.SetCursorPosX(imgui.CursorPosX() + 2)
 
-		if imgui.SelectableBoolV("\uf044##"+playlist.Name, playlist.IsRenaming, 0, imgui.Vec2{X: 17, Y: 0}) {
+		if imgui.SelectableBoolV(fmt.Sprintf("\uf044##%d", playlist.ID), playlist.IsRenaming, 0, imgui.Vec2{X: 17, Y: 0}) {
 			playlist.IsRenaming = true
 			playlist.HasKeyboardFocusSetYet = false
 			playlist.RenameBuf = playlist.Name

@@ -12,6 +12,9 @@ import (
 	"git.lunr.sh/luna/eurydice/state/database"
 	"git.lunr.sh/luna/eurydice/state/popupstate/mgmtstate"
 	"git.lunr.sh/luna/eurydice/state/syncstate"
+	"git.lunr.sh/luna/eurydice/uicomponents/widgets/mediamanagement"
+	"git.lunr.sh/luna/eurydice/uicomponents/widgets/playlistmanagement"
+	"git.lunr.sh/luna/eurydice/uicomponents/widgets/songmanagement"
 	"git.lunr.sh/luna/eurydice/utilities"
 	"github.com/AllenDang/cimgui-go/imgui"
 	"github.com/shirou/gopsutil/v4/disk"
@@ -210,8 +213,66 @@ func renderDeletingPlaylistPopup(state *stateStructs.ApplicationState) {
 	imgui.EndPopup()
 }
 
+func renderImportingPlaylistPopup(state *stateStructs.ApplicationState) {
+	if state.PageStates.DeviceMgmt.ImportState == mgmtstate.ImportStateDone {
+		state.PageStates.DeviceMgmt.ImportState = mgmtstate.ImportStateIdle
+		state.PageStates.DeviceMgmt.PlaylistToImport = nil
+
+		// Run the indexers in the main thread
+		// Some of them call stuff that can only run on the main thread (image loading) so we have to do this
+		if err := mediamanagement.BootstrapIndex(state); err != nil {
+			panic(fmt.Sprintf("Failed to bootstrap media management index: %v", err))
+		}
+
+		if err := playlistmanagement.BootstrapIndex(state); err != nil {
+			panic(fmt.Sprintf("Failed to bootstrap playlist management index: %v", err))
+		}
+
+		// Update the song view if we're in the all songs pane
+		if !state.PageStates.SongManagement.IsCurrentlyDisplayingPlaylist {
+			if err := songmanagement.LoadAllSongs(state); err != nil {
+				panic(fmt.Sprintf("Failed to bootstrap song management index: %v", err))
+			}
+		}
+
+		imgui.CloseCurrentPopup()
+		imgui.EndPopup()
+
+		return
+	}
+
+	switch state.PageStates.DeviceMgmt.ImportState {
+	case mgmtstate.ImportStateImportingSongs:
+		imgui.Text("Adding or copying songs from the connected device, please wait...\n")
+		currentSongPath := state.PageStates.DeviceMgmt.CurrentSongPath
+
+		if len(currentSongPath) > 65 {
+			// Truncate characters but leave room for the ellipsis prefix
+			currentSongPath = "..." + currentSongPath[len(currentSongPath)-(65-3):]
+		}
+
+		imgui.Text(fmt.Sprintf("Currently adding: %s\n", currentSongPath))
+		imgui.Separator()
+		imgui.SetCursorPosY(imgui.CursorPosY() + 1) // Do this because it's not exactly the same
+
+		progressBarText := fmt.Sprintf("Adding... (%d/%d)", state.PageStates.DeviceMgmt.TotalSongsImported+1, state.PageStates.DeviceMgmt.TotalSongsToImport+1)
+
+		imgui.ProgressBarV(float32(state.PageStates.DeviceMgmt.TotalSongsImported)/float32(state.PageStates.DeviceMgmt.TotalSongsToImport), imgui.Vec2{X: 600, Y: 0}, progressBarText)
+	case mgmtstate.ImportStateImportingPlaylist:
+		imgui.Text("Importing playlist, please wait...\n")
+		imgui.Separator()
+		imgui.SetCursorPosY(imgui.CursorPosY() + 1) // Do this because it's not exactly the same
+
+		imgui.ProgressBarV(float32(imgui.Time()*-0.25), imgui.Vec2{X: 600, Y: 0}, "Initializing...")
+	}
+
+	imgui.EndPopup()
+}
+
 func Render(state *stateStructs.ApplicationState) {
-	shouldOpenDeletionPopup := false // we call it after the popup because we need to wait for the popup to close before opening it
+	// we call these after the popup because we need to wait for the popup to close before opening it
+	shouldOpenDeletionPopup := false
+	shouldOpenImportPopup := false
 
 	if imgui.BeginPopupModalV("Delete Playlist? | Device Management", nil, imgui.WindowFlagsAlwaysAutoResize) {
 		imgui.Text(fmt.Sprintf("Are you sure you want to delete the playlist '%s'?", state.PageStates.DeviceMgmt.PlaylistToDelete.LastKnownName))
@@ -243,12 +304,45 @@ func Render(state *stateStructs.ApplicationState) {
 		imgui.EndPopup()
 	}
 
+	if imgui.BeginPopupModalV("Import Playlist? | Device Management", nil, imgui.WindowFlagsAlwaysAutoResize) {
+		imgui.Text(fmt.Sprintf("Are you sure you would like to import the playlist '%s'?", state.PageStates.DeviceMgmt.PlaylistToImport.LastKnownName))
+		imgui.Text("This will also copy over any applicable songs that are not present in your library!")
+
+		imgui.Spacing()
+
+		if imgui.Button("Import") {
+			go importBackingThread(state)
+
+			imgui.CloseCurrentPopup()
+			state.PageStates.DeviceMgmt.ImportState = mgmtstate.ImportStateImportingSongs
+
+			shouldOpenImportPopup = true
+		}
+
+		imgui.SameLine()
+
+		if imgui.Button("Cancel") {
+			imgui.CloseCurrentPopup()
+			state.PageStates.DeviceMgmt.PlaylistToImport = nil
+		}
+
+		imgui.EndPopup()
+	}
+
 	if shouldOpenDeletionPopup {
 		imgui.OpenPopupStr("Deleting Playlist... | Device Management")
 	}
 
+	if shouldOpenImportPopup {
+		imgui.OpenPopupStr("Importing Playlist... | Device Management")
+	}
+
 	if imgui.BeginPopupModalV("Deleting Playlist... | Device Management", nil, imgui.WindowFlagsAlwaysAutoResize) {
 		renderDeletingPlaylistPopup(state)
+	}
+
+	if imgui.BeginPopupModalV("Importing Playlist... | Device Management", nil, imgui.WindowFlagsAlwaysAutoResize) {
+		renderImportingPlaylistPopup(state)
 	}
 
 	if state.PageStates.DeviceMgmt.SelectedDevice == nil {
@@ -366,6 +460,7 @@ func Render(state *stateStructs.ApplicationState) {
 	imgui.Spacing()
 
 	shouldShowDeletionPopup := false
+	shouldShowImportPopup := false
 
 	if imgui.BeginChildStrV("##PlaylistSelection", imgui.Vec2{X: 250, Y: 300}, imgui.ChildFlagsBorders, 0) {
 		for _, playlist := range state.PageStates.DeviceMgmt.MetadataOnDevice.Playlists {
@@ -374,7 +469,7 @@ func Render(state *stateStructs.ApplicationState) {
 			// We create a selectable for each playlist
 			// We do custom text tricks so we can't just have a button/selectable directly
 			cursorBefore := imgui.CursorPos()
-			textWidth := imgui.ContentRegionAvail().X - 20
+			textWidth := imgui.ContentRegionAvail().X - 45
 
 			if imgui.SelectableBoolV(fmt.Sprintf("##%d%d", playlistOrigin, playlist.PlaylistID), state.PageStates.DeviceMgmt.DisplayedPlaylist == playlist, 0, imgui.Vec2{X: textWidth, Y: imgui.TextLineHeight()}) {
 				if err := populateSongsFromGivenPlaylist(state, playlist); err != nil {
@@ -407,6 +502,31 @@ func Render(state *stateStructs.ApplicationState) {
 			}
 
 			imgui.PopFont()
+
+			if imgui.IsItemHoveredV(imgui.HoveredFlagsDelayNormal) {
+				if imgui.BeginTooltip() {
+					imgui.Text("Delete")
+					imgui.EndTooltip()
+				}
+			}
+
+			imgui.SameLine()
+
+			imgui.PushFont(state.FontIcons, 16)
+
+			if imgui.SelectableBoolV(fmt.Sprintf("\uf0c7##%d%d", playlistOrigin, playlist.PlaylistID), false, 0, imgui.Vec2{X: 14, Y: 0}) {
+				state.PageStates.DeviceMgmt.PlaylistToImport = playlist
+				shouldShowImportPopup = true
+			}
+
+			imgui.PopFont()
+
+			if imgui.IsItemHoveredV(imgui.HoveredFlagsDelayNormal) {
+				if imgui.BeginTooltip() {
+					imgui.Text("Import Playlist")
+					imgui.EndTooltip()
+				}
+			}
 		}
 
 		imgui.EndChild()
@@ -414,6 +534,10 @@ func Render(state *stateStructs.ApplicationState) {
 
 	if shouldShowDeletionPopup {
 		imgui.OpenPopupStr("Delete Playlist? | Device Management")
+	}
+
+	if shouldShowImportPopup {
+		imgui.OpenPopupStr("Import Playlist? | Device Management")
 	}
 
 	// If there's an error, close the popup and open the error popup

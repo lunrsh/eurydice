@@ -27,9 +27,15 @@ type MgmtState struct {
 
 	DisplayedPlaylist *syncstate.PlaylistMetadata
 	PlaylistToDelete  *syncstate.PlaylistMetadata
+	PlaylistToImport  *syncstate.PlaylistMetadata
 
 	DeletionDeleteAssociatedSongs bool
 	DeletionIsDone                bool
+
+	ImportState        int
+	TotalSongsImported int
+	TotalSongsToImport int
+	CurrentSongPath    string
 
 	Devices        []*MgmtDevice
 	SelectedDevice *MgmtDevice
@@ -40,3 +46,10 @@ type MgmtState struct {
 
 	UISelectedDeviceIndex int32
 }
+
+const (
+	ImportStateIdle = iota
+	ImportStateImportingSongs
+	ImportStateImportingPlaylist
+	ImportStateDone
+)
