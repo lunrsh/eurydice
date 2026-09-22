@@ -290,7 +290,6 @@ func importBackingThread(state *stateStructs.ApplicationState) {
 					}
 
 					// We do a more thorough comparison of each matching song to find the best match, checking artists and records
-					fmt.Println("matchingSongsInDatabase:", len(matchingSongsInDatabase))
 
 					for _, potentialMatchingSong := range matchingSongsInDatabase {
 						firstArtist := tags[taglib.Artist][0]
@@ -301,9 +300,6 @@ func importBackingThread(state *stateStructs.ApplicationState) {
 						} else if strings.Contains(firstArtist, ", ") && strings.Contains(firstArtist, " and ") {
 							firstArtist = firstArtist[:strings.Index(firstArtist, ", ")]
 						}
-
-						fmt.Println("firstArtist:", firstArtist, "potentialMatchingSong.PrimaryArtist.Name:", potentialMatchingSong.PrimaryArtist.Name)
-						fmt.Println("record:", potentialMatchingSong.Record.Name, "album:", tags[taglib.Album][0])
 
 						if potentialMatchingSong.PrimaryArtist.Name == firstArtist && potentialMatchingSong.Record.Name == tags[taglib.Album][0] {
 							// Increase the displayed progress
@@ -316,8 +312,6 @@ func importBackingThread(state *stateStructs.ApplicationState) {
 							continue songLoop
 						}
 					}
-
-					fmt.Println("falling through, recreating!")
 
 					// Okay then, we copy the song to the database
 					// We don't have this in an else block because we would need to potentially run copySongToDevice if we can't find a matching song in the database
