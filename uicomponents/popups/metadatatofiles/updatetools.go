@@ -88,7 +88,7 @@ func updateSongs(state *stateStructs.ApplicationState, songs []*database.Song, r
 				// We could do a Preload prior, but we're trying to save memory here
 				//
 				// FIXME: apply same techniques to syncing?
-				if err := state.Config.Database.Table("song_other_artists").Where("song_id = ?", song.ID).Pluck("artist_id", &otherArtistIDsOnThisSong).Error; err != nil {
+				if err := state.Config.Database.Where("song_id = ?", song.ID).Table("song_other_artists").Pluck("artist_id", &otherArtistIDsOnThisSong).Error; err != nil {
 					panic(fmt.Sprintf("Failed to fetch other artist IDs on song %d: %s", song.ID, err))
 				}
 
