@@ -77,17 +77,11 @@ func deleteBackingThread(state *stateStructs.ApplicationState) {
 		panic(fmt.Sprintf("Failed to write metadata to device: %v", err))
 	}
 
-	// Step 2: if enabled, iterate over all the songs in the playlist,
+	// Step 2: iterate over all the songs in the playlist,
 	//         check if they're present in any of the other playlists WITH THE SAME INSTALLATION AND LIBRARY ID,
-	//         and delete them from the installation list in the metadata if they're not present.
+	//         and, if enabled, delete them from the installation list in the metadata if they're not present.
 	//
 	//         also, save a list of the songs.
-
-	// We don't need to continue any further if we're keeping the songs on the device once we're done
-	if !state.PageStates.DeviceMgmt.DeletionDeleteAssociatedSongs {
-		state.PageStates.DeviceMgmt.DeletionIsDone = true
-		return
-	}
 
 	// This map is a map of the relative path of the song to a boolean indicating whether it should be deleted.
 	// These contents can and will be deleted later when determining if there's any other playlists w/ the same install info
@@ -163,7 +157,7 @@ func deleteBackingThread(state *stateStructs.ApplicationState) {
 			rebuiltInstallationList = append(rebuiltInstallationList, installation)
 		}
 
-		if len(rebuiltInstallationList) == 0 { // We can actually delete ourselves! Hurrah!
+		if len(rebuiltInstallationList) == 0 && state.PageStates.DeviceMgmt.DeletionDeleteAssociatedSongs { // We can actually delete ourselves (if we're allowed to)! Hurrah!
 			songsOnDiskToRemove = append(songsOnDiskToRemove, songEntry)
 			delete(rebuiltSongMap, songEntry[1:])
 		}
@@ -192,6 +186,12 @@ func deleteBackingThread(state *stateStructs.ApplicationState) {
 	}
 
 	state.Logger.Debug("Synced updated metadata to device")
+
+	// We don't need to continue any further if we're keeping the songs on the device once we're done
+	if !state.PageStates.DeviceMgmt.DeletionDeleteAssociatedSongs {
+		state.PageStates.DeviceMgmt.DeletionIsDone = true
+		return
+	}
 
 	// Finally, iterate and delete the songs
 	for _, songOnDisk := range songsOnDiskToRemove {
