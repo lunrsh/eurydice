@@ -14,6 +14,7 @@ import (
 
 	stateStructs "git.lunr.sh/luna/eurydice/state"
 	"git.lunr.sh/luna/eurydice/state/database"
+	"git.lunr.sh/luna/eurydice/state/popupstate/labelingstate"
 	"git.lunr.sh/luna/eurydice/state/widgetstate/mediastate"
 	"git.lunr.sh/luna/eurydice/state/widgetstate/songmanagementstate"
 	"git.lunr.sh/luna/eurydice/utilities"
@@ -32,6 +33,25 @@ const tableFlags = imgui.TableFlagsSizingFixedFit |
 const multiSelectFlags = imgui.MultiSelectFlagsClearOnEscape | imgui.MultiSelectFlagsBoxSelect1d
 
 var greyText = imgui.Vec4{X: 172.0 / 255, Y: 172.0 / 255, Z: 172.0 / 255, W: 255.0 / 255}
+
+// SetupRelabeling sets up the relabeling process for the song management page.
+func SetupRelabeling(state *stateStructs.ApplicationState) error {
+	// Create a list of songs that we can slowly fill up
+	fetchedSongs := make([]*labelingstate.LabelingWrappedSong, len(state.PageStates.SongManagement.Songs))
+
+	for songIndex, visibleSong := range state.PageStates.SongManagement.Songs {
+		fetchedSongs[songIndex] = &labelingstate.LabelingWrappedSong{}
+
+		if err := state.Config.Database.Preload("PrimaryArtist").Preload("CollabArtists").Preload("Record").Where("id = ?", visibleSong.SongID).First(&fetchedSongs[songIndex].Song).Error; err != nil {
+			return fmt.Errorf("failed to fetch song %d: %v", visibleSong.SongID, err)
+		}
+	}
+
+	// Move the fetched songs into the labeling state's songs to relabel slice
+	state.PageStates.Labeling.SongsToRelabel = fetchedSongs
+
+	return nil
+}
 
 func Copy(state *stateStructs.ApplicationState) {
 	markerSlice := []byte{}        // Internal; used for pasting into other panes
@@ -54,7 +74,7 @@ func Copy(state *stateStructs.ApplicationState) {
 	clipboard.WriteAll(
 		context.Background(),
 
-		clipboard.Item{Format: state.EurydiceClipboardRegistration, Bytes: markerSlice},
+		clipboard.Item{Format: state.ClipboardRegistration, Bytes: markerSlice},
 		clipboard.Item{Format: clipboard.FmtText, Bytes: []byte(textSlice.String())},
 	)
 }
@@ -65,7 +85,7 @@ func Paste(state *stateStructs.ApplicationState) error {
 	}
 
 	// Read the markers from the clipboard
-	markers, err := clipboard.ReadAs(context.Background(), state.EurydiceClipboardRegistration, utilities.ClipboardDecoder)
+	markers, err := clipboard.ReadAs(context.Background(), state.ClipboardRegistration, utilities.ClipboardDecoder)
 
 	if err != nil {
 		state.Logger.Errorf("Failed to read clipboard: %v", err)

@@ -1,12 +1,7 @@
 package scanlibrary
 
 import (
-	"bytes"
-	"crypto/md5"
-	"encoding/hex"
 	"fmt"
-	"image"
-	"image/jpeg"
 	"io/fs"
 	"mime"
 	"os"
@@ -24,7 +19,6 @@ import (
 	"git.lunr.sh/luna/eurydice/utilities"
 
 	"go.senan.xyz/taglib"
-	"golang.org/x/image/draw"
 	"gorm.io/gorm"
 )
 
@@ -365,55 +359,22 @@ func IndexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 				}
 
 				// Write the album art to local storage
-				// Nested if statements because if we return or continue we won't write to the database. Sorry.
 				if imageBytes, err := taglib.ReadImage(songPath); err == nil {
-					if imageData, _, err := image.Decode(bytes.NewReader(imageBytes)); err == nil {
-						md5Hash := md5.New()
+					// Run a databaseLockMutex to prevent TOCTOU or double-write
+					if !wasUnableToFetchTrackNumber {
+						databaseLockMutex.Lock()
+					}
 
-						if _, err = md5Hash.Write(imageBytes); err == nil {
-							imageHash := md5Hash.Sum(nil)
-							imageHashAsString := make([]byte, hex.EncodedLen(len(imageHash)))
+					songArtID, err = utilities.AddToArtIDPool(state, imageBytes)
 
-							hex.Encode(imageHashAsString, imageHash)
+					// Run a databaseLockMutex to prevent TOCTOU or double-write
+					if !wasUnableToFetchTrackNumber {
+						databaseLockMutex.Unlock()
+					}
 
-							state.Logger.Debugf("ScanLibrary->backingThread->indexNewMusic: Image hash for '%s': %s", songPath, string(imageHashAsString))
-							songArtID = string(imageHashAsString)
-
-							// Check if the image already exists. Run a databaseLockMutex to prevent TOCTOU or double-write
-							if !wasUnableToFetchTrackNumber {
-								databaseLockMutex.Lock()
-							}
-
-							if _, err := os.ReadFile(filepath.Join(state.Config.AppStatePath, "thumbnails", string(imageHashAsString))); !os.IsExist(err) {
-								// Downscale image and then write it
-								newImage := image.NewRGBA(image.Rect(0, 0, 256, 256))
-								draw.NearestNeighbor.Scale(newImage, newImage.Rect, imageData, imageData.Bounds(), draw.Over, nil)
-
-								file, err := os.OpenFile(filepath.Join(state.Config.AppStatePath, "thumbnails", string(imageHashAsString)), os.O_WRONLY|os.O_CREATE, 0644)
-
-								if err != nil {
-									state.Logger.Errorf("ScanLibrary->backingThread->indexNewMusic: Failed to open image (for writing) '%s': %s", string(imageHashAsString), err.Error())
-								}
-
-								defer file.Close()
-
-								err = jpeg.Encode(file, newImage, &jpeg.Options{
-									Quality: 95,
-								})
-
-								if err != nil {
-									state.Logger.Errorf("ScanLibrary->backingThread->indexNewMusic: Failed to encode image '%s' as JPEG: %s", string(imageHashAsString), err.Error())
-								}
-							}
-
-							if !wasUnableToFetchTrackNumber {
-								databaseLockMutex.Unlock()
-							}
-						} else {
-							state.Logger.Errorf("ScanLibrary->backingThread->indexNewMusic: Failed to hash embedded image in '%s': %s", songPath, err.Error())
-						}
-					} else {
-						state.Logger.Errorf("ScanLibrary->backingThread->indexNewMusic: Failed to decode embedded image in '%s': %s", songPath, err.Error())
+					if err != nil {
+						songArtID = ""
+						state.Logger.Errorf("ScanLibrary->backingThread->indexNewMusic: Failed to add image to art ID pool: %s", err.Error())
 					}
 				} else {
 					state.Logger.Errorf("ScanLibrary->backingThread->indexNewMusic: Failed to parse embedded image in '%s': %s", songPath, err.Error())

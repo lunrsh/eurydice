@@ -16,11 +16,117 @@ import (
 
 	stateStructs "git.lunr.sh/luna/eurydice/state"
 	"git.lunr.sh/luna/eurydice/state/database"
+	"git.lunr.sh/luna/eurydice/state/popupstate/labelingstate"
 	"git.lunr.sh/luna/eurydice/state/widgetstate/mediastate"
 	"git.lunr.sh/luna/eurydice/utilities"
 )
 
 const multiSelectFlags = imgui.MultiSelectFlagsClearOnEscape | imgui.MultiSelectFlagsBoxSelect2d
+
+// SetupRelabeling sets up the recategorization process for the media management page.
+func SetupRelabeling(state *stateStructs.ApplicationState) error {
+	// First, get the raw list of selected markers from the selection storage.
+	originalMarkerSlice := []uint{}
+
+	// I don't feel like fighting this library, and plus, we need to walk through visible items ANYWAYS to get their database IDs,
+	// so we just loop through all the visible items. Sorry!
+
+	if state.PageStates.MediaManagement.SortMethod == mediastate.SortAlbum {
+		for _, record := range state.PageStates.MediaManagement.Records {
+			if record.ShouldHide {
+				continue // can't select hidden things!
+			}
+
+			if state.PageStates.MediaManagement.SelectionStorage.Contains(record.ImguiID) {
+				originalMarkerSlice = append(originalMarkerSlice, mediastate.ConvertNodeInformationToIntMarker(record))
+			}
+
+			for _, song := range record.Songs {
+				if state.PageStates.MediaManagement.SelectionStorage.Contains(song.ImguiID) {
+					originalMarkerSlice = append(originalMarkerSlice, mediastate.ConvertNodeInformationToIntMarker(song))
+				}
+			}
+		}
+	} else {
+		for _, artist := range state.PageStates.MediaManagement.Artists {
+			if artist.ShouldHide {
+				continue // can't select hidden things!
+			}
+
+			if state.PageStates.MediaManagement.SelectionStorage.Contains(artist.ImguiID) {
+				originalMarkerSlice = append(originalMarkerSlice, mediastate.ConvertNodeInformationToIntMarker(artist))
+			}
+
+			for _, record := range artist.Records {
+				if record.ShouldHide {
+					continue
+				}
+
+				if state.PageStates.MediaManagement.SelectionStorage.Contains(record.ImguiID) {
+					originalMarkerSlice = append(originalMarkerSlice, mediastate.ConvertNodeInformationToIntMarker(record))
+				}
+
+				for _, song := range record.Songs {
+					if state.PageStates.MediaManagement.SelectionStorage.Contains(song.ImguiID) {
+						originalMarkerSlice = append(originalMarkerSlice, mediastate.ConvertNodeInformationToIntMarker(song))
+					}
+				}
+			}
+		}
+	}
+
+	// Then, convert them to a list of songs specifically
+	songMarkerSlice, err := utilities.GetSongListFromMarkers(state, originalMarkerSlice)
+
+	if err != nil {
+		return fmt.Errorf("failed to get song list from markers: %w", err)
+	}
+
+	// Clear out the existing songs to relabel and add them (with the metadata)
+	state.PageStates.Labeling.SongsToRelabel = make([]*labelingstate.LabelingWrappedSong, 0, len(songMarkerSlice))
+
+	for _, song := range songMarkerSlice {
+		// We probably need to fetch more information first! So let's rock
+
+		// Fetch the primary artist
+		if song.PrimaryArtistID != 0 && song.PrimaryArtist == nil {
+			if err := state.Config.Database.Where("id = ?", song.PrimaryArtistID).First(&song.PrimaryArtist).Error; err != nil {
+				return fmt.Errorf("failed to fetch primary artist for song %d: %w", song.PrimaryArtistID, err)
+			}
+		}
+
+		// Fetch the collab artists
+		if len(song.CollabArtists) == 0 {
+			// FIXME: This isn't ideal, but it works, I guess?
+			otherArtistIDsOnThisSong := []uint{}
+
+			if err := state.Config.Database.Where("song_id = ?", song.ID).Table("song_other_artists").Pluck("artist_id", &otherArtistIDsOnThisSong).Error; err != nil {
+				panic(fmt.Sprintf("Failed to fetch other artist IDs on song %d: %s", song.ID, err))
+			}
+
+			artistsOnThisSong := make([]*database.Artist, len(otherArtistIDsOnThisSong))
+
+			if err := state.Config.Database.Where("id IN ?", otherArtistIDsOnThisSong).Find(&artistsOnThisSong).Error; err != nil {
+				panic(fmt.Sprintf("Failed to fetch collab artists for song %d: %s", song.ID, err))
+			}
+
+			song.CollabArtists = artistsOnThisSong
+		}
+
+		// Fetch the record
+		if song.RecordID != 0 && song.Record == nil {
+			if err := state.Config.Database.Where("id = ?", song.RecordID).First(&song.Record).Error; err != nil {
+				return fmt.Errorf("failed to fetch record for song %d: %w", song.RecordID, err)
+			}
+		}
+
+		state.PageStates.Labeling.SongsToRelabel = append(state.PageStates.Labeling.SongsToRelabel, &labelingstate.LabelingWrappedSong{
+			Song: song,
+		})
+	}
+
+	return nil
+}
 
 func Copy(state *stateStructs.ApplicationState) {
 	markerSlice := []byte{}        // Internal; used for pasting into other panes
@@ -116,7 +222,7 @@ func Copy(state *stateStructs.ApplicationState) {
 	clipboard.WriteAll(
 		context.Background(),
 
-		clipboard.Item{Format: state.EurydiceClipboardRegistration, Bytes: markerSlice},
+		clipboard.Item{Format: state.ClipboardRegistration, Bytes: markerSlice},
 		clipboard.Item{Format: clipboard.FmtText, Bytes: []byte(textSlice.String())},
 	)
 }
@@ -129,7 +235,7 @@ func Paste(state *stateStructs.ApplicationState) error {
 	// So this is what this code does: it reads the markers from the clipboard and selects any matching songs in the pane.
 
 	// Read the markers from the clipboard
-	markers, err := clipboard.ReadAs(context.Background(), state.EurydiceClipboardRegistration, utilities.ClipboardDecoder)
+	markers, err := clipboard.ReadAs(context.Background(), state.ClipboardRegistration, utilities.ClipboardDecoder)
 
 	if err != nil {
 		state.Logger.Errorf("Failed to read clipboard: %v", err)

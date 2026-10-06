@@ -17,6 +17,7 @@ import (
 	"git.lunr.sh/luna/eurydice/uicomponents/popups/devicemanagement"
 	"git.lunr.sh/luna/eurydice/uicomponents/popups/filestometadata"
 	"git.lunr.sh/luna/eurydice/uicomponents/popups/firstboot"
+	"git.lunr.sh/luna/eurydice/uicomponents/popups/labeling"
 	"git.lunr.sh/luna/eurydice/uicomponents/popups/metadatatofiles"
 	"git.lunr.sh/luna/eurydice/uicomponents/popups/scanlibrary"
 	"git.lunr.sh/luna/eurydice/uicomponents/sync"
@@ -74,22 +75,13 @@ func mainLoop() {
 			shouldOpenFileToMetadataPopup = false
 
 			shouldOpenDeviceManagementPopup = false
+			shouldShowRelabelingPopup       = false
 		)
 
 		isAnyMenubarOpen := false
 
 		if imgui.BeginMenu("File") {
 			isAnyMenubarOpen = true
-
-			if imgui.MenuItemBool("Sync Metadata to Files") {
-				shouldOpenMetadataToFileConfirmationPopup = true
-			}
-
-			if imgui.MenuItemBool("Sync Files to Metadata") {
-				shouldOpenFileToMetadataConfirmationPopup = true
-			}
-
-			imgui.Separator()
 
 			neitherOfTheSongPanelsAreFocused := !appState.PageStates.MediaManagement.IsFocused && !appState.PageStates.SongManagement.IsFocused
 			weDoNotHaveASelection := appState.PageStates.MediaManagement.SelectionStorage.Size() == 0 && appState.PageStates.SongManagement.SelectionStorage.Size() == 0
@@ -128,6 +120,14 @@ func mainLoop() {
 
 			imgui.Separator()
 
+			imgui.BeginDisabled() // not implemented yet
+
+			if imgui.MenuItemBool("Settings") {
+
+			}
+
+			imgui.EndDisabled()
+
 			if imgui.MenuItemBool("Exit") {
 				appState.CurrentImguiBackend.SetShouldClose(true)
 			}
@@ -141,6 +141,64 @@ func mainLoop() {
 			if imgui.MenuItemBool("Manage Connected Devices") {
 				shouldOpenDeviceManagementPopup = true
 			}
+
+			imgui.EndMenu()
+		}
+
+		if imgui.BeginMenu("Library") {
+			isAnyMenubarOpen = true
+
+			if imgui.MenuItemBool("Sync Metadata to Files") {
+				shouldOpenMetadataToFileConfirmationPopup = true
+			}
+
+			if imgui.MenuItemBool("Sync Files to Metadata") {
+				shouldOpenFileToMetadataConfirmationPopup = true
+			}
+
+			imgui.Separator()
+
+			neitherOfTheSongPanelsAreFocused := !appState.PageStates.MediaManagement.IsFocused && !appState.PageStates.SongManagement.IsFocused
+			weDoNotHaveASelection := appState.PageStates.MediaManagement.SelectionStorage.Size() == 0 && appState.PageStates.SongManagement.SelectionStorage.Size() == 0
+
+			if neitherOfTheSongPanelsAreFocused || weDoNotHaveASelection {
+				imgui.BeginDisabled()
+			}
+
+			if imgui.MenuItemBool("Re-tag Selection") {
+				if appState.PageStates.MediaManagement.IsFocused {
+					if err := mediamanagement.SetupRelabeling(appState); err != nil {
+						panic(fmt.Sprintf("Failed to setup relabeling: %v", err))
+					}
+				} else {
+					if err := songmanagement.SetupRelabeling(appState); err != nil {
+						panic(fmt.Sprintf("Failed to setup relabeling: %v", err))
+					}
+				}
+
+				// Only open the relabeling popup if we have a selection
+				if len(appState.PageStates.Labeling.SongsToRelabel) > 0 {
+					shouldShowRelabelingPopup = true
+				}
+			}
+
+			if neitherOfTheSongPanelsAreFocused || weDoNotHaveASelection {
+				imgui.EndDisabled()
+			}
+
+			imgui.Separator()
+
+			imgui.BeginDisabled() // not implemented yet
+
+			if imgui.MenuItemBool("Import Playlist") {
+
+			}
+
+			if imgui.MenuItemBool("Export Playlist") {
+
+			}
+
+			imgui.EndDisabled()
 
 			imgui.EndMenu()
 		}
@@ -183,6 +241,8 @@ func mainLoop() {
 			imgui.OpenPopupStr("Confirmation | Metadata to Files")
 		} else if shouldOpenFileToMetadataConfirmationPopup {
 			imgui.OpenPopupStr("Confirmation | Files to Metadata")
+		} else if shouldShowRelabelingPopup {
+			imgui.OpenPopupStr("Relabel Selection")
 		}
 
 		if imgui.BeginPopupModalV("Confirmation | Metadata to Files", nil, imgui.WindowFlagsAlwaysAutoResize) {
@@ -259,6 +319,10 @@ func mainLoop() {
 
 		if imgui.BeginPopupModalV("Device Management", nil, imgui.WindowFlagsAlwaysAutoResize) {
 			devicemanagement.Render(appState)
+		}
+
+		if imgui.BeginPopupModalV("Relabel Selection", nil, imgui.WindowFlagsAlwaysAutoResize) {
+			labeling.Render(appState)
 		}
 
 		imgui.SetCursorPosX(imgui.WindowSize().X - sync.ItemWidth)
@@ -652,7 +716,7 @@ func main() {
 		panic(fmt.Sprintf("Failed to initialize clipboard: %v", err))
 	}
 
-	appState.EurydiceClipboardRegistration = clipboard.Register("application/sh.lunr.eurydice.clip")
+	appState.ClipboardRegistration = clipboard.Register("application/sh.lunr.eurydice.clip")
 
 	appState.CurrentImguiBackend.SetAfterCreateContextHook(func() {
 		if !appState.Config.JSONConfig.HighContrast {

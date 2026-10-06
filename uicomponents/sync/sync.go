@@ -361,7 +361,7 @@ func copySongs(state *stateStructs.ApplicationState, songsToSync map[uint]*datab
 		if state.PageStates.Sync.AudioQuality == int32(syncstate.AudioOriginalQuality) {
 			state.Logger.Debug("Sync->backingThread: Copying song")
 
-			if err := copySong(filepath.Join(state.Config.ActiveLibrary.LibraryPath, song.RelativePathFromLibrary), filepath.Join(state.PageStates.Sync.SelectedDevice.Mountpoint, songPath)); err != nil {
+			if err := utilities.CopyFile(filepath.Join(state.Config.ActiveLibrary.LibraryPath, song.RelativePathFromLibrary), filepath.Join(state.PageStates.Sync.SelectedDevice.Mountpoint, songPath)); err != nil {
 				unwrappedErr := errors.Unwrap(err)
 
 				// ...someone please clean this check up

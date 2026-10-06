@@ -11,6 +11,7 @@ import (
 
 	stateStructs "git.lunr.sh/luna/eurydice/state"
 	"git.lunr.sh/luna/eurydice/state/syncstate"
+	"git.lunr.sh/luna/eurydice/utilities"
 
 	"errors"
 
@@ -512,7 +513,7 @@ func encodeWriteFrame(f *astiav.Frame, s *stream, outputFormatContext *astiav.Fo
 func transcodeSong(state *stateStructs.ApplicationState, sourcePath, targetPath string) error {
 	// Fast path: if the source and target are both FLACs, and we're encoding as a flac, we just copy the song
 	if filepath.Ext(sourcePath) == ".flac" && filepath.Ext(targetPath) == ".flac" && state.PageStates.Sync.AudioQuality == int32(syncstate.AudioLosslessQuality) {
-		return copySong(sourcePath, targetPath)
+		return utilities.CopyFile(sourcePath, targetPath)
 	}
 
 	var (

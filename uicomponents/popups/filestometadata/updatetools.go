@@ -1,13 +1,8 @@
 package filestometadata
 
 import (
-	"bytes"
-	"crypto/md5"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"image"
-	"image/jpeg"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -20,8 +15,8 @@ import (
 	"git.lunr.sh/luna/eurydice/state/database"
 	"git.lunr.sh/luna/eurydice/state/popupstate/ftmstate"
 	"git.lunr.sh/luna/eurydice/uicomponents/popups/scanlibrary"
+	"git.lunr.sh/luna/eurydice/utilities"
 	"go.senan.xyz/taglib"
-	"golang.org/x/image/draw"
 	"gorm.io/gorm"
 )
 
@@ -274,49 +269,16 @@ func updateSongs(state *stateStructs.ApplicationState, songs []*database.Song, r
 				// Write the album art to local storage
 				// Nested if statements because if we return or continue we won't write to the database. Sorry.
 				if imageBytes, err := taglib.ReadImage(filepath.Join(state.Config.ActiveLibrary.LibraryPath, song.RelativePathFromLibrary)); err == nil {
-					if imageData, _, err := image.Decode(bytes.NewReader(imageBytes)); err == nil {
-						md5Hash := md5.New()
+					// Run a databaseLockMutex to prevent TOCTOU or double-write
+					databaseLockMutex.Lock()
 
-						if _, err = md5Hash.Write(imageBytes); err == nil {
-							imageHash := md5Hash.Sum(nil)
-							imageHashAsString := make([]byte, hex.EncodedLen(len(imageHash)))
+					song.ArtID, err = utilities.AddToArtIDPool(state, imageBytes)
 
-							hex.Encode(imageHashAsString, imageHash)
+					databaseLockMutex.Unlock()
 
-							state.Logger.Debugf("FilesToMetadata->backingThread->updateSongs: Image hash for '%s': %s", song.Title, string(imageHashAsString))
-							song.ArtID = string(imageHashAsString)
-
-							// Check if the image already exists. Run a databaseLockMutex to prevent TOCTOU or double-write
-							databaseLockMutex.Lock()
-
-							if _, err := os.ReadFile(filepath.Join(state.Config.AppStatePath, "thumbnails", string(imageHashAsString))); err != nil && errors.Is(err, os.ErrNotExist) {
-								// Downscale image and then write it
-								newImage := image.NewRGBA(image.Rect(0, 0, 256, 256))
-								draw.NearestNeighbor.Scale(newImage, newImage.Rect, imageData, imageData.Bounds(), draw.Over, nil)
-
-								file, err := os.OpenFile(filepath.Join(state.Config.AppStatePath, "thumbnails", string(imageHashAsString)), os.O_WRONLY|os.O_CREATE, 0644)
-
-								if err != nil {
-									state.Logger.Errorf("FilesToMetadata->backingThread->updateSongs: Failed to open image (for writing) '%s': %v", string(imageHashAsString), err)
-								}
-
-								defer file.Close()
-
-								err = jpeg.Encode(file, newImage, &jpeg.Options{
-									Quality: 95,
-								})
-
-								if err != nil {
-									state.Logger.Errorf("FilesToMetadata->backingThread->updateSongs: Failed to encode image '%s' as JPEG: %v", string(imageHashAsString), err)
-								}
-							}
-
-							databaseLockMutex.Unlock()
-						} else {
-							state.Logger.Errorf("FilesToMetadata->backingThread->updateSongs: Failed to hash embedded image for '%s': %v", song.Title, err)
-						}
-					} else {
-						state.Logger.Errorf("FilesToMetadata->backingThread->updateSongs: Failed to decode embedded image for '%s': %v", song.Title, err)
+					if err != nil {
+						song.ArtID = ""
+						state.Logger.Errorf("ScanLibrary->backingThread->indexNewMusic: Failed to add image to art ID pool: %s", err.Error())
 					}
 				} else {
 					state.Logger.Errorf("FilesToMetadata->backingThread->updateSongs: Failed to parse embedded image for '%s': %v", song.Title, err)

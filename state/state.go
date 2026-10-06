@@ -4,6 +4,7 @@ package state
 import (
 	"git.lunr.sh/luna/eurydice/state/database"
 	"git.lunr.sh/luna/eurydice/state/popupstate/ftmstate"
+	"git.lunr.sh/luna/eurydice/state/popupstate/labelingstate"
 	"git.lunr.sh/luna/eurydice/state/popupstate/mgmtstate"
 	"git.lunr.sh/luna/eurydice/state/popupstate/mtfstate"
 	"git.lunr.sh/luna/eurydice/state/popupstate/scanstate"
@@ -63,18 +64,28 @@ type DebugUIState struct {
 // scan windows), so we use single structs per each page type to hold the state of that page. Of course, if needed,
 // we can do arrays, but we don't need that extra overhead and flexibility.
 type IndividualPageStates struct {
+	// Popups
+	/// Core Components
 	FirstBoot   setupstate.SetupState
 	LibraryScan scanstate.ScanState
-	FTMUpdate   ftmstate.FTMUpdateState
-	MTFUpdate   mtfstate.MTFUpdateState
-	DeviceMgmt  mgmtstate.MgmtState
 
-	PlaylistSelection playlistselectionstate.PlaylistSelectionState
-	MediaManagement   mediastate.MediaState
-	SongManagement    songmanagementstate.SongManagementState
-	Sync              syncstate.SyncState
+	/// Metadata updating
+	FTMUpdate ftmstate.FTMUpdateState
+	MTFUpdate mtfstate.MTFUpdateState
+	Labeling  labelingstate.LabelingState
 
+	/// Device manipulation
+	DeviceMgmt mgmtstate.MgmtState
+	Sync       syncstate.SyncState
+
+	/// Debugging
 	DebugUI DebugUIState
+
+	// Panes
+	/// Left-to-right ordering
+	MediaManagement   mediastate.MediaState                         // left
+	PlaylistSelection playlistselectionstate.PlaylistSelectionState // center
+	SongManagement    songmanagementstate.SongManagementState       // right
 }
 
 type ApplicationState struct {
@@ -93,7 +104,7 @@ type ApplicationState struct {
 
 	IsMenubarOpen bool // hack because opening the menubar deselects things
 
-	EurydiceClipboardRegistration clipboard.Format
+	ClipboardRegistration clipboard.Format
 
 	FontIcons   *imgui.Font
 	FontRegular *imgui.Font
