@@ -11,6 +11,7 @@ import (
 	"git.lunr.sh/luna/eurydice/utilities"
 	"github.com/AllenDang/cimgui-go/imgui"
 )
+import "git.lunr.sh/luna/eurydice/state/database"
 
 var commonTreeNodeFlags = imgui.TreeNodeFlagsFramePadding |
 	imgui.TreeNodeFlagsSpanAvailWidth |
@@ -160,7 +161,25 @@ func renderArtist(state *stateStructs.ApplicationState, artist *mediastate.Artis
 	imgui.SetNextItemStorageID(artist.ImguiID)
 	imgui.InternalPushOverrideID(artist.ImguiID) // Manually set the ID to ensure consistency
 
+	// HACK: For some reason, imgui shows multiple buttons for the Record when we open a ContextMenu in Records (while an Artist
+	// is open).
+	//
+	// This normally would require a hack to fix - where we disable it opening in the first place - but we can't do that, as it
+	// causes a crash:
+	//
+	//     Uncaught exception: Assertion failed!
+	//     File: /Users/runner/work/cimgui-go/cimgui-go/cwrappers/imgui/imgui_widgets.cpp, Line 7962
+	//     Expression: (ms->FocusScopeId == g.CurrentFocusScopeId) && "EndMultiSelect() FocusScope mismatch!"
+	//
+	// So, we do a different hack, where we open a ContextMenu anyways, but just disable showing anything. This works, somehow.
+	// NOTABLY, for *some* reason, the same issue doesn't occur for Songs. What.
+	//
+	// ...sigh. I'm tired.
+	var treeNodeIsOpen bool
+
 	if imgui.TreeNodeExStrStr(artistID, flags, utilities.WrapText(artist.ArtistName)) {
+		treeNodeIsOpen = true // used for the context menu
+
 		// If the caller is open, we know BeginDragDropSource() is going to error out, because it's *apparently*
 		// not a valid drag-drop source, as said function doesn't execute at all if we have nested things...
 		//
@@ -216,6 +235,24 @@ func renderArtist(state *stateStructs.ApplicationState, artist *mediastate.Artis
 
 	imgui.PopID()
 
+	if imgui.BeginPopupContextItem() {
+		if !treeNodeIsOpen {
+			if imgui.SelectableBool("Edit Artist Name") {
+				artistInstance := &database.Artist{} // ID isn't settable until we create it because yes
+				artistInstance.ID = artist.ID
+
+				state.PageStates.Labeling.LabelingRenamePopup.ShouldReindex = true
+				state.PageStates.Labeling.LabelingRenamePopup.ShouldOpen = true
+
+				state.PageStates.Labeling.LabelingRenamePopup.ItemToEdit = artistInstance
+				state.PageStates.Labeling.LabelingRenamePopup.CurrentName = artist.ArtistName
+				state.PageStates.Labeling.LabelingRenamePopup.NewName = artist.ArtistName
+			}
+		}
+
+		imgui.EndPopup()
+	}
+
 	return nil
 }
 
@@ -266,7 +303,12 @@ func renderRecord(state *stateStructs.ApplicationState, record *mediastate.Recor
 	imgui.SetNextItemStorageID(record.ImguiID)
 	imgui.InternalPushOverrideID(record.ImguiID) // Manually set the ID to ensure consistency
 
+	// See above for documentation on this hack
+	var treeNodeIsOpen bool
+
 	if imgui.TreeNodeExStrStr(recordID, flags, utilities.WrapText(record.Title)) {
+		treeNodeIsOpen = true
+
 		if imgui.IsItemHovered() && state.PageStates.MediaManagement.SelectionStorage.Contains(record.ImguiID) && imgui.BeginTooltip() {
 			imgui.Text("Activating drag and drop on this record is not available, because this record")
 			imgui.Text("has items inside it!")
@@ -319,6 +361,24 @@ func renderRecord(state *stateStructs.ApplicationState, record *mediastate.Recor
 
 	imgui.PopID()
 
+	if imgui.BeginPopupContextItem() {
+		if !treeNodeIsOpen {
+			if imgui.SelectableBool("Edit Record Name") {
+				recordInstance := &database.Record{} // ID isn't settable until we create it because yes
+				recordInstance.ID = record.ID
+
+				state.PageStates.Labeling.LabelingRenamePopup.ShouldReindex = true
+				state.PageStates.Labeling.LabelingRenamePopup.ShouldOpen = true
+
+				state.PageStates.Labeling.LabelingRenamePopup.ItemToEdit = recordInstance
+				state.PageStates.Labeling.LabelingRenamePopup.CurrentName = record.Title
+				state.PageStates.Labeling.LabelingRenamePopup.NewName = record.Title
+			}
+		}
+
+		imgui.EndPopup()
+	}
+
 	return nil
 }
 
@@ -353,6 +413,22 @@ func renderSong(state *stateStructs.ApplicationState, song *mediastate.SongState
 	imgui.SetNextItemStorageID(song.ImguiID)
 	imgui.SelectableBoolV(utilities.WrapText(song.Title), isSongSelected, imgui.SelectableFlags(imgui.SelectableFlagsSpanAvailWidth), imgui.Vec2{})
 	imgui.PopID()
+
+	if imgui.BeginPopupContextItem() {
+		if imgui.SelectableBool("Edit Song Title") {
+			songInstance := &database.Song{} // ID isn't settable until we create it because yes
+			songInstance.ID = song.ID
+
+			state.PageStates.Labeling.LabelingRenamePopup.ShouldReindex = true
+			state.PageStates.Labeling.LabelingRenamePopup.ShouldOpen = true
+
+			state.PageStates.Labeling.LabelingRenamePopup.ItemToEdit = songInstance
+			state.PageStates.Labeling.LabelingRenamePopup.CurrentName = song.Title
+			state.PageStates.Labeling.LabelingRenamePopup.NewName = song.Title
+		}
+
+		imgui.EndPopup()
+	}
 
 	checkAndExecuteDragAndDrop(state)
 

@@ -38,9 +38,18 @@ type LabelingSubPopup struct {
 	RecordBuffer    string
 }
 
+type LabelingRenamePopup struct {
+	ItemToEdit    any // can be *database.Song, *database.Record, or *database.Artist
+	NewName       string
+	CurrentName   string
+	ShouldReindex bool
+	ShouldOpen    bool // causes import cycle issues if we don't do it this way, opening it in the main loop :(
+}
+
 type LabelingState struct {
 	SongsToRelabel   []*LabelingWrappedSong
 	SelectionStorage *imgui.SelectionBasicStorage
 
-	LabelingSubPopup LabelingSubPopup
+	LabelingSubPopup    LabelingSubPopup
+	LabelingRenamePopup LabelingRenamePopup
 }

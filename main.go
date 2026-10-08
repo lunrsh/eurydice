@@ -322,7 +322,7 @@ func mainLoop() {
 		}
 
 		if imgui.BeginPopupModalV("Relabel Selection", nil, imgui.WindowFlagsAlwaysAutoResize) {
-			labeling.Render(appState)
+			labeling.RenderMainRelabelPopup(appState)
 		}
 
 		imgui.SetCursorPosX(imgui.WindowSize().X - sync.ItemWidth)
@@ -469,6 +469,16 @@ func mainLoop() {
 
 	if imgui.BeginPopupModalV("Scanning Library...", nil, imgui.WindowFlagsAlwaysAutoResize) {
 		scanlibrary.Render(appState)
+	}
+
+	// HACK: we do it this way because of import cycle issues :(
+	if appState.PageStates.Labeling.LabelingRenamePopup.ShouldOpen {
+		imgui.OpenPopupStr("Rename | Relabeling")
+		appState.PageStates.Labeling.LabelingRenamePopup.ShouldOpen = false
+	}
+
+	if imgui.BeginPopupModalV("Rename | Relabeling", nil, imgui.WindowFlagsAlwaysAutoResize) {
+		labeling.RenderRenamePopup(appState)
 	}
 
 	// "inline" these because it's so simple

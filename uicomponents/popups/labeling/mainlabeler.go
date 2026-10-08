@@ -817,7 +817,7 @@ func renderSubpopup(state *stateStructs.ApplicationState) {
 	imgui.EndPopup()
 }
 
-func Render(state *stateStructs.ApplicationState) {
+func RenderMainRelabelPopup(state *stateStructs.ApplicationState) {
 	if imgui.BeginPopupModalV("Edit Selection | Relabeling", nil, imgui.WindowFlagsAlwaysAutoResize) {
 		renderSubpopup(state)
 	}
