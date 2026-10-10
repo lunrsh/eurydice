@@ -75,13 +75,96 @@ func prepareRecordDropdownFromPrimaryArtist(state *stateStructs.ApplicationState
 	return nil
 }
 
+// This code is the embodiment of "I just want this to just fucking work". This shit looks so bad, but it works
+// This varies from the typical rename implementation by not saving to the database until the end
+func renameDialogInternal(state *stateStructs.ApplicationState) {
+	imgui.Text("Current Name:")
+	imgui.PushFont(state.FontBold, 14)
+	imgui.SameLine()
+	imgui.Text(state.PageStates.Labeling.LabelingRenamePopup.CurrentName)
+	imgui.PopFont()
+
+	imgui.Spacing()
+
+	imgui.AlignTextToFramePadding()
+	imgui.Text("New Name:")
+	imgui.SameLine()
+	imgui.InputTextWithHint("##RenameItemText", "Rename...", &state.PageStates.Labeling.LabelingRenamePopup.NewName, 0, nil)
+
+	imgui.Spacing()
+
+	if imgui.Button("Cancel") {
+		state.PageStates.Labeling.LabelingRenamePopup.CurrentName = ""
+		state.PageStates.Labeling.LabelingRenamePopup.NewName = ""
+		state.PageStates.Labeling.LabelingRenamePopup.ItemToEdit = nil
+		state.PageStates.Labeling.LabelingRenamePopup.ShouldReindex = false
+
+		imgui.CloseCurrentPopup()
+	}
+
+	imgui.SameLine()
+
+	if imgui.Button("Apply") {
+		// These can use different names for... name, so we just switch on type
+		switch item := state.PageStates.Labeling.LabelingRenamePopup.ItemToEdit.(type) {
+		case *database.Song:
+			item.Title = state.PageStates.Labeling.LabelingRenamePopup.NewName
+		case *database.Record:
+			item.Name = state.PageStates.Labeling.LabelingRenamePopup.NewName
+		case *database.Artist:
+			item.Name = state.PageStates.Labeling.LabelingRenamePopup.NewName
+
+			// Also sync artists in here
+			if len(state.PageStates.Labeling.LabelingSubPopup.Artists) != 0 {
+				for _, song := range state.PageStates.Labeling.LabelingSubPopup.SongsToRelabel {
+					song.Song.PrimaryArtist = state.PageStates.Labeling.LabelingSubPopup.Artists[0].Artist
+					song.Song.CollabArtists = make([]*database.Artist, 0, len(state.PageStates.Labeling.LabelingSubPopup.Artists)-1)
+
+					if len(state.PageStates.Labeling.LabelingSubPopup.Artists) > 1 {
+						for _, collabArtist := range state.PageStates.Labeling.LabelingSubPopup.Artists[1:] {
+							// Double check that we have an artist selected
+							if collabArtist.Artist != nil {
+								song.Song.CollabArtists = append(song.Song.CollabArtists, collabArtist.Artist)
+							}
+						}
+					}
+
+					song.HasBeenEdited = true
+				}
+			}
+		default:
+			panic(fmt.Sprintf("Unknown type recieved - %T, this should never happen!", item))
+		}
+
+		// Do cleanup tasks
+		state.PageStates.Labeling.LabelingRenamePopup.CurrentName = ""
+		state.PageStates.Labeling.LabelingRenamePopup.NewName = ""
+		state.PageStates.Labeling.LabelingRenamePopup.ItemToEdit = nil
+		state.PageStates.Labeling.LabelingRenamePopup.ShouldReindex = false
+
+		imgui.CloseCurrentPopup()
+	}
+
+	imgui.EndPopup()
+}
+
 func renderSubpopup(state *stateStructs.ApplicationState) {
 	imgui.Text("Select and change any properties you want to modify, and click Save to apply your changes, or Cancel to discard your changes.")
 	imgui.Text("WARNING: This will apply and override the properties of all of the songs you selected.")
 	imgui.Spacing()
 
+	isRenamePopupOpen := false // ugh, for some reason imgui.IsPopupOpenStr isn't working...
+
+	// Renaming dialog, used for artists & records
+	if imgui.BeginPopupModalV("Rename | Relabeling", nil, imgui.WindowFlagsAlwaysAutoResize) {
+		isRenamePopupOpen = true
+		renameDialogInternal(state)
+	}
+
 	// Remove any padding for the table
 	imgui.PushStyleVarVec2(imgui.StyleVarWindowPadding, imgui.Vec2{X: 3, Y: 3})
+
+	shouldOpenRenameDialog := false
 
 	if imgui.BeginChildStrV("##SongListContainer", imgui.Vec2{X: 400, Y: 300}, imgui.ChildFlagsBorders, 0) {
 		if imgui.BeginTableV("##SongList", 1, tableFlags, imgui.ContentRegionAvail(), 0) {
@@ -191,7 +274,7 @@ func renderSubpopup(state *stateStructs.ApplicationState) {
 			imgui.SetNextItemWidth(imgui.ContentRegionAvail().X)
 			imgui.SetNextItemShortcut(imgui.KeyChord(imgui.ModCtrl | imgui.KeyF))
 
-			imgui.InputTextWithHint("##SelectArtistText", "Filter or Create Artist (Ctrl+F)", &state.PageStates.Labeling.LabelingSubPopup.DropdownSearchBuffer, 0, func(inputEvent imgui.InputTextCallbackData) int {
+			imgui.InputTextWithHint("##SelectArtistText", "Filter or Create Record (Ctrl+F)", &state.PageStates.Labeling.LabelingSubPopup.DropdownSearchBuffer, 0, func(inputEvent imgui.InputTextCallbackData) int {
 				var dropdownSearchRunes [256]rune
 				clear(dropdownSearchRunes[:])
 				copy(dropdownSearchRunes[:], []rune(state.PageStates.Labeling.LabelingSubPopup.DropdownSearchBuffer))
@@ -249,6 +332,31 @@ func renderSubpopup(state *stateStructs.ApplicationState) {
 		if state.PageStates.Labeling.LabelingSubPopup.DropdownIsDisabled {
 			imgui.EndDisabled()
 		}
+
+		imgui.PushStyleVarVec2(imgui.StyleVarWindowPadding, imgui.Vec2{X: 8, Y: 8}) // Redefine because we disable padding in the table, which also disables here as a consequence
+
+		// Rename popup
+		if imgui.BeginPopupContextItem() {
+			if state.PageStates.Labeling.LabelingSubPopup.SelectedRecord == nil {
+				imgui.BeginDisabled()
+			}
+
+			if imgui.SelectableBool("Rename Record") {
+				state.PageStates.Labeling.LabelingRenamePopup.ItemToEdit = state.PageStates.Labeling.LabelingSubPopup.SelectedRecord
+				state.PageStates.Labeling.LabelingRenamePopup.CurrentName = state.PageStates.Labeling.LabelingSubPopup.SelectedRecord.Name
+				state.PageStates.Labeling.LabelingRenamePopup.NewName = state.PageStates.Labeling.LabelingSubPopup.SelectedRecord.Name
+
+				shouldOpenRenameDialog = true
+			}
+
+			if state.PageStates.Labeling.LabelingSubPopup.SelectedRecord == nil {
+				imgui.EndDisabled()
+			}
+
+			imgui.EndPopup()
+		}
+
+		imgui.PopStyleVar()
 
 		imgui.Spacing()
 		imgui.Separator()
@@ -527,6 +635,29 @@ func renderSubpopup(state *stateStructs.ApplicationState) {
 					imgui.PushIDInt(int32(artistIndex))
 					imgui.SelectableBoolV("##", isSelected, imgui.SelectableFlagsSpanAllColumns|imgui.SelectableFlagsAllowOverlap, imgui.Vec2{X: 0, Y: endArtistPos - startArtistPos})
 					imgui.PopID()
+
+					imgui.PushStyleVarVec2(imgui.StyleVarWindowPadding, imgui.Vec2{X: 8, Y: 8})
+
+					if imgui.BeginPopupContextItem() {
+						if artist.Artist == nil {
+							imgui.BeginDisabled()
+						}
+
+						if imgui.SelectableBool("Rename Artist") {
+							state.PageStates.Labeling.LabelingRenamePopup.ItemToEdit = artist.Artist
+							state.PageStates.Labeling.LabelingRenamePopup.CurrentName = artist.Artist.Name
+							state.PageStates.Labeling.LabelingRenamePopup.NewName = artist.Artist.Name
+							shouldOpenRenameDialog = true
+						}
+
+						if artist.Artist == nil {
+							imgui.EndDisabled()
+						}
+
+						imgui.EndPopup()
+					}
+
+					imgui.PopStyleVar()
 				}
 
 				multiSelectIO = imgui.EndMultiSelect()
@@ -543,7 +674,7 @@ func renderSubpopup(state *stateStructs.ApplicationState) {
 		imgui.Spacing()
 
 		// Add Artist
-		if imgui.Button("+") || (imgui.IsWindowFocusedV(imgui.FocusedFlagsRootAndChildWindows) && imgui.IsKeyDown(imgui.ModShift) && imgui.IsKeyPressedBool(imgui.KeyEqual)) {
+		if imgui.Button("+") || (imgui.IsWindowFocusedV(imgui.FocusedFlagsRootAndChildWindows) && !isRenamePopupOpen && imgui.IsKeyDown(imgui.ModShift) && imgui.IsKeyPressedBool(imgui.KeyEqual)) {
 			allArtists := []*database.Artist{}
 
 			if err := state.Config.Database.Where("library_id = ?", state.Config.ActiveLibrary.ID).Find(&allArtists).Error; err != nil {
@@ -571,7 +702,7 @@ func renderSubpopup(state *stateStructs.ApplicationState) {
 		imgui.SameLine()
 
 		// Remove Artists
-		if (imgui.Button("-") || (imgui.IsWindowFocusedV(imgui.FocusedFlagsRootAndChildWindows) && (imgui.IsKeyPressedBool(imgui.KeyBackspace) || imgui.IsKeyPressedBool(imgui.KeyDelete)))) &&
+		if (imgui.Button("-") || (imgui.IsWindowFocusedV(imgui.FocusedFlagsRootAndChildWindows) && !isRenamePopupOpen && (imgui.IsKeyPressedBool(imgui.KeyBackspace) || imgui.IsKeyPressedBool(imgui.KeyDelete)))) &&
 			len(state.PageStates.Labeling.LabelingSubPopup.Artists) >= 1 &&
 			state.PageStates.Labeling.LabelingSubPopup.ArtistsSelectionStorage.Size() > 0 {
 			// Remove selected artists from the list
@@ -632,7 +763,7 @@ func renderSubpopup(state *stateStructs.ApplicationState) {
 		imgui.SameLine()
 
 		// Move Artists Up
-		if imgui.Button("▲") || (imgui.IsWindowFocusedV(imgui.FocusedFlagsRootAndChildWindows) && imgui.IsKeyDown(imgui.ModCtrl) && imgui.IsKeyPressedBool(imgui.KeyUpArrow)) &&
+		if imgui.Button("▲") || (imgui.IsWindowFocusedV(imgui.FocusedFlagsRootAndChildWindows) && !isRenamePopupOpen && imgui.IsKeyDown(imgui.ModCtrl) && imgui.IsKeyPressedBool(imgui.KeyUpArrow)) &&
 			len(state.PageStates.Labeling.LabelingSubPopup.Artists) > 1 &&
 			state.PageStates.Labeling.LabelingSubPopup.ArtistsSelectionStorage.Size() > 0 {
 			for artistIndex, artist := range state.PageStates.Labeling.LabelingSubPopup.Artists {
@@ -693,7 +824,7 @@ func renderSubpopup(state *stateStructs.ApplicationState) {
 		imgui.SameLine()
 
 		// Move Artists Down
-		if imgui.Button("▼") || (imgui.IsWindowFocusedV(imgui.FocusedFlagsRootAndChildWindows) && imgui.IsKeyDown(imgui.ModCtrl) && imgui.IsKeyPressedBool(imgui.KeyDownArrow)) &&
+		if imgui.Button("▼") || (imgui.IsWindowFocusedV(imgui.FocusedFlagsRootAndChildWindows) && !isRenamePopupOpen && imgui.IsKeyDown(imgui.ModCtrl) && imgui.IsKeyPressedBool(imgui.KeyDownArrow)) &&
 			len(state.PageStates.Labeling.LabelingSubPopup.Artists) > 1 &&
 			state.PageStates.Labeling.LabelingSubPopup.ArtistsSelectionStorage.Size() > 0 {
 			artistsLen := len(state.PageStates.Labeling.LabelingSubPopup.Artists)
@@ -784,15 +915,31 @@ func renderSubpopup(state *stateStructs.ApplicationState) {
 
 	if imgui.Button("Apply") {
 		updatedSongMap := make(map[uint]*labelingstate.LabelingWrappedSong)
+		updatedArtistMap := make(map[uint]*database.Artist)
 
 		for _, updatedSong := range state.PageStates.Labeling.LabelingSubPopup.SongsToRelabel {
-			updatedSong.Song.Record = state.PageStates.Labeling.LabelingSubPopup.SelectedRecord // NOTE: why do we do this here?
+			updatedSong.Song.Record = state.PageStates.Labeling.LabelingSubPopup.SelectedRecord // TODO: why do we do this here instead of earlier?
 			updatedSongMap[updatedSong.Song.ID] = updatedSong
+		}
+
+		for _, updatedArtist := range state.PageStates.Labeling.LabelingSubPopup.Artists {
+			updatedArtistMap[updatedArtist.Artist.ID] = updatedArtist.Artist
 		}
 
 		for _, song := range state.PageStates.Labeling.SongsToRelabel {
 			if updatedSong, ok := updatedSongMap[song.Song.ID]; ok {
 				*song = *updatedSong // Update the reference in-place
+			}
+
+			// Sync artists (if they get renamed)
+			if newArtist, ok := updatedArtistMap[song.Song.PrimaryArtistID]; ok {
+				song.Song.PrimaryArtist = newArtist
+			}
+
+			for _, collabArtists := range song.Song.CollabArtists {
+				if newArtist, ok := updatedArtistMap[collabArtists.ID]; ok {
+					*collabArtists = *newArtist // Update ptr in-place
+				}
 			}
 		}
 
@@ -814,10 +961,21 @@ func renderSubpopup(state *stateStructs.ApplicationState) {
 		imgui.CloseCurrentPopup()
 	}
 
+	if shouldOpenRenameDialog {
+		imgui.OpenPopupStr("Rename | Relabeling")
+	}
+
 	imgui.EndPopup()
 }
 
 func RenderMainRelabelPopup(state *stateStructs.ApplicationState) {
+	// Renaming dialog, used for artists
+	if imgui.BeginPopupModalV("Rename | Relabeling", nil, imgui.WindowFlagsAlwaysAutoResize) {
+		renameDialogInternal(state)
+	}
+
+	shouldOpenRenameDialog := false
+
 	if imgui.BeginPopupModalV("Edit Selection | Relabeling", nil, imgui.WindowFlagsAlwaysAutoResize) {
 		renderSubpopup(state)
 	}
@@ -915,6 +1073,14 @@ func RenderMainRelabelPopup(state *stateStructs.ApplicationState) {
 
 				// Only handle right click and deletion if we're displaying a playlist
 				if imgui.BeginPopupContextItem() {
+					if imgui.SelectableBool("Rename this Song") {
+						state.PageStates.Labeling.LabelingRenamePopup.ItemToEdit = song.Song
+						state.PageStates.Labeling.LabelingRenamePopup.CurrentName = song.Song.Title
+						state.PageStates.Labeling.LabelingRenamePopup.NewName = song.Song.Title
+
+						shouldOpenRenameDialog = true
+					}
+
 					if state.PageStates.Labeling.SelectionStorage.Size() == 0 {
 						imgui.BeginDisabled()
 					}
@@ -961,6 +1127,8 @@ func RenderMainRelabelPopup(state *stateStructs.ApplicationState) {
 		newRecords := make(map[string][]*database.Record)            // used to store new records that we need to create, or match from other songs
 		newArtists := make(map[string]*database.Artist)              // used to store new artists that we need to create, or match from other songs
 
+		updatedArtists := make(map[uint]bool) // used to indicate whether an artist was updated or not
+
 		// Update any last minute properties that may need to be synced, then save them to the database
 		state.Logger.Debugf("Save: Updating %d songs", len(state.PageStates.Labeling.SongsToRelabel))
 		state.Logger.Debug("Save: Backfeeding metadata from misc Song attributes")
@@ -974,6 +1142,9 @@ func RenderMainRelabelPopup(state *stateStructs.ApplicationState) {
 					state.Config.Database.Create(song.Song.PrimaryArtist)
 					newArtists[song.Song.PrimaryArtist.Name] = song.Song.PrimaryArtist
 				}
+			} else if _, ok := updatedArtists[song.Song.PrimaryArtist.ID]; !ok { // Update an artist incase the name got updated
+				state.Config.Database.Save(song.Song.PrimaryArtist)
+				updatedArtists[song.Song.PrimaryArtist.ID] = true // mark this artist as updated
 			}
 
 			// Same thing but for the collab artists!
@@ -985,6 +1156,9 @@ func RenderMainRelabelPopup(state *stateStructs.ApplicationState) {
 						state.Config.Database.Create(collabArtist)
 						newArtists[collabArtist.Name] = collabArtist
 					}
+				} else if _, ok := updatedArtists[collabArtist.ID]; !ok {
+					state.Config.Database.Save(collabArtist)
+					updatedArtists[collabArtist.ID] = true // mark this collabArtist as updated
 				}
 			}
 
@@ -1178,6 +1352,10 @@ func RenderMainRelabelPopup(state *stateStructs.ApplicationState) {
 		}
 
 		imgui.OpenPopupStr("Edit Selection | Relabeling")
+	}
+
+	if shouldOpenRenameDialog {
+		imgui.OpenPopupStr("Rename | Relabeling")
 	}
 
 	imgui.EndPopup()

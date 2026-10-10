@@ -49,7 +49,7 @@ func RenderRenamePopup(state *stateStructs.ApplicationState) {
 		case *database.Artist:
 			state.Config.Database.Model(&item).UpdateColumn("name", state.PageStates.Labeling.LabelingRenamePopup.NewName)
 		default:
-			panic(fmt.Sprintf("Unknown type recieved - %T, this should never happen!! Crashing", item))
+			panic(fmt.Sprintf("Unknown type recieved - %T, this should never happen!", item))
 		}
 
 		if state.PageStates.Labeling.LabelingRenamePopup.ShouldReindex {

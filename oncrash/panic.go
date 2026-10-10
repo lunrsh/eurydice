@@ -16,15 +16,21 @@ import (
 	"github.com/charmbracelet/log"
 )
 
+func GetStackTrace() string {
+	stackTraceBuf := make([]byte, 1<<16)
+	stackTraceLen := runtime.Stack(stackTraceBuf, true)
+
+	return string(stackTraceBuf[:stackTraceLen])
+}
+
 func Panic(title, error string, logger *log.Logger, logFile string) {
 	defer os.Exit(1)
 
 	// Get the stack trace
-	stackTraceBuf := make([]byte, 1<<16)
-	stackTraceLen := runtime.Stack(stackTraceBuf, true)
+	stackTrace := GetStackTrace()
 
 	// Print crash log to console
-	logger.Errorf("oncrash panic() called! crash log:\n\n%s\n\n%s\n\nBacktrace:\n%s", title, error, stackTraceBuf[:stackTraceLen])
+	logger.Errorf("oncrash panic() called! crash log:\n\n%s\n\n%s\n\nBacktrace:\n%s", title, error, stackTrace)
 
 	// When debugging, this can get annoying, so, as a remedy for the potential annoyance, we can disable the crash dialog
 	if os.Getenv("EURYDICE_NO_CRASH_DIALOG") != "" {
@@ -33,12 +39,13 @@ func Panic(title, error string, logger *log.Logger, logFile string) {
 
 	// Spawn a crash handler process to handle UI
 	crashHandlerProcess := exec.Command(os.Args[0], os.Args[0:]...)
+
 	crashHandlerEnvironmentVariables := []string{
 		"EURYDICE_IS_CRASH_HANDLING=1",
 		fmt.Sprintf("EURYDICE_CRASH_TITLE=%s", base64.StdEncoding.EncodeToString([]byte(title))),
 		fmt.Sprintf("EURYDICE_CRASH_ERROR=%s", base64.StdEncoding.EncodeToString([]byte(error))),
 		fmt.Sprintf("EURYDICE_CRASH_TO_FILE=%s", base64.StdEncoding.EncodeToString([]byte(logFile))),
-		fmt.Sprintf("EURYDICE_STACK_TRACE=%s", base64.StdEncoding.EncodeToString(stackTraceBuf[:stackTraceLen])),
+		fmt.Sprintf("EURYDICE_STACK_TRACE=%s", base64.StdEncoding.EncodeToString([]byte(stackTrace))),
 	}
 
 	// Run until we exit
