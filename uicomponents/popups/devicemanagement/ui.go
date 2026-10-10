@@ -133,9 +133,9 @@ func populateSongsFromGivenPlaylist(state *stateStructs.ApplicationState, playli
 	}
 
 	for _, song := range parsedPlaylistContents {
-	startOfSongLoop: // When we fail to pull a song, we retry with the generic fallback
 		hasFailedToPullSong := false
 
+	startOfSongLoop: // When we fail to pull a song, we retry with the generic fallback
 		if isFromOurEurydiceInstance && !hasFailedToPullSong {
 			songFromDatabase := &database.Song{}
 
