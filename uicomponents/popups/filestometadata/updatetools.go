@@ -10,9 +10,9 @@ import (
 	"strings"
 	"sync"
 
+	"git.lunr.sh/luna/eurydice/euryrt/manageimpl/eurydice/database"
 	"git.lunr.sh/luna/eurydice/oncrash"
 	stateStructs "git.lunr.sh/luna/eurydice/state"
-	"git.lunr.sh/luna/eurydice/state/database"
 	"git.lunr.sh/luna/eurydice/state/popupstate/ftmstate"
 	"git.lunr.sh/luna/eurydice/uicomponents/popups/scanlibrary"
 	"git.lunr.sh/luna/eurydice/utilities"

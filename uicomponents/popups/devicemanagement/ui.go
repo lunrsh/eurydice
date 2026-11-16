@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"git.lunr.sh/luna/eurydice/euryrt/manageimpl/eurydice/database"
 	stateStructs "git.lunr.sh/luna/eurydice/state"
-	"git.lunr.sh/luna/eurydice/state/database"
 	"git.lunr.sh/luna/eurydice/state/popupstate/mgmtstate"
 	"git.lunr.sh/luna/eurydice/state/syncstate"
 	"git.lunr.sh/luna/eurydice/uicomponents/widgets/mediamanagement"

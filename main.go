@@ -10,9 +10,9 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"git.lunr.sh/luna/eurydice/euryrt/manageimpl/eurydice/database"
 	"git.lunr.sh/luna/eurydice/oncrash"
 	"git.lunr.sh/luna/eurydice/state"
-	"git.lunr.sh/luna/eurydice/state/database"
 	"git.lunr.sh/luna/eurydice/themes"
 	"git.lunr.sh/luna/eurydice/uicomponents/popups/devicemanagement"
 	"git.lunr.sh/luna/eurydice/uicomponents/popups/filestometadata"

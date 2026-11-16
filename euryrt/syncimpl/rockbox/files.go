@@ -1,4 +1,4 @@
-package utilities
+package rockbox
 
 import (
 	"fmt"
@@ -6,16 +6,7 @@ import (
 	"os"
 )
 
-// Copies a file from the source path to the target path
-func CopyFile(sourcePath, targetPath string) error {
-	sourceFile, err := os.Open(sourcePath)
-
-	if err != nil {
-		return fmt.Errorf("failed to open source file: %w", err)
-	}
-
-	defer sourceFile.Close()
-
+func copyFile(sourceStream io.Reader, targetPath string) error {
 	destFile, err := os.OpenFile(targetPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 
 	if err != nil {
@@ -24,7 +15,7 @@ func CopyFile(sourcePath, targetPath string) error {
 
 	defer destFile.Close()
 
-	_, err = io.Copy(destFile, sourceFile)
+	_, err = io.Copy(destFile, sourceStream)
 
 	if err != nil {
 		return fmt.Errorf("failed to copy song: %w", err)

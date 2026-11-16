@@ -1,7 +1,7 @@
 package mgmtstate
 
 import (
-	"git.lunr.sh/luna/eurydice/state/syncstate"
+	"git.lunr.sh/luna/eurydice/euryrt/core"
 	"github.com/AllenDang/cimgui-go/imgui"
 )
 
@@ -25,24 +25,17 @@ type MgmtState struct {
 	ErrHint          string
 	IsErrRecoverable bool
 
-	DisplayedPlaylist *syncstate.PlaylistMetadata
-	PlaylistToDelete  *syncstate.PlaylistMetadata
-	PlaylistToImport  *syncstate.PlaylistMetadata
+	DisplayedPlaylist *core.Playlist
+	PlaylistToDelete  *core.Playlist
+	PlaylistToImport  *core.Playlist
 
 	DeletionDeleteAssociatedSongs bool
 	DeletionIsDone                bool
 
-	ImportState        int
-	TotalSongsImported int
-	TotalSongsToImport int
-	CurrentSongPath    string
-
 	Devices        []*MgmtDevice
-	SelectedDevice *MgmtDevice
+	SelectedDevice core.AppCommonRuntime
 
-	DisplayedSongs []*DisplayedSong
-
-	MetadataOnDevice *syncstate.SyncMetadata
+	DisplayedSongs []*core.Song
 
 	UISelectedDeviceIndex int32
 }

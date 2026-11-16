@@ -1,20 +1,15 @@
-package sync
-
-// This file is HEAVILY based on the go-astiav transcoding example, and thus might not reflect Eurydice's typical code style.
-// Disregarding that, thank you go-astiav team!
+package ffmpegrt
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"math"
-	"path/filepath"
 	"strings"
-
-	stateStructs "git.lunr.sh/luna/eurydice/state"
-	"git.lunr.sh/luna/eurydice/state/syncstate"
-	"git.lunr.sh/luna/eurydice/utilities"
 
 	"errors"
 
+	"git.lunr.sh/luna/eurydice/euryrt/core"
 	"github.com/asticode/go-astiav"
 	"github.com/asticode/go-astikit"
 )
@@ -36,7 +31,28 @@ type stream struct {
 	audioFifo         *astiav.AudioFifo
 }
 
-func openInputFile(c *astikit.Closer, streams map[int]*stream, inputFile string) (inputFormatContext *astiav.FormatContext, err error) {
+// This file is HEAVILY based on the go-astiav transcoding example, and thus might not reflect Eurydice's typical code style.
+
+// Dummy write implementation. Used for Reader setup during openInputFile()
+func fauxWrite(p []byte) (n int, err error) {
+	return len(p), nil
+}
+
+func openInputFile(c *astikit.Closer, streams map[int]*stream, inputReader io.ReadSeeker) (inputFormatContext *astiav.FormatContext, err error) {
+	// Allocate IO context
+	// Use a 32kb buffer to improve reliability
+	inputIOContext, err := astiav.AllocIOContext(32768, false, inputReader.Read, inputReader.Seek, fauxWrite)
+
+	if inputIOContext == nil {
+		err = errors.New("inputIOContext is nil")
+		return
+	} else if err != nil {
+		err = fmt.Errorf("failed to initialize InputIOContext: %w", err)
+		return
+	}
+
+	c.Add(inputIOContext.Free)
+
 	// Allocate input format context
 	if inputFormatContext = astiav.AllocFormatContext(); inputFormatContext == nil {
 		err = errors.New("input format context is nil")
@@ -45,8 +61,11 @@ func openInputFile(c *astikit.Closer, streams map[int]*stream, inputFile string)
 
 	c.Add(inputFormatContext.Free)
 
+	// Set up inputFormatContext to use reader
+	inputFormatContext.SetPb(inputIOContext)
+
 	// Open input
-	if err = inputFormatContext.OpenInput(inputFile, nil, nil); err != nil {
+	if err = inputFormatContext.OpenInput("stream-in", nil, nil); err != nil {
 		err = fmt.Errorf("opening input failed: %w", err)
 		return
 	}
@@ -108,15 +127,34 @@ func openInputFile(c *astikit.Closer, streams map[int]*stream, inputFile string)
 	return
 }
 
-func openOutputFile(audioFormat int32, inputFormatContext *astiav.FormatContext, c *astikit.Closer, streams map[int]*stream, outputFile string) (outputFormatContext *astiav.FormatContext, err error) {
+func openOutputFile(codecID astiav.CodecID, bitrate int64, inputFormatContext *astiav.FormatContext, c *astikit.Closer, streams map[int]*stream) (outputFormatContext *astiav.FormatContext, outputBuf *bytes.Buffer, err error) {
+	// Create a new output buffer
+	outputBuf = new(bytes.Buffer)
+
+	// Allocate output IO context
+	outputIOContext, err := astiav.AllocIOContext(4096, true, outputBuf.Read, nil, outputBuf.Write)
+
+	if outputIOContext == nil {
+		err = errors.New("inputIOContext is nil")
+		return
+	} else if err != nil {
+		err = fmt.Errorf("failed to initialize InputIOContext: %w", err)
+		return
+	}
+
+	c.Add(outputIOContext.Free)
+
 	// Allocate output format context
-	if outputFormatContext, err = astiav.AllocOutputFormatContext(nil, "", outputFile); err != nil {
+	if outputFormatContext, err = astiav.AllocOutputFormatContext(nil, "", "stream-out"); err != nil {
 		err = fmt.Errorf("allocating output format context failed: %w", err)
 		return
 	} else if outputFormatContext == nil {
 		err = errors.New("output format context is nil")
 		return
 	}
+
+	// Set format context to use us
+	outputFormatContext.SetPb(outputIOContext)
 
 	c.Add(outputFormatContext.Free)
 
@@ -134,20 +172,6 @@ func openOutputFile(audioFormat int32, inputFormatContext *astiav.FormatContext,
 			return
 		}
 
-		// Get codec id
-		var codecID astiav.CodecID
-
-		switch int(audioFormat) {
-		case syncstate.AudioLowQuality:
-			codecID = astiav.CodecIDMp3
-		case syncstate.AudioMediumQuality:
-			codecID = astiav.CodecIDMp3
-		case syncstate.AudioHighQuality:
-			codecID = astiav.CodecIDMp3
-		case syncstate.AudioLosslessQuality:
-			codecID = astiav.CodecIDFlac
-		}
-
 		// Find encoder
 		if s.encCodec = astiav.FindEncoder(codecID); s.encCodec == nil {
 			err = errors.New("codec is nil")
@@ -163,13 +187,8 @@ func openOutputFile(audioFormat int32, inputFormatContext *astiav.FormatContext,
 		c.Add(s.encCodecContext.Free)
 
 		// Update codec context
-		switch int(audioFormat) {
-		case syncstate.AudioLowQuality:
-			s.encCodecContext.SetBitRate(128 * 1000)
-		case syncstate.AudioMediumQuality:
-			s.encCodecContext.SetBitRate(192 * 1000)
-		case syncstate.AudioHighQuality:
-			s.encCodecContext.SetBitRate(320 * 1000)
+		if bitrate != 0 {
+			s.encCodecContext.SetBitRate(bitrate)
 		}
 
 		// Set up channel layout
@@ -240,22 +259,6 @@ func openOutputFile(audioFormat int32, inputFormatContext *astiav.FormatContext,
 
 		// Update stream
 		s.outputStream.SetTimeBase(s.encCodecContext.TimeBase())
-	}
-
-	// If this is a file, we need to use an io context
-	if !outputFormatContext.OutputFormat().Flags().Has(astiav.IOFormatFlagNofile) {
-		// Open io context
-		var ioContext *astiav.IOContext
-
-		if ioContext, err = astiav.OpenIOContext(outputFile, astiav.NewIOContextFlags(astiav.IOContextFlagWrite), nil, nil); err != nil {
-			err = fmt.Errorf("opening io context failed: %w", err)
-			return
-		}
-
-		c.AddWithError(ioContext.Close)
-
-		// Update output format context
-		outputFormatContext.SetPb(ioContext)
 	}
 
 	// Write header
@@ -509,13 +512,15 @@ func encodeWriteFrame(f *astiav.Frame, s *stream, outputFormatContext *astiav.Fo
 	return
 }
 
-// Transcodes a song from the source path to the target path
-func transcodeSong(state *stateStructs.ApplicationState, sourcePath, targetPath string) error {
-	// Fast path: if the source and target are both FLACs, and we're encoding as a flac, we just copy the song
-	if filepath.Ext(sourcePath) == ".flac" && filepath.Ext(targetPath) == ".flac" && state.PageStates.Sync.AudioQuality == int32(syncstate.AudioLosslessQuality) {
-		return utilities.CopyFile(sourcePath, targetPath)
-	}
-
+// Transcodes a Song from given source data to output bytes. Useful for syncing.
+//
+// logger - Logger
+// destCodec - Codec to use for the output file
+// destBitrate - Bitrate to use for the output file. 0 means default
+// source - Source data
+//
+// Returns *byte.Buffer with contents
+func TranscodeSong(logger core.Logger, destCodec astiav.CodecID, destBitrate int64, source io.ReadSeeker) (*bytes.Buffer, error) {
 	var (
 		c                   = astikit.NewCloser()
 		inputFormatContext  *astiav.FormatContext
@@ -527,7 +532,7 @@ func transcodeSong(state *stateStructs.ApplicationState, sourcePath, targetPath 
 	astiav.SetLogLevel(astiav.LogLevelDebug)
 
 	astiav.SetLogCallback(func(c astiav.Classer, l astiav.LogLevel, fmt, msg string) {
-		state.Logger.Debugf("ffmpeg: %s", strings.TrimSpace(msg))
+		logger.Debugf("ffmpeg: %s", strings.TrimSpace(msg))
 	})
 
 	// We use an astikit.Closer to free all resources properly
@@ -535,24 +540,25 @@ func transcodeSong(state *stateStructs.ApplicationState, sourcePath, targetPath 
 
 	// Open input file
 	var err error
+	var outputBuf *bytes.Buffer
 
-	if inputFormatContext, err = openInputFile(c, streams, sourcePath); err != nil {
-		return fmt.Errorf("opening input file failed: %w", err)
+	if inputFormatContext, err = openInputFile(c, streams, source); err != nil {
+		return nil, fmt.Errorf("opening input file failed: %w", err)
 	}
 
 	// Open output file
-	if outputFormatContext, err = openOutputFile(
-		state.PageStates.Sync.AudioQuality,
+	if outputFormatContext, outputBuf, err = openOutputFile(
+		destCodec,
+		destBitrate,
 		inputFormatContext,
 		c,
-		streams,
-		targetPath); err != nil {
-		return fmt.Errorf("opening output file failed: %w", err)
+		streams); err != nil {
+		return nil, fmt.Errorf("opening output file failed: %w", err)
 	}
 
 	// Init filters
 	if err := initFilters(c, streams); err != nil {
-		return fmt.Errorf("initializing filters failed: %w", err)
+		return nil, fmt.Errorf("initializing filters failed: %w", err)
 	}
 
 	// Allocate packet
@@ -566,7 +572,7 @@ func transcodeSong(state *stateStructs.ApplicationState, sourcePath, targetPath 
 			// Read frame
 			if err := inputFormatContext.ReadFrame(pkt); err != nil {
 				if !errors.Is(err, astiav.ErrEof) {
-					state.Logger.Errorf("Reading frame failed: %v", err)
+					logger.Errorf("Reading frame failed: %v", err)
 				}
 				return true
 			}
@@ -585,7 +591,7 @@ func transcodeSong(state *stateStructs.ApplicationState, sourcePath, targetPath 
 
 			// Send packet
 			if err := s.decCodecContext.SendPacket(pkt); err != nil {
-				state.Logger.Errorf("Sending packet failed: %v", err)
+				logger.Errorf("Sending packet failed: %v", err)
 				return true
 			}
 
@@ -596,7 +602,7 @@ func transcodeSong(state *stateStructs.ApplicationState, sourcePath, targetPath 
 					// Receive frame
 					if err := s.decCodecContext.ReceiveFrame(s.decFrame); err != nil {
 						if !errors.Is(err, astiav.ErrEof) && !errors.Is(err, astiav.ErrEagain) {
-							state.Logger.Errorf("Recieving frame failed: %v", err)
+							logger.Errorf("Recieving frame failed: %v", err)
 						}
 
 						return true
@@ -614,7 +620,7 @@ func transcodeSong(state *stateStructs.ApplicationState, sourcePath, targetPath 
 
 					// Filter, encode and write frame
 					if err := filterEncodeWriteFrame(s.decFrame, s, outputFormatContext); err != nil {
-						state.Logger.Errorf("Filtering, encoding and writing frame failed: %v", err)
+						logger.Errorf("Filtering, encoding and writing frame failed: %v", err)
 						return true
 					}
 
@@ -633,12 +639,12 @@ func transcodeSong(state *stateStructs.ApplicationState, sourcePath, targetPath 
 	for _, s := range streams {
 		// Flush filter
 		if err := filterEncodeWriteFrame(nil, s, outputFormatContext); err != nil {
-			return fmt.Errorf("writing trailer failed: %v", err)
+			return nil, fmt.Errorf("writing trailer failed: %v", err)
 		}
 
 		// Flush encoder
 		if err := encodeWriteFrame(nil, s, outputFormatContext); err != nil {
-			return fmt.Errorf("encoding and writing frame failed: %v", err)
+			return nil, fmt.Errorf("encoding and writing frame failed: %v", err)
 		}
 
 		// Free FIFO
@@ -649,9 +655,9 @@ func transcodeSong(state *stateStructs.ApplicationState, sourcePath, targetPath 
 
 	// Write trailer
 	if err := outputFormatContext.WriteTrailer(); err != nil {
-		return fmt.Errorf("writing trailer failed: %v", err)
+		return nil, fmt.Errorf("writing trailer failed: %v", err)
 	}
 
 	// Done
-	return nil
+	return outputBuf, nil
 }

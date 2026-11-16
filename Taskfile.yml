@@ -7,7 +7,7 @@ vars:
   GOARCH:
     sh: FALLBACK_OS={{OS}} FALLBACK_ARCH={{ARCH}} ./ci/helpers/goarch_det.sh {{.CLI_ARGS}}
 
-  OUTPUT_FILE: '{{if eq .GOOS "windows"}}eurydice.exe{{else}}eurydice{{end}}'
+  OUTPUT_FILE: './dist/{{if eq .GOOS "windows"}}eurydice.exe{{else}}eurydice{{end}}'
 
   # Fuck you Apple
   PLATFORM_LD_ARGS:
@@ -43,6 +43,7 @@ vars:
 
 tasks:
   build:
+    - mkdir dist || exit 0
     - 'CC="zig cc {{.PLATFORM_CC_ARGS}}" CXX="zig c++ {{.PLATFORM_CC_ARGS}}" GOOS="{{.GOOS}}" GOARCH="{{.GOARCH}}" CGO_LDFLAGS="{{.PLATFORM_LD_ARGS}} $NIX_LDFLAGS" go build -v -ldflags "-linkmode external {{if eq .GOOS "windows"}}-H=windowsgui{{end}} -s -w" -o {{.OUTPUT_FILE}} .'
 
   dev:

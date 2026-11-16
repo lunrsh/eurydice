@@ -1,19 +1,19 @@
 package labelingstate
 
 import (
-	"git.lunr.sh/luna/eurydice/state/database"
+	"git.lunr.sh/luna/eurydice/euryrt/core"
 	"github.com/AllenDang/cimgui-go/imgui"
 )
 
 type LabelingWrappedSong struct {
-	Song          *database.Song
+	Song          *core.Song
 	Image         *imgui.TextureRef
 	HasBeenEdited bool
 }
 
 type LabelingWrappedArtist struct {
-	Artist                  *database.Artist
-	DropdownExistingArtists []*database.Artist
+	Artist                  *core.Artist
+	DropdownExistingArtists []*core.Artist
 	DropdownSearchBuffer    string
 	DropdownTextFilter      *imgui.TextFilter
 	DropdownTextPreview     string
@@ -26,8 +26,8 @@ type LabelingSubPopup struct {
 	HasLoadedArtists        bool
 	ArtistsSelectionStorage *imgui.SelectionBasicStorage
 
-	SelectedRecord          *database.Record
-	DropdownExistingRecords []*database.Record
+	SelectedRecord          *core.Record
+	DropdownExistingRecords []*core.Record
 	DropdownSearchBuffer    string
 	DropdownTextFilter      *imgui.TextFilter
 	DropdownTextPreview     string
@@ -39,7 +39,7 @@ type LabelingSubPopup struct {
 }
 
 type LabelingRenamePopup struct {
-	ItemToEdit    any // can be *database.Song, *database.Record, or *database.Artist
+	ItemToEdit    any // can be *core.Song, *core.Record, or *core.Artist
 	NewName       string
 	CurrentName   string
 	ShouldReindex bool

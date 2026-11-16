@@ -2,12 +2,12 @@
 package state
 
 import (
-	"git.lunr.sh/luna/eurydice/state/database"
+	"git.lunr.sh/luna/eurydice/euryrt/core"
 	"git.lunr.sh/luna/eurydice/state/popupstate/ftmstate"
+	"git.lunr.sh/luna/eurydice/state/popupstate/initstate"
 	"git.lunr.sh/luna/eurydice/state/popupstate/labelingstate"
 	"git.lunr.sh/luna/eurydice/state/popupstate/mgmtstate"
 	"git.lunr.sh/luna/eurydice/state/popupstate/mtfstate"
-	"git.lunr.sh/luna/eurydice/state/popupstate/scanstate"
 	"git.lunr.sh/luna/eurydice/state/popupstate/setupstate"
 	"git.lunr.sh/luna/eurydice/state/syncstate"
 	"git.lunr.sh/luna/eurydice/state/widgetstate/mediastate"
@@ -19,20 +19,15 @@ import (
 	_ "github.com/AllenDang/cimgui-go/impl/glfw"
 	"github.com/charmbracelet/log"
 	"golang.design/x/clipboard"
-	"gorm.io/gorm"
 )
 
 type JSONConfig struct {
-	InstallationID  uint
-	LibraryPath     string
-	HasOOBEFinished bool
+	PluginKVStore map[string]interface{} // Powers KV store for plugins
 
-	// Compromise: Just creating an all songs playlist and adding/removing dynamically is easier than
-	// making a system to delete songs within all songs. It'd also be confusing to the user.
-	//
-	// FIXME: when switching to the multi-library mechanism, AutoAddToPlaylists and AutoAddToPlaylistID will need to be per-library
-	AutoAddToPlaylistID uint
-	AutoAddToPlaylists  bool
+	InstallationID      uint   // legacy
+	LibraryPath         string // legacy
+	AutoAddToPlaylistID uint   // legacy
+	AutoAddToPlaylists  bool   // legacy
 
 	// Sync settings
 	DeleteOldSongs     bool
@@ -40,7 +35,8 @@ type JSONConfig struct {
 	AudioQuality       int32
 
 	// UI settings
-	HighContrast bool
+	HighContrast    bool
+	HasOOBEFinished bool
 }
 
 type ConfigState struct {
@@ -48,9 +44,6 @@ type ConfigState struct {
 	JSONConfig     *JSONConfig
 
 	AppStatePath string
-
-	Database      *gorm.DB
-	ActiveLibrary *database.Library
 }
 
 type DebugUIState struct {
@@ -66,8 +59,8 @@ type DebugUIState struct {
 type IndividualPageStates struct {
 	// Popups
 	/// Core Components
-	FirstBoot   setupstate.SetupState
-	LibraryScan scanstate.ScanState
+	FirstBoot      setupstate.SetupState
+	Initialization initstate.InitState
 
 	/// Metadata updating
 	FTMUpdate ftmstate.FTMUpdateState
@@ -96,6 +89,10 @@ type ApplicationState struct {
 	LogFilePath string
 
 	Config *ConfigState
+
+	// Runtimes currently in use
+	CoreRT core.AppCommonRuntime
+	SyncRT core.SyncRuntime
 
 	CurrentFrame int
 	ModalReady   bool
