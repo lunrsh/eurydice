@@ -25,14 +25,14 @@ func (euryRT *LibEuryRT) speculateSongRecordIndex(recordName string, artistName 
 	artist := &database.Artist{}
 
 	if err := euryRT.db.Model(&database.Artist{}).Where("library_id = ? AND name = ?", euryRT.library.ID, artistName).First(artist).Error; err != nil {
-		euryRT.logger.Warnf("ScanLibrary->backingThread->indexNewMusic->speculateSongRecordIndex: Failed to find artist: %v", err)
+		euryRT.logger.Warnf("Failed to find artist: %v", err)
 		return 0
 	}
 
 	record := &database.Record{}
 
 	if err := euryRT.db.Model(&database.Record{}).Where("artist_id = ? AND name = ?", artist.ID, recordName).First(record).Error; err != nil {
-		euryRT.logger.Warnf("ScanLibrary->backingThread->indexNewMusic->speculateSongRecordIndex: Failed to find record: %v", err)
+		euryRT.logger.Warnf("Failed to find record: %v", err)
 		return 0
 	}
 
@@ -49,7 +49,7 @@ func (euryRT *LibEuryRT) walkToFindAllMusic() ([]string, error) {
 
 	err := filepath.WalkDir(euryRT.library.LibraryPath, func(path string, dirEntry fs.DirEntry, err error) error {
 		if err != nil {
-			euryRT.logger.Debugf("ScanLibrary->backingThread->walkToFindAllMusic: error walking path '%s': %s", path, err.Error())
+			euryRT.logger.Debugf("Error walking path '%s': %s", path, err.Error())
 			return err
 		}
 
@@ -73,7 +73,7 @@ func (euryRT *LibEuryRT) walkToFindAllMusic() ([]string, error) {
 			return nil
 		}
 
-		euryRT.logger.Debugf("ScanLibrary->backingThread->walkToFindAllMusic: adding path '%s'", path)
+		euryRT.logger.Debugf("Adding path '%s'", path)
 		allMusicFound = append(allMusicFound, path)
 
 		return nil
@@ -97,7 +97,7 @@ func (euryRT *LibEuryRT) findNonindexedMusic(allMusicFound []string) ([]string, 
 
 		if err := euryRT.db.Where("library_id = ? AND relative_path_from_library = ?", euryRT.library.ID, relativeMusicPath).First(attemptingToMatchEntry).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
-				euryRT.logger.Debugf("ScanLibrary->backingThread->findNonindexedMusic: found new song '%s'", musicPath)
+				euryRT.logger.Debugf("Found new song '%s'", musicPath)
 				uniqueMusicFound = append(uniqueMusicFound, musicPath)
 			} else {
 				return uniqueMusicFound, fmt.Errorf("An error occured while searching for song '%s' in database: %s", musicPath, err.Error())
@@ -144,6 +144,8 @@ func (euryRT *LibEuryRT) indexNewMusic(uniqueMusicFound []string) error {
 		}
 	}
 
+	euryRT.logger.Debugf("Indexing %d new song(s) across %d worker thread(s)", len(uniqueMusicFound), cpuThreadCount)
+
 	// Create a processing queue of all the playlist entries (if AutoAddToPlaylists is enabled), so we can
 	// sort the new ones by record, so it's not *completely* out of order. We could just make it sort by
 	// default on the frontend, but that might be confusing to the user, so we sort it in the database instead.
@@ -166,12 +168,12 @@ func (euryRT *LibEuryRT) indexNewMusic(uniqueMusicFound []string) error {
 	for i := 0; i < cpuThreadCount; i++ {
 		waitGroup.Go(func() {
 			for _, songPath := range delegatedSongsPerThread[i] {
-				euryRT.logger.Debugf("ScanLibrary->backingThread->indexNewMusic: Fetching properties for '%s'", songPath)
+				euryRT.logger.Debugf("Fetching properties for '%s'", songPath)
 
 				properties, err := taglib.ReadTags(songPath)
 
 				if err != nil {
-					euryRT.logger.Errorf("ScanLibrary->backingThread->indexNewMusic: Failed to read properties for '%s': %s", songPath, err.Error())
+					euryRT.logger.Errorf("Failed to read properties for '%s': %s", songPath, err.Error())
 					totalSongsScanned++
 					continue
 				}
@@ -278,6 +280,7 @@ func (euryRT *LibEuryRT) indexNewMusic(uniqueMusicFound []string) error {
 							databaseLockMutex.Lock() // Lock until we add because we do ordering based on the position in the database
 
 							songInformation.TrackNumber = euryRT.speculateSongRecordIndex(songRecord, songArtists[0])
+							euryRT.logger.Debugf("Speculated track number %d for multi-disc song '%s' (record='%s', artist='%s')", songInformation.TrackNumber, songInformation.Title, songRecord, songArtists[0])
 						} else {
 							songInformation.TrackNumber, err = strconv.Atoi(trackNumberStr)
 
@@ -301,6 +304,7 @@ func (euryRT *LibEuryRT) indexNewMusic(uniqueMusicFound []string) error {
 					databaseLockMutex.Lock() // Lock until we add because we do ordering based on the position in the database
 
 					songInformation.TrackNumber = euryRT.speculateSongRecordIndex(songRecord, songArtists[0])
+					euryRT.logger.Debugf("No track number tag found for '%s'; speculated track number %d (record='%s', artist='%s')", songInformation.Title, songInformation.TrackNumber, songRecord, songArtists[0])
 				}
 
 				foundArtists := make([]*database.Artist, len(songArtists))
@@ -315,12 +319,12 @@ func (euryRT *LibEuryRT) indexNewMusic(uniqueMusicFound []string) error {
 					if err = euryRT.db.Where("library_id = ? AND name = ?", euryRT.library.ID, artistName).First(&foundArtists[i]).Error; err != nil {
 						if err == gorm.ErrRecordNotFound {
 							// Create a new artist!
-							euryRT.logger.Debugf("ScanLibrary->backingThread->indexNewMusic: Creating new artist '%s'\n", artistName)
+							euryRT.logger.Debugf("Creating new artist '%s'", artistName)
 							foundArtists[i] = &database.Artist{Name: artistName, LibraryID: euryRT.library.ID}
 
 							euryRT.db.Create(&foundArtists[i])
 						} else {
-							euryRT.logger.Debugf("ScanLibrary->backingThread->indexNewMusic: Failed to fetch artist '%s' from database: %s", artistName, err.Error())
+							euryRT.logger.Debugf("Failed to fetch artist '%s' from database: %s", artistName, err.Error())
 						}
 					}
 
@@ -344,7 +348,7 @@ func (euryRT *LibEuryRT) indexNewMusic(uniqueMusicFound []string) error {
 				if err = euryRT.db.Where("library_id = ? AND name = ? AND artist_id = ?", euryRT.library.ID, songRecord, foundArtists[0].ID).First(foundRecord).Error; err != nil {
 					if err == gorm.ErrRecordNotFound {
 						// Create a new record
-						euryRT.logger.Debugf("ScanLibrary->backingThread->indexNewMusic: Creating new record '%s'\n", songRecord)
+						euryRT.logger.Debugf("Creating new record '%s'", songRecord)
 						foundRecord.Name = songRecord
 						foundRecord.LibraryID = euryRT.library.ID
 						foundRecord.ArtistID = foundArtists[0].ID
@@ -352,7 +356,7 @@ func (euryRT *LibEuryRT) indexNewMusic(uniqueMusicFound []string) error {
 						euryRT.db.Create(foundRecord)
 						newRecordsAdded = append(newRecordsAdded, foundRecord)
 					} else {
-						euryRT.logger.Debugf("ScanLibrary->backingThread->indexNewMusic: Failed to fetch record '%s' from database: %s", songRecord, err.Error())
+						euryRT.logger.Debugf("Failed to fetch record '%s' from database: %s", songRecord, err.Error())
 					}
 				}
 
@@ -362,31 +366,30 @@ func (euryRT *LibEuryRT) indexNewMusic(uniqueMusicFound []string) error {
 
 				// Write the album art to local storage
 				if imageBytes, err := taglib.ReadImage(songPath); err == nil {
-					// Run a databaseLockMutex to prevent TOCTOU or double-write
-					if !wasUnableToFetchTrackNumber {
-						databaseLockMutex.Lock()
-					}
-
 					// Decode image bytes
 					imageData, _, err := image.Decode(bytes.NewReader(imageBytes))
 
 					if err != nil {
-						euryRT.logger.Errorf("ScanLibrary->backingThread->indexNewMusic: Failed to decode embedded image: %s", err.Error())
+						euryRT.logger.Errorf("Failed to decode embedded image: %s", err.Error())
 					} else {
-						songArtID, err = euryRT.AddArtToDatabase(imageData)
-
 						// Run a databaseLockMutex to prevent TOCTOU or double-write
 						if !wasUnableToFetchTrackNumber {
-							databaseLockMutex.Unlock()
+							databaseLockMutex.Lock()
 						}
+
+						songArtID, err = euryRT.AddArtToDatabase(imageData)
 
 						if err != nil {
 							songArtID = ""
-							euryRT.logger.Errorf("ScanLibrary->backingThread->indexNewMusic: Failed to add image to art ID pool: %s", err.Error())
+							euryRT.logger.Errorf("Failed to add image to art ID pool: %s", err.Error())
+						}
+
+						if !wasUnableToFetchTrackNumber {
+							databaseLockMutex.Unlock()
 						}
 					}
 				} else {
-					euryRT.logger.Errorf("ScanLibrary->backingThread->indexNewMusic: Failed to parse embedded image in '%s': %s", songPath, err.Error())
+					euryRT.logger.Errorf("Failed to parse embedded image in '%s': %s", songPath, err.Error())
 				}
 
 				// Now we can add ourselves to the database!
@@ -418,7 +421,7 @@ func (euryRT *LibEuryRT) indexNewMusic(uniqueMusicFound []string) error {
 				// either way we need to unlock it so other threads can access the database
 				databaseLockMutex.Unlock()
 
-				euryRT.logger.Debugf("ScanLibrary->backingThread->indexNewMusic: Successfully processed '%s' (%s)", songPath, songInformation.Title)
+				euryRT.logger.Debugf("Successfully processed '%s' (%s)", songPath, songInformation.Title)
 
 				totalSongsScanned++
 				euryRT.broadcastInit(fmt.Sprintf("Processing: '%s'", songInformation.RelativePathFromLibrary), int((float32(totalSongsScanned)/float32(totalSongCount))*100), fmt.Sprintf("%d/%d", totalSongsScanned, totalSongCount), false)
@@ -480,6 +483,7 @@ func (euryRT *LibEuryRT) indexNewMusic(uniqueMusicFound []string) error {
 			continue
 		}
 
+		euryRT.logger.Debugf("Assigned ArtID '%s' to record '%s' (matched %d/%d songs)", mostPopularArtID, record.Name, maxCount, len(songs))
 		record.ArtID = mostPopularArtID
 		euryRT.db.Save(record)
 	}
@@ -529,7 +533,7 @@ func (euryRT *LibEuryRT) cleanupDatabase(musicFound []string, disableMusicDeleti
 						return fmt.Errorf("failed to delete song's entry in a playlist: %w", err)
 					}
 
-					euryRT.logger.Debugf("ScanLibrary->backingThread->cleanupDatabase: Deleted song '%s' from playlist ID '%d'", song.Title, entry.PlaylistID)
+					euryRT.logger.Debugf("Deleted song '%s' from playlist ID '%d'", song.Title, entry.PlaylistID)
 
 					playlistsToReindexMap[entry.PlaylistID] = true
 				}
@@ -538,7 +542,7 @@ func (euryRT *LibEuryRT) cleanupDatabase(musicFound []string, disableMusicDeleti
 					return fmt.Errorf("failed to delete song: %w", err)
 				}
 
-				euryRT.logger.Debugf("ScanLibrary->backingThread->cleanupDatabase: Deleted song '%s'", song.Title)
+				euryRT.logger.Debugf("Deleted song '%s'", song.Title)
 
 				// If we have a thumbnail attached to this song, we check to see if there are any songs or records still using the thumbnail, and if not, delete it
 				if song.ArtID != "" {
@@ -559,7 +563,7 @@ func (euryRT *LibEuryRT) cleanupDatabase(musicFound []string, disableMusicDeleti
 							return fmt.Errorf("failed to remove thumbnail: %w", err)
 						}
 
-						euryRT.logger.Debugf("ScanLibrary->backingThread->cleanupDatabase: Deleted thumbnail ID '%s'", song.ArtID)
+						euryRT.logger.Debugf("Deleted thumbnail ID '%s'", song.ArtID)
 					}
 				}
 			}
@@ -579,7 +583,7 @@ func (euryRT *LibEuryRT) cleanupDatabase(musicFound []string, disableMusicDeleti
 				return fmt.Errorf("failed to delete record: %w", err)
 			}
 
-			euryRT.logger.Debugf("ScanLibrary->backingThread->cleanupDatabase: Deleted record '%s'", record.Name)
+			euryRT.logger.Debugf("Deleted record '%s'", record.Name)
 		}
 	}
 
@@ -596,7 +600,7 @@ func (euryRT *LibEuryRT) cleanupDatabase(musicFound []string, disableMusicDeleti
 				return fmt.Errorf("failed to delete artist: %w", err)
 			}
 
-			euryRT.logger.Debugf("ScanLibrary->backingThread->cleanupDatabase: Deleted artist '%s'", artist.Name)
+			euryRT.logger.Debugf("Deleted artist '%s'", artist.Name)
 		}
 	}
 
@@ -606,7 +610,7 @@ func (euryRT *LibEuryRT) cleanupDatabase(musicFound []string, disableMusicDeleti
 			return fmt.Errorf("failed to reindex deleted songs in playlist: %w", err)
 		}
 
-		euryRT.logger.Debugf("ScanLibrary->backingThread->cleanupDatabase: Reindexed playlist ID '%d'", playlistIndex)
+		euryRT.logger.Debugf("Reindexed playlist ID '%d'", playlistIndex)
 	}
 
 	return nil

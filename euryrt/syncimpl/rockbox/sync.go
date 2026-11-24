@@ -35,7 +35,7 @@ func (rockDevRT *RockDevRT) fetchSongsToSync(sync *syncState) (map[uint]*core.So
 	songNamesToSong := map[string][]*core.Song{} // Map of song names to song, for quick lookup by name in the metadata enumeration
 
 	for _, playlist := range sync.PlaylistList {
-		rockDevRT.rockboxRT.logger.Debugf("Sync->backingThread: Fetching Eurydice metadata for playlist '%s'", playlist.Name)
+		rockDevRT.rockboxRT.logger.Debugf("Fetching Eurydice metadata for playlist '%s'", playlist.Name)
 
 		// Check if we have songs already loaded, and if not, grab songs!
 		if len(playlist.Songs) == 0 {
@@ -66,7 +66,7 @@ func (rockDevRT *RockDevRT) fetchSongsToSync(sync *syncState) (map[uint]*core.So
 	rebuiltSongList := []*songMetadata{}          // List of songs that we are keeping (seperate slice so we don't mess with our iteration loop)
 	songsThatDoNotNeedMetadata := map[uint]bool{} // Map of song IDs that need to be synced that do NOT need metadata to be added
 
-	rockDevRT.rockboxRT.logger.Debugf("Sync->backingThread: Fetching local device metadata for %d songs", len(rockDevRT.metadata.Songs))
+	rockDevRT.rockboxRT.logger.Debugf("Fetching local device metadata for %d songs", len(rockDevRT.metadata.Songs))
 
 	// This loop decides a couple of things:
 	// - what songs to leave untouched
@@ -89,6 +89,8 @@ func (rockDevRT *RockDevRT) fetchSongsToSync(sync *syncState) (map[uint]*core.So
 				// This assumes that we're using the LibEury implementation when originally syncing, but this is factual, because other implementations didn't exist yet
 				installation.InstanceID = createInstanceID(installation.InstallationID, installation.LibraryID)
 				installation.PluginID = "libeury"
+
+				rockDevRT.rockboxRT.logger.Debugf("Migrated legacy installation metadata for song '%s' (installationID=%d, libraryID=%d -> instanceID=%d)", song.RelativePath, installation.InstallationID, installation.LibraryID, installation.InstanceID)
 
 				// Clear out old values
 				installation.InstallationID = 0
@@ -120,7 +122,7 @@ func (rockDevRT *RockDevRT) fetchSongsToSync(sync *syncState) (map[uint]*core.So
 							currentDirectory = filepath.Dir(currentDirectory)
 
 							if err = os.Remove(currentDirectory); err != nil {
-								rockDevRT.rockboxRT.logger.Error("Well, fuck. Failed to cleanup corruption in songs: %w (crashing now!)", err)
+								rockDevRT.rockboxRT.logger.Errorf("Well, fuck. Failed to cleanup corruption in songs: %v (crashing now!)", err)
 								panic(fmt.Sprintf("Error while cleaning up filesystem corruption (fallback method) in path '%s' (uh oh...): %v (this should not happen!)", song.RelativePath, err))
 							}
 						} else {
@@ -151,9 +153,12 @@ func (rockDevRT *RockDevRT) fetchSongsToSync(sync *syncState) (map[uint]*core.So
 					rebuiltInstallationList = append(rebuiltInstallationList, installation)
 
 					// Check if we need to rebuild metadata, and if so, rebuild it, update the relative paths, delete the old stuff, and resync
-					if song.MetadataHash != calculateMetadataHash(songFromDatabase) {
+					currentHash := calculateMetadataHash(songFromDatabase)
+					if song.MetadataHash != currentHash {
+						rockDevRT.rockboxRT.logger.Debugf("Metadata hash mismatch for song '%s' (device=%s, local=%s); rebuilding and re-queueing", song.RelativePath, song.MetadataHash, currentHash)
+
 						if err := os.Remove(filepath.Join(rockDevRT.mountpoint, song.RelativePath)); err != nil && !errors.Is(err, os.ErrNotExist) {
-							rockDevRT.rockboxRT.logger.Errorf("Failed to remove song '%s' during song metadata rebuild: %v\n", song.RelativePath, err)
+							rockDevRT.rockboxRT.logger.Errorf("Failed to remove song '%s' during song metadata rebuild: %v", song.RelativePath, err)
 							delete(songsToSync, installation.SongID) // uuuuh, let's just ignore this song...
 							continue
 						}
@@ -162,21 +167,24 @@ func (rockDevRT *RockDevRT) fetchSongsToSync(sync *syncState) (map[uint]*core.So
 						songsThatDoNotNeedMetadata[installation.SongID] = true
 
 						// Update the metadata hash and the relative path to the song
-						song.MetadataHash = calculateMetadataHash(songFromDatabase)
+						song.MetadataHash = currentHash
 						song.RelativePath = rockDevRT.calculateRelativePath(sync, songFromDatabase)
 					} else {
 						// We can remove it from the list of songs to sync, as we don't need to sync this song
+						rockDevRT.rockboxRT.logger.Debugf("Song '%s' (ID %d) is already up to date on device; skipping sync", song.RelativePath, installation.SongID)
 						delete(songsToSync, installation.SongID)
 					}
 
 					continue
 				} else {
 					// We don't have the song anymore, so we can remove it from the installation list (by not adding it to the rebuilt list)
+					rockDevRT.rockboxRT.logger.Debugf("Song '%s' (ID %d) is no longer in synced playlists; removing installation reference", song.RelativePath, installation.SongID)
 					continue
 				}
 			} else {
 				// FIXME: fix RelativePath to delete songs w/ different extensions
 				if songFromDatabase, ok := songsToSync[installation.SongID]; ok {
+					rockDevRT.rockboxRT.logger.Debugf("Audio quality changed for song '%s' (old=%d, new=%d); removing old file and re-queueing", song.RelativePath, song.QualityLevel, sync.AudioQuality)
 					rebuiltInstallationList = append(rebuiltInstallationList, installation)
 
 					// We keep the song in the installation list, but update its quality, both in the metadata and by keeping it in the copy list
@@ -184,7 +192,7 @@ func (rockDevRT *RockDevRT) fetchSongsToSync(sync *syncState) (map[uint]*core.So
 					songsThatDoNotNeedMetadata[installation.SongID] = true
 
 					if err := os.Remove(filepath.Join(rockDevRT.mountpoint, song.RelativePath)); err != nil {
-						rockDevRT.rockboxRT.logger.Errorf("Failed to remove song %s: %v\n", song.RelativePath, err)
+						rockDevRT.rockboxRT.logger.Errorf("Failed to remove song %s: %v", song.RelativePath, err)
 					}
 
 					// Check if we need to rebuild metadata, and if so, rebuild it, and update the relative path
@@ -196,6 +204,7 @@ func (rockDevRT *RockDevRT) fetchSongsToSync(sync *syncState) (map[uint]*core.So
 					continue
 				} else {
 					// We don't have the song anymore, so we can remove it from the installation list
+					rockDevRT.rockboxRT.logger.Debugf("Song '%s' (ID %d) is no longer in synced playlists; removing installation reference", song.RelativePath, installation.SongID)
 					continue
 				}
 			}
@@ -255,6 +264,8 @@ func (rockDevRT *RockDevRT) fetchSongsToSync(sync *syncState) (map[uint]*core.So
 						continue
 					}
 
+					rockDevRT.rockboxRT.logger.Debugf("Matched existing on-device song '%s' (artist='%s', album='%s') to local song ID %d; adopting installation", song.RelativePath, artist, album, foundSong.ID)
+
 					rebuiltInstallationList = append(rebuiltInstallationList, &installMetadata{
 						SongID:     foundSong.ID,
 						PluginID:   rockDevRT.upstreamRuntime.PluginID(),
@@ -266,6 +277,7 @@ func (rockDevRT *RockDevRT) fetchSongsToSync(sync *syncState) (map[uint]*core.So
 					// If we want a different quality level for this song, then we update and resync it.
 					// Else, we can skip syncing this song!
 					if song.QualityLevel != sync.AudioQuality {
+						rockDevRT.rockboxRT.logger.Debugf("Adopted song '%s' has quality %d but target is %d; queueing for re-sync", song.RelativePath, song.QualityLevel, sync.AudioQuality)
 						song.QualityLevel = sync.AudioQuality
 						continue
 					} else {
@@ -281,6 +293,7 @@ func (rockDevRT *RockDevRT) fetchSongsToSync(sync *syncState) (map[uint]*core.So
 		// If we have no installations left, the song is not referenced by any copies of Eurydice, and should therefore be deleted, as long as
 		// deletions are enabled
 		if len(rebuiltInstallationList) == 0 && sync.DeleteOldSongs {
+			rockDevRT.rockboxRT.logger.Debugf("Song '%s' has no remaining installations; queueing for deletion from device", song.RelativePath)
 			songsToDelete = append(songsToDelete, song)
 		} else {
 			rebuiltSongList = append(rebuiltSongList, song)
@@ -288,6 +301,7 @@ func (rockDevRT *RockDevRT) fetchSongsToSync(sync *syncState) (map[uint]*core.So
 	}
 
 	rockDevRT.metadata.Songs = rebuiltSongList
+	rockDevRT.rockboxRT.logger.Debugf("Finished evaluating device metadata: %d song(s) to sync, %d song(s) to delete, %d song(s) retained in metadata", len(songsToSync), len(songsToDelete), len(rebuiltSongList))
 
 	// Return our values
 	return songsToSync, songsThatDoNotNeedMetadata, songsToDelete, nil
@@ -308,8 +322,8 @@ func (rockDevRT *RockDevRT) copySongs(sync *syncState, songsToSync map[uint]*cor
 		// Tags are used here for, if the transfer fails, easy restarting of the transfer
 	startTransfer:
 		//sync.CurrentSongName = fmt.Sprintf("%s - %s", song.PrimaryArtist.Name, song.Title)
-		rockDevRT.rockboxRT.logger.Debugf("Sync->backingThread: Starting copying process for song '%s'", song.Title)
-		rockDevRT.rockboxRT.logger.Debug("Sync->backingThread: Creating directory for song")
+		rockDevRT.rockboxRT.logger.Debugf("Starting copying process for song '%s'", song.Title)
+		rockDevRT.rockboxRT.logger.Debug("Creating directory for song")
 
 		// Remove all special characters from artist, record, and song names, to ensure there is no filesystem issues
 		artistNameNoSpecialChars := SanitizePath(rockDevRT.metadata.Version, song.PrimaryArtist.Name)
@@ -331,10 +345,10 @@ func (rockDevRT *RockDevRT) copySongs(sync *syncState, songsToSync map[uint]*cor
 				errors.Is(err, os.ErrPermission) ||
 				errors.Is(err, &os.PathError{}) {
 				if restartCounter == 3 {
-					rockDevRT.rockboxRT.logger.Error("Sync->backingThread: Transfer keeps failing! Aborting...")
+					rockDevRT.rockboxRT.logger.Error("Transfer keeps failing! Aborting...")
 					return fmt.Errorf("failed to create directory for song: %w", err)
 				} else {
-					rockDevRT.rockboxRT.logger.Errorf("Sync->backingThread: Device disconnected mid transfer (err: %v). Waiting 25 seconds for device to reconnect...", err)
+					rockDevRT.rockboxRT.logger.Errorf("Device disconnected mid transfer (err: %v). Waiting 25 seconds for device to reconnect...", err)
 					time.Sleep(25 * time.Second)
 					restartCounter++
 					goto startTransfer
@@ -346,7 +360,7 @@ func (rockDevRT *RockDevRT) copySongs(sync *syncState, songsToSync map[uint]*cor
 
 		// Copy the song now
 		if sync.AudioQuality == AudioOriginalQuality {
-			rockDevRT.rockboxRT.logger.Debug("Sync->backingThread: Copying song")
+			rockDevRT.rockboxRT.logger.Debug("Copying song")
 
 			// Open song
 			_, _, sourceStream, err := rockDevRT.upstreamRuntime.ReadSong(song.ID)
@@ -368,10 +382,10 @@ func (rockDevRT *RockDevRT) copySongs(sync *syncState, songsToSync map[uint]*cor
 					errors.Is(err, os.ErrPermission) ||
 					errors.Is(unwrappedErr, &os.PathError{}) {
 					if restartCounter == 2 {
-						rockDevRT.rockboxRT.logger.Error("Sync->backingThread: Transfer keeps failing! Aborting...")
+						rockDevRT.rockboxRT.logger.Error("Transfer keeps failing! Aborting...")
 						return fmt.Errorf("failed to copy song: %w", err)
 					} else {
-						rockDevRT.rockboxRT.logger.Errorf("Sync->backingThread: Device disconnected mid transfer (err: %v). Waiting 25 seconds for device to reconnect...", err)
+						rockDevRT.rockboxRT.logger.Errorf("Device disconnected mid transfer (err: %v). Waiting 25 seconds for device to reconnect...", err)
 						time.Sleep(25 * time.Second)
 						restartCounter++
 						goto startTransfer
@@ -384,7 +398,7 @@ func (rockDevRT *RockDevRT) copySongs(sync *syncState, songsToSync map[uint]*cor
 			// Close song
 			sourceStream.Close()
 		} else {
-			rockDevRT.rockboxRT.logger.Debug("Sync->backingThread: Reading song, to then transcode")
+			rockDevRT.rockboxRT.logger.Debug("Reading song, to then transcode")
 
 			// Open song
 			_, streamSize, sourceStream, err := rockDevRT.upstreamRuntime.ReadSong(song.ID)
@@ -404,12 +418,12 @@ func (rockDevRT *RockDevRT) copySongs(sync *syncState, songsToSync map[uint]*cor
 					return fmt.Errorf("failed to read chunk from song: %w", err)
 				}
 
-				rockDevRT.rockboxRT.logger.Debugf("Sync->backingThread: Read '%d' bytes", leftoverBytes)
+				rockDevRT.rockboxRT.logger.Debugf("Read '%d' bytes", leftoverBytes)
 
 				readBytes += leftoverBytes
 			}
 
-			rockDevRT.rockboxRT.logger.Debug("Sync->backingThread: Read all chunks")
+			rockDevRT.rockboxRT.logger.Debug("Read all chunks")
 			sourceStream.Close()
 
 			// Calculate what bitrate to use
@@ -449,10 +463,10 @@ func (rockDevRT *RockDevRT) copySongs(sync *syncState, songsToSync map[uint]*cor
 					errors.Is(unwrappedErr, syscall.ENODEV) ||
 					errors.Is(unwrappedErr, syscall.ENOENT) {
 					if restartCounter == 2 {
-						rockDevRT.rockboxRT.logger.Error("Sync->backingThread: Transcode keeps failing! Aborting...")
+						rockDevRT.rockboxRT.logger.Error("Transcode keeps failing! Aborting...")
 						return fmt.Errorf("failed to transcode song: %w", err)
 					} else {
-						rockDevRT.rockboxRT.logger.Errorf("Sync->backingThread: Device disconnected mid transfer (err: %v). Waiting 25 seconds for device to reconnect...", err)
+						rockDevRT.rockboxRT.logger.Errorf("Device disconnected mid transfer (err: %v). Waiting 25 seconds for device to reconnect...", err)
 						time.Sleep(25 * time.Second)
 						restartCounter++
 						goto startTransfer
@@ -475,10 +489,10 @@ func (rockDevRT *RockDevRT) copySongs(sync *syncState, songsToSync map[uint]*cor
 					errors.Is(err, os.ErrPermission) ||
 					errors.Is(unwrappedErr, &os.PathError{}) {
 					if restartCounter == 2 {
-						rockDevRT.rockboxRT.logger.Error("Sync->backingThread: Transfer keeps failing! Aborting...")
+						rockDevRT.rockboxRT.logger.Error("Transfer keeps failing! Aborting...")
 						return fmt.Errorf("failed to copy song: %w", err)
 					} else {
-						rockDevRT.rockboxRT.logger.Errorf("Sync->backingThread: Device disconnected mid transfer (err: %v). Waiting 25 seconds for device to reconnect...", err)
+						rockDevRT.rockboxRT.logger.Errorf("Device disconnected mid transfer (err: %v). Waiting 25 seconds for device to reconnect...", err)
 						time.Sleep(25 * time.Second)
 						restartCounter++
 						goto startTransfer
@@ -489,7 +503,7 @@ func (rockDevRT *RockDevRT) copySongs(sync *syncState, songsToSync map[uint]*cor
 			}
 		}
 
-		rockDevRT.rockboxRT.logger.Debug("Sync->backingThread: Fetching tags from source media")
+		rockDevRT.rockboxRT.logger.Debug("Fetching tags from source media")
 
 		// Update song tags
 		newTags := map[string][]string{}
@@ -503,7 +517,7 @@ func (rockDevRT *RockDevRT) copySongs(sync *syncState, songsToSync map[uint]*cor
 			!strings.Contains(songTitle, "with") &&
 			!strings.Contains(songTitle, "w/") &&
 			len(song.CollabArtists) > 0 {
-			rockDevRT.rockboxRT.logger.Debug("Sync->backingThread: Patching song title tag to feature collab artists correctly")
+			rockDevRT.rockboxRT.logger.Debug("Patching song title tag to feature collab artists correctly")
 
 			collabArtists := ""
 
@@ -541,16 +555,16 @@ func (rockDevRT *RockDevRT) copySongs(sync *syncState, songsToSync map[uint]*cor
 
 		newTags[taglib.TrackNumber] = []string{trackNumber + "/" + totalTracks}
 
-		rockDevRT.rockboxRT.logger.Debug("Sync->backingThread: Writing tags to target media")
+		rockDevRT.rockboxRT.logger.Debug("Writing tags to target media")
 
 		if err := taglib.WriteTags(filepath.Join(rockDevRT.mountpoint, songPath), newTags, taglib.Clear); err != nil {
 			// Do similar checks for the tag writing
 			if err.Error() == "can't save file" {
 				if restartCounter == 3 {
-					rockDevRT.rockboxRT.logger.Error("Sync->backingThread: Transfer keeps failing! Aborting...")
+					rockDevRT.rockboxRT.logger.Error("Transfer keeps failing! Aborting...")
 					return fmt.Errorf("failed to copy song: %w", err)
 				} else {
-					rockDevRT.rockboxRT.logger.Errorf("Sync->backingThread: Device disconnected mid transfer (err: %v). Waiting 25 seconds for device to reconnect...", err)
+					rockDevRT.rockboxRT.logger.Errorf("Device disconnected mid transfer (err: %v). Waiting 25 seconds for device to reconnect...", err)
 					time.Sleep(25 * time.Second)
 					restartCounter++
 					goto startTransfer
@@ -562,7 +576,7 @@ func (rockDevRT *RockDevRT) copySongs(sync *syncState, songsToSync map[uint]*cor
 
 		// If we have an ArtID, initialize and copy over art
 		if song.ArtID != "" {
-			rockDevRT.rockboxRT.logger.Debug("Sync->backingThread: Writing thumbnail to target media")
+			rockDevRT.rockboxRT.logger.Debug("Writing thumbnail to target media")
 
 			// Fetch the art
 			upstreamArt, err := rockDevRT.upstreamRuntime.GetArt(song.ArtID)
@@ -586,7 +600,7 @@ func (rockDevRT *RockDevRT) copySongs(sync *syncState, songsToSync map[uint]*cor
 		if song.Record.ArtID != "" {
 			if _, err := os.Stat(filepath.Join(directoryPath, "cover.bmp")); err != nil {
 				if errors.Is(err, os.ErrNotExist) {
-					rockDevRT.rockboxRT.logger.Debug("Sync->backingThread: cover.bmp does not exist, writing")
+					rockDevRT.rockboxRT.logger.Debug("cover.bmp does not exist, writing")
 					existingImage, err := rockDevRT.upstreamRuntime.GetArt(song.Record.ArtID)
 
 					if err != nil {
@@ -612,10 +626,10 @@ func (rockDevRT *RockDevRT) copySongs(sync *syncState, songsToSync map[uint]*cor
 							errors.Is(err, os.ErrPermission) ||
 							errors.Is(err, &os.PathError{}) {
 							if restartCounter == 3 {
-								rockDevRT.rockboxRT.logger.Error("Sync->backingThread: Transfer keeps failing! Aborting...")
+								rockDevRT.rockboxRT.logger.Error("Transfer keeps failing! Aborting...")
 								return fmt.Errorf("failed to encode cover bitmap: %w", err)
 							} else {
-								rockDevRT.rockboxRT.logger.Errorf("Sync->backingThread: Device disconnected mid transfer (err: %v). Waiting 15 seconds for device to reconnect...", err)
+								rockDevRT.rockboxRT.logger.Errorf("Device disconnected mid transfer (err: %v). Waiting 15 seconds for device to reconnect...", err)
 								time.Sleep(15 * time.Second)
 
 								os.Remove(filepath.Join(directoryPath, "cover.bmp"))
@@ -701,6 +715,8 @@ func (rockDevRT *RockDevRT) syncPlaylists(sync *syncState) error {
 				onDevicePlaylist.InstanceID = createInstanceID(onDevicePlaylist.InstallationID, onDevicePlaylist.LibraryID)
 				onDevicePlaylist.PluginID = "libeury"
 
+				rockDevRT.rockboxRT.logger.Debugf("Migrated legacy playlist metadata for '%s' (installationID=%d, libraryID=%d -> instanceID=%d)", onDevicePlaylist.LastKnownName, onDevicePlaylist.InstallationID, onDevicePlaylist.LibraryID, onDevicePlaylist.InstanceID)
+
 				// Clear out old values
 				onDevicePlaylist.InstallationID = 0
 				onDevicePlaylist.LibraryID = 0
@@ -726,6 +742,7 @@ func (rockDevRT *RockDevRT) syncPlaylists(sync *syncState) error {
 
 			// If we don't have this playlist in the database, remove it from the device
 			if !hasThisPlaylistInLocalDatabase {
+				rockDevRT.rockboxRT.logger.Debugf("Removing orphaned playlist '%s' (%s) from device", onDevicePlaylist.LastKnownName, onDevicePlaylist.RelativePath)
 				if err := os.Remove(filepath.Join(rockDevRT.mountpoint, onDevicePlaylist.RelativePath)); err != nil && !os.IsNotExist(err) {
 					panic(fmt.Sprintf("Failed to remove playlist: %v", err))
 				}
@@ -783,6 +800,8 @@ func (rockDevRT *RockDevRT) syncPlaylists(sync *syncState) error {
 				break
 			}
 
+			rockDevRT.rockboxRT.logger.Debugf("Creating new on-device playlist entry for '%s' (path='%s', snapshot='%s')", playlist.Name, playlistFilePath, snapshotFilePath)
+
 			playlistMetadataEntry = &playlistMetadata{
 				PlaylistID: playlist.ID,
 				PluginID:   rockDevRT.upstreamRuntime.PluginID(),
@@ -796,6 +815,7 @@ func (rockDevRT *RockDevRT) syncPlaylists(sync *syncState) error {
 
 			rockDevRT.metadata.Playlists = append(rockDevRT.metadata.Playlists, playlistMetadataEntry)
 		} else if playlistMetadataEntry.LastKnownName != playlist.Name {
+			rockDevRT.rockboxRT.logger.Debugf("Playlist '%s' was renamed to '%s'; removing old playlist file '%s'", playlistMetadataEntry.LastKnownName, playlist.Name, playlistMetadataEntry.RelativePath)
 			if err := os.Remove(filepath.Join(rockDevRT.mountpoint, playlistMetadataEntry.RelativePath)); err != nil {
 				return fmt.Errorf("failed to remove old playlist with outdated name: %w", err)
 			}
@@ -821,6 +841,7 @@ func (rockDevRT *RockDevRT) syncPlaylists(sync *syncState) error {
 				break
 			}
 
+			rockDevRT.rockboxRT.logger.Debugf("Assigned new on-device path '%s' for renamed playlist '%s'", playlistFilePath, playlist.Name)
 			playlistMetadataEntry.RelativePath = playlistFilePath // path is based on name
 			playlistMetadataEntry.LastKnownName = playlist.Name
 		}
@@ -895,6 +916,7 @@ func (rockDevRT *RockDevRT) syncPlaylists(sync *syncState) error {
 									continue
 								}
 
+								rockDevRT.rockboxRT.logger.Debugf("Resolved on-device playlist entry '%s' to local song ID %d via installation metadata", song.FilePath, installation.SongID)
 								deviceContentIDs = append(deviceContentIDs, int(installation.SongID))
 								break
 							}
@@ -920,6 +942,7 @@ func (rockDevRT *RockDevRT) syncPlaylists(sync *syncState) error {
 				}
 
 				// Fifth: merge them
+				rockDevRT.rockboxRT.logger.Debugf("Running 3-way merge for playlist '%s' (local=%d songs, device=%d songs, snapshot=%d songs)", playlist.Name, len(databaseContentIDs), len(deviceContentIDs), len(snapshotSongIDs))
 				resultList := diff3.Diff3Merge(databaseContentIDs, deviceContentIDs, snapshotSongIDs, true)
 				resultIDs := make([]int, 0, len(resultList))
 
@@ -938,6 +961,8 @@ func (rockDevRT *RockDevRT) syncPlaylists(sync *syncState) error {
 						resultIDs = append(resultIDs, item.Ok...)
 					}
 				}
+
+				rockDevRT.rockboxRT.logger.Debugf("3-way merge for playlist '%s' produced %d song(s); updating upstream playlist", playlist.Name, len(resultIDs))
 
 				// Sixth: iterate over them, update the playlists, and then sync the new resulting playlist with the device
 				// Remove any extra songs from the playlist
@@ -988,7 +1013,7 @@ func (rockDevRT *RockDevRT) Sync(playlistsToSync []*core.Playlist, removeOrphane
 
 	// Step 1: Fetch data from the device and the database
 	rockDevRT.sendSyncProgress("Fetching data from the connected Rockbox player...", -1, "Fetching...", false)
-	rockDevRT.rockboxRT.logger.Debugf("Sync->backingThread: Parsing Eurydice metadata")
+	rockDevRT.rockboxRT.logger.Debug("Parsing Eurydice metadata")
 
 	songsToSync, songsThatDoNotNeedMetadata, songsToDelete, err := rockDevRT.fetchSongsToSync(sync)
 
@@ -996,7 +1021,7 @@ func (rockDevRT *RockDevRT) Sync(playlistsToSync []*core.Playlist, removeOrphane
 		panic(fmt.Sprintf("Failed to fetch songs to sync: %v", err))
 	}
 
-	rockDevRT.rockboxRT.logger.Debugf("Sync->backingThread: Fetched metadata, about to start copying process. Going to copy %d songs", len(songsToSync))
+	rockDevRT.rockboxRT.logger.Debugf("Fetched metadata, about to start copying process. Going to copy %d songs", len(songsToSync))
 
 	// Step 2: copy the songs over
 	rockDevRT.sendSyncProgress("Copying songs...", -1, "Copying...", false)

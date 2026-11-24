@@ -18,7 +18,7 @@ func (euryRT *LibEuryRT) updateFilesFromMetadata(songs []*database.Song, records
 	relativePathsOfSongsToKeep := make([]string, 0, len(songs)) // We keep track of the songs to keep, to pass in to the cleanup code
 
 	// Before we do anything, we fetch the current active library path, so we can get the path to songs
-	euryRT.logger.Debug("MetadataToFiles->updateFilesFromMetadata: Fetching library path")
+	euryRT.logger.Debug("Fetching library path")
 
 	cpuThreadCount := runtime.NumCPU()
 
@@ -52,6 +52,8 @@ func (euryRT *LibEuryRT) updateFilesFromMetadata(songs []*database.Song, records
 		}
 	}
 
+	euryRT.logger.Debugf("Updating files from metadata for %d song(s) across %d worker thread(s)", len(songs), cpuThreadCount)
+
 	totalSongsToUpdate := len(songs)
 	totalSongsUpdated := 0
 
@@ -62,11 +64,11 @@ func (euryRT *LibEuryRT) updateFilesFromMetadata(songs []*database.Song, records
 				songFullPath := filepath.Join(euryRT.library.LibraryPath, song.RelativePathFromLibrary)
 
 				// Check on the song's file existence on disk, just to ensure that it does properly exist still incase it was moved after indexing
-				euryRT.logger.Debugf("MetadataToFiles->updateFilesFromMetadata: Ensuring file exists on disk for '%s'", song.Title)
+				euryRT.logger.Debugf("Ensuring file exists on disk for '%s'", song.Title)
 
 				if _, err := os.Stat(songFullPath); err != nil {
 					if errors.Is(err, os.ErrNotExist) {
-						euryRT.logger.Errorf("MetadataToFiles->updateFilesFromMetadata: File does not exist on disk for '%s'. Deleting from database, and skipping", song.Title)
+						euryRT.logger.Errorf("File does not exist on disk for '%s'. Deleting from database, and skipping", song.Title)
 
 						databaseLockMutex.Lock()
 						totalSongsUpdated++
@@ -85,7 +87,7 @@ func (euryRT *LibEuryRT) updateFilesFromMetadata(songs []*database.Song, records
 					}
 				}
 
-				euryRT.logger.Debugf("MetadataToFiles->updateFilesFromMetadata: Fetching artist and record information for '%s'", song.Title)
+				euryRT.logger.Debugf("Fetching artist and record information for '%s'", song.Title)
 
 				otherArtistIDsOnThisSong := []uint{}
 
@@ -178,7 +180,7 @@ func (euryRT *LibEuryRT) updateFilesFromMetadata(songs []*database.Song, records
 				newTags[taglib.TrackNumber] = []string{trackNumber + "/" + totalTracks}
 
 				// Write tags to the song
-				euryRT.logger.Debug("MetadataToFiles->updateFilesFromMetadata: Writing updated tags to song")
+				euryRT.logger.Debug("Writing updated tags to song")
 
 				if err := taglib.WriteTags(songFullPath, newTags, taglib.Clear); err != nil {
 					panic(fmt.Sprintf("Failed to write tags to song '%s': %v", song.Title, err))
@@ -186,14 +188,14 @@ func (euryRT *LibEuryRT) updateFilesFromMetadata(songs []*database.Song, records
 
 				// Fetch the album art and update it, if we have some!
 				if song.ArtID != "" {
-					euryRT.logger.Debug("MetadataToFiles->updateFilesFromMetadata: Fetching album art for song")
+					euryRT.logger.Debug("Fetching album art for song")
 					albumArt, err := os.ReadFile(filepath.Join(euryRT.statePath, "thumbnails", song.ArtID))
 
 					if err != nil {
 						panic(fmt.Sprintf("Failed to fetch album art for song '%s': %v", song.Title, err))
 					}
 
-					euryRT.logger.Debug("MetadataToFiles->updateFilesFromMetadata: Applying album art to song")
+					euryRT.logger.Debug("Applying album art to song")
 
 					if err := taglib.WriteImage(songFullPath, albumArt); err != nil {
 						panic(fmt.Sprintf("Failed to write album art to song '%s': %v", song.Title, err))

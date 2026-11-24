@@ -482,8 +482,6 @@ func main() {
 	logFilePath := filepath.Join(os.TempDir(), "eurydice.log")
 	logFile, err := os.Create(logFilePath)
 
-	log.Infof("Log file path is: %s", logFilePath)
-
 	if err != nil {
 		if errors.Is(err, os.ErrExist) {
 			log.Info("log file already exists -- deleting")
@@ -540,7 +538,18 @@ func main() {
 		}
 	}
 
-	logger.Debug("---- logging to file begin ----")
+	logger.Info("___________                       .___.__")
+	logger.Info("\\_   _____/__ _________ ___.__. __| _/|__| ____  ____")
+	logger.Info(" |    __)_|  |  \\_  __ <   |  |/ __ | |  |/ ___\\/ __ \\")
+	logger.Info(" |        \\  |  /|  | \\/\\___  / /_/ | |  \\  \\__\\  ___/")
+	logger.Info("/_______  /____/ |__|   / ____\\____ | |__|\\___  >___  >")
+	logger.Info("        \\/              \\/         \\/         \\/    \\/")
+
+	logger.Info("")
+	logger.Info("Eurydice is booting...")
+	logger.Info("")
+
+	logger.Infof("Logging to file: %s", logFilePath)
 
 	// Register our crash handlers now
 	defer func() {

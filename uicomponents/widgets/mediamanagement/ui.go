@@ -187,6 +187,8 @@ func Copy(state *stateStructs.ApplicationState) {
 		}
 	}
 
+	state.Logger.Debugf("Copied %d marker(s) from media browser to clipboard", len(markerSlice)/8)
+
 	clipboard.WriteAll(
 		context.Background(),
 
@@ -210,6 +212,7 @@ func Paste(state *stateStructs.ApplicationState) error {
 		return nil // clipboard read or parsing failed, which can happen for a variety of valid reasons, so abort silently
 	}
 
+	state.Logger.Debugf("Pasting %d marker(s) into media browser selection", len(markers))
 	return ingestMarkersForPasteOrDrop(state, markers)
 }
 
@@ -645,7 +648,7 @@ func Render(state *stateStructs.ApplicationState) {
 			dragDropWrapper := (*mediastate.DragDropWrapper)(dragDropPayload.CData.Data)
 
 			if err := ingestMarkersForPasteOrDrop(state, dragDropWrapper.Markers); err != nil {
-				state.Logger.Error("Failed to ingest markers: %v", err)
+				state.Logger.Errorf("Failed to ingest markers: %v", err)
 			}
 
 			C.free(dragDropWrapper.MarkerMemPtr)
@@ -658,20 +661,20 @@ func Render(state *stateStructs.ApplicationState) {
 	multiSelectIO := imgui.BeginMultiSelectV(multiSelectFlags, state.PageStates.MediaManagement.SelectionStorage.Size(), -1)
 
 	if err := applySelectionRequests(multiSelectIO, state); err != nil {
-		state.Logger.Error("Failed to apply selection requests: %v", err)
+		state.Logger.Errorf("Failed to apply selection requests: %v", err)
 	}
 
 	// Render UI elements
 	if state.PageStates.MediaManagement.SortMethod == mediastate.SortAlbum {
 		for _, record := range state.PageStates.MediaManagement.Records {
 			if err := renderRecord(state, record); err != nil {
-				state.Logger.Error("Failed to render record %s: %s", record.Title, err.Error())
+				state.Logger.Errorf("Failed to render record %s: %s", record.Title, err.Error())
 			}
 		}
 	} else {
 		for _, artist := range state.PageStates.MediaManagement.Artists {
 			if err := renderArtist(state, artist); err != nil {
-				state.Logger.Error("Failed to render artist %s: %s", artist.ArtistName, err.Error())
+				state.Logger.Errorf("Failed to render artist %s: %s", artist.ArtistName, err.Error())
 			}
 		}
 	}
@@ -680,7 +683,7 @@ func Render(state *stateStructs.ApplicationState) {
 	multiSelectIO = imgui.EndMultiSelect()
 
 	if err := applySelectionRequests(multiSelectIO, state); err != nil {
-		state.Logger.Error("Failed to apply selection requests: %v", err)
+		state.Logger.Errorf("Failed to apply selection requests: %v", err)
 	}
 
 	imgui.EndChild()

@@ -286,7 +286,7 @@ func (rockRT *RockboxRT) InitializeDevice(devicePath string, commonRuntime core.
 		upstreamRuntime: commonRuntime,
 	}
 
-	rockDevRT.rockboxRT.logger.Debugf("Sync->backingThread: Fetching Eurydice metadata from device (mountpoint): %s", rockDevRT.mountpoint)
+	rockDevRT.rockboxRT.logger.Debugf("Fetching Eurydice metadata from device (mountpoint): %s", rockDevRT.mountpoint)
 
 	eurydiceMetadataPath := filepath.Join(rockDevRT.mountpoint, ".eurydice.json")
 

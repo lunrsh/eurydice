@@ -74,6 +74,8 @@ func Copy(state *stateStructs.ApplicationState) {
 		}
 	}
 
+	state.Logger.Debugf("Copied %d song marker(s) from song list to clipboard", len(markerSlice)/8)
+
 	clipboard.WriteAll(
 		context.Background(),
 
@@ -94,6 +96,8 @@ func Paste(state *stateStructs.ApplicationState) error {
 		state.Logger.Errorf("Failed to read clipboard: %v", err)
 		return nil // clipboard read or parsing failed, which can happen for a variety of valid reasons, so abort silently
 	}
+
+	state.Logger.Debugf("Pasting %d marker(s) into playlist ID %d", len(markers), state.PageStates.SongManagement.PlaylistID)
 
 	// Add songs and reinitialize the song list
 	if err := utilities.AddSongsToPlaylist(state, markers, state.PageStates.SongManagement.PlaylistID); err != nil {
@@ -135,6 +139,7 @@ func checkAndExecuteDragAndDrop(state *stateStructs.ApplicationState) {
 			dragDropWrapper.Markers = unsafe.Slice((*uint)(dragDropWrapper.MarkerMemPtr), len(originalMarkerSlice))
 			copy(dragDropWrapper.Markers, originalMarkerSlice)
 
+			state.Logger.Debugf("Initialized drag-and-drop payload from song list with %d song marker(s)", len(originalMarkerSlice))
 			imgui.SetDragDropPayload("media_browser_item", uintptr(dragDropMemory), uint64(dragDropSize))
 		} else {
 			dragDropWrapper = (*mediastate.DragDropWrapper)(dragDropPayload.CData.Data)

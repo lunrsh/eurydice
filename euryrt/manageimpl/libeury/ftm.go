@@ -24,7 +24,7 @@ func (euryRT *LibEuryRT) updateSongsFromFiles(songs []*database.Song, records ma
 	relativePathsOfSongsToKeep := make([]string, 0, len(songs)) // We keep track of the songs to keep, to pass in to the cleanup code
 
 	// Before we do anything, we fetch the current active library path, so we can get the path to songs
-	euryRT.logger.Debug("FilesToMetadata->updateSongsFromFiles: Fetching library path")
+	euryRT.logger.Debug("Fetching library path")
 	cpuThreadCount := runtime.NumCPU()
 
 	delegatedSongsPerThread := make([][]*database.Song, cpuThreadCount)
@@ -57,6 +57,8 @@ func (euryRT *LibEuryRT) updateSongsFromFiles(songs []*database.Song, records ma
 		}
 	}
 
+	euryRT.logger.Debugf("Updating metadata from files for %d song(s) across %d worker thread(s)", len(songs), cpuThreadCount)
+
 	recordsToSpeculateAbout := map[uint]bool{} // Records that we have to speculate song positions about
 	totalSongsToUpdate := len(songs)
 	totalSongsUpdated := 0
@@ -68,11 +70,11 @@ func (euryRT *LibEuryRT) updateSongsFromFiles(songs []*database.Song, records ma
 				songFullPath := filepath.Join(euryRT.library.LibraryPath, song.RelativePathFromLibrary)
 
 				// Check on the song's file existence on disk, just to ensure that it does properly exist still incase it was moved after indexing
-				euryRT.logger.Debugf("FilesToMetadata->updateSongsFromFiles: Ensuring file exists on disk for '%s'", song.Title)
+				euryRT.logger.Debugf("Ensuring file exists on disk for '%s'", song.Title)
 
 				if _, err := os.Stat(songFullPath); err != nil {
 					if errors.Is(err, os.ErrNotExist) {
-						euryRT.logger.Errorf("FilesToMetadata->updateSongsFromFiles: File does not exist on disk for '%s'. Deleting from database, and skipping", song.Title)
+						euryRT.logger.Errorf("File does not exist on disk for '%s'. Deleting from database, and skipping", song.Title)
 
 						databaseLockMutex.Lock()
 						totalSongsUpdated++
@@ -91,13 +93,13 @@ func (euryRT *LibEuryRT) updateSongsFromFiles(songs []*database.Song, records ma
 					}
 				}
 
-				euryRT.logger.Debugf("FilesToMetadata->updateSongsFromFiles: Fetching song metadata from disk for '%s'", song.Title)
+				euryRT.logger.Debugf("Fetching song metadata from disk for '%s'", song.Title)
 
 				// Read tags
 				songTags, err := taglib.ReadTags(songFullPath)
 
 				if err != nil {
-					euryRT.logger.Debugf("FilesToMetadata->updateSongsFromFiles: Failed to read tags for '%s': %v", song.Title, err)
+					euryRT.logger.Debugf("Failed to read tags for '%s': %v", song.Title, err)
 
 					databaseLockMutex.Lock()
 					totalSongsUpdated++
@@ -163,12 +165,12 @@ func (euryRT *LibEuryRT) updateSongsFromFiles(songs []*database.Song, records ma
 					artist, ok := artists[artistStr]
 
 					if !ok {
-						euryRT.logger.Debugf("FilesToMetadata->updateSongsFromFiles: Fetching artist '%s'", artistStr)
+						euryRT.logger.Debugf("Fetching artist '%s'", artistStr)
 						artist = &database.Artist{}
 
 						if err = euryRT.db.Where("name = ? AND library_id = ?", artistStr, euryRT.library.ID).First(artist).Error; err != nil {
 							if errors.Is(err, gorm.ErrRecordNotFound) {
-								euryRT.logger.Debugf("FilesToMetadata->updateSongsFromFiles: Creating new artist '%s'", artistStr)
+								euryRT.logger.Debugf("Creating new artist '%s'", artistStr)
 								artist = &database.Artist{Name: artistStr, LibraryID: euryRT.library.ID}
 
 								euryRT.db.Create(artist)
@@ -192,12 +194,12 @@ func (euryRT *LibEuryRT) updateSongsFromFiles(songs []*database.Song, records ma
 				songRecord, ok := records[recordCacheKey]
 
 				if !ok {
-					euryRT.logger.Debugf("FilesToMetadata->updateSongsFromFiles: Fetching record '%s'", songRecordStr)
+					euryRT.logger.Debugf("Fetching record '%s'", songRecordStr)
 					songRecord = &database.Record{}
 
 					if err = euryRT.db.Where("name = ? AND artist_id = ? AND library_id = ?", songRecordStr, songArtists[0].ID, euryRT.library.ID).First(songRecord).Error; err != nil {
 						if errors.Is(err, gorm.ErrRecordNotFound) {
-							euryRT.logger.Debugf("FilesToMetadata->updateSongsFromFiles: Creating new record '%s'", songRecordStr)
+							euryRT.logger.Debugf("Creating new record '%s'", songRecordStr)
 							songRecord = &database.Record{
 								Name:      songRecordStr,
 								ArtistID:  songArtists[0].ID,
@@ -206,7 +208,7 @@ func (euryRT *LibEuryRT) updateSongsFromFiles(songs []*database.Song, records ma
 
 							euryRT.db.Create(songRecord)
 						} else {
-							euryRT.logger.Debugf("FilesToMetadata->updateSongsFromFiles: Failed to fetch record '%s': %v", songRecordStr, err)
+							euryRT.logger.Debugf("Failed to fetch record '%s': %v", songRecordStr, err)
 							totalSongsUpdated++
 							updatedCount := totalSongsUpdated
 							databaseLockMutex.Unlock()
@@ -294,6 +296,7 @@ func (euryRT *LibEuryRT) updateSongsFromFiles(songs []*database.Song, records ma
 						song.TrackNumber-- // Convert to 0-based index
 					}
 				} else {
+					euryRT.logger.Debugf("No track number tag found for '%s' (record ID %d); marking for track number speculation", song.Title, songRecord.ID)
 					databaseLockMutex.Lock()
 					recordsToSpeculateAbout[songRecord.ID] = true
 					databaseLockMutex.Unlock()
@@ -306,7 +309,7 @@ func (euryRT *LibEuryRT) updateSongsFromFiles(songs []*database.Song, records ma
 					imageData, _, err := image.Decode(bytes.NewReader(imageBytes))
 
 					if err != nil {
-						euryRT.logger.Errorf("FilesToMetadata->updateSongsFromFiles: Failed to decode embedded image for '%s': %v", song.Title, err)
+						euryRT.logger.Errorf("Failed to decode embedded image for '%s': %v", song.Title, err)
 					} else {
 						// Run a databaseLockMutex to prevent TOCTOU or double-write
 						databaseLockMutex.Lock()
@@ -315,11 +318,11 @@ func (euryRT *LibEuryRT) updateSongsFromFiles(songs []*database.Song, records ma
 
 						if err != nil {
 							song.ArtID = ""
-							euryRT.logger.Errorf("FilesToMetadata->updateSongsFromFiles: Failed to add image to art ID pool: %s", err.Error())
+							euryRT.logger.Errorf("Failed to add image to art ID pool: %s", err.Error())
 						}
 					}
 				} else {
-					euryRT.logger.Errorf("FilesToMetadata->updateSongsFromFiles: Failed to parse embedded image for '%s': %v", song.Title, err)
+					euryRT.logger.Errorf("Failed to parse embedded image for '%s': %v", song.Title, err)
 				}
 
 				song.PrimaryArtist = songArtists[0]
@@ -334,11 +337,11 @@ func (euryRT *LibEuryRT) updateSongsFromFiles(songs []*database.Song, records ma
 				databaseLockMutex.Lock()
 
 				if err := euryRT.db.Save(song).Error; err != nil {
-					euryRT.logger.Errorf("FilesToMetadata->updateSongsFromFiles: Failed to update song '%s': %v", song.Title, err)
+					euryRT.logger.Errorf("Failed to update song '%s': %v", song.Title, err)
 				}
 
 				if err := euryRT.db.Model(song).Association("CollabArtists").Replace(song.CollabArtists); err != nil {
-					euryRT.logger.Errorf("FilesToMetadata->updateSongsFromFiles: Failed to update collab artists for song '%s': %v", song.Title, err)
+					euryRT.logger.Errorf("Failed to update collab artists for song '%s': %v", song.Title, err)
 				}
 
 				totalSongsUpdated++
@@ -363,6 +366,7 @@ func (euryRT *LibEuryRT) updateSongsFromFiles(songs []*database.Song, records ma
 	for recordID := range recordsToSpeculateAbout {
 		// Since the list of songs are an array and not a map, it's likely less expensive to just fetch them again, instead of converting them to a map in any part of the code.
 		// So, we just fetch them again.
+		euryRT.logger.Debugf("Speculating track numbers for songs in record ID %d", recordID)
 
 		songs := []*database.Song{}
 
@@ -379,6 +383,8 @@ func (euryRT *LibEuryRT) updateSongsFromFiles(songs []*database.Song, records ma
 					// ...which, now that I think about it, indexing previous wouldn't help in this situation...
 					song.TrackNumber = songs[songIndex-1].TrackNumber + 1
 				}
+
+				euryRT.logger.Debugf("Assigned speculated track number %d to song '%s' (record ID %d)", song.TrackNumber, song.Title, recordID)
 
 				if err := euryRT.db.Save(song).Error; err != nil {
 					return nil, fmt.Errorf("failed to save speculated track number for song '%s': %w", song.Title, err)

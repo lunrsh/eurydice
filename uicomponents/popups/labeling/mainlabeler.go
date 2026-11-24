@@ -1196,8 +1196,8 @@ func RenderMainRelabelPopup(state *stateStructs.ApplicationState) {
 		updatedRecords := make(map[uint]bool) // used to indicate whether an existing record was updated or not
 
 		// Update any last minute properties that may need to be synced, then save them to the database
-		state.Logger.Debugf("Save: Updating %d songs", len(state.PageStates.Labeling.SongsToRelabel))
-		state.Logger.Debug("Save: Backfeeding metadata from misc Song attributes")
+		state.Logger.Debugf("Updating %d songs", len(state.PageStates.Labeling.SongsToRelabel))
+		state.Logger.Debug("Backfeeding metadata from misc Song attributes")
 
 		for _, song := range state.PageStates.Labeling.SongsToRelabel {
 			// If the primary artist isn't created yet, match it or create a new one
@@ -1213,8 +1213,10 @@ func RenderMainRelabelPopup(state *stateStructs.ApplicationState) {
 
 					song.Song.PrimaryArtist.ID = createdID
 					newArtists[song.Song.PrimaryArtist.Name] = song.Song.PrimaryArtist
+					state.Logger.Debugf("Created new primary artist '%s' (ID %d)", song.Song.PrimaryArtist.Name, createdID)
 				}
 			} else if !updatedArtists[song.Song.PrimaryArtist.ID] { // Update an artist incase the name got updated
+				state.Logger.Debugf("Updating primary artist '%s' (ID %d)", song.Song.PrimaryArtist.Name, song.Song.PrimaryArtist.ID)
 				if err := state.CoreRT.ModifyArtist(song.Song.PrimaryArtist, false); err != nil {
 					panic(fmt.Sprintf("Failed to update primary artist '%s': %v", song.Song.PrimaryArtist.Name, err))
 				}
@@ -1236,8 +1238,10 @@ func RenderMainRelabelPopup(state *stateStructs.ApplicationState) {
 
 						collabArtist.ID = createdID
 						newArtists[collabArtist.Name] = collabArtist
+						state.Logger.Debugf("Created new collab artist '%s' (ID %d)", collabArtist.Name, createdID)
 					}
 				} else if !updatedArtists[collabArtist.ID] {
+					state.Logger.Debugf("Updating collab artist '%s' (ID %d)", collabArtist.Name, collabArtist.ID)
 					if err := state.CoreRT.ModifyArtist(collabArtist, false); err != nil {
 						panic(fmt.Sprintf("Failed to update collab artist '%s': %v", collabArtist.Name, err))
 					}
@@ -1270,12 +1274,14 @@ func RenderMainRelabelPopup(state *stateStructs.ApplicationState) {
 
 					song.Song.Record.ID = createdRecordID
 					newRecords[song.Song.Record.Name] = append(newRecords[song.Song.Record.Name], song.Song.Record)
+					state.Logger.Debugf("Created new record '%s' (ID %d) for artist '%s' (ID %d)", song.Song.Record.Name, createdRecordID, song.Song.PrimaryArtist.Name, song.Song.PrimaryArtist.ID)
 				}
 			} else if !updatedRecords[song.Song.Record.ID] {
 				if song.Song.Record.Artist == nil {
 					song.Song.Record.Artist = song.Song.PrimaryArtist
 				}
 
+				state.Logger.Debugf("Updating record '%s' (ID %d)", song.Song.Record.Name, song.Song.Record.ID)
 				if err := state.CoreRT.ModifyRecord(song.Song.Record, false); err != nil {
 					panic(fmt.Sprintf("Failed to update record '%s': %v", song.Song.Record.Name, err))
 				}
@@ -1287,12 +1293,13 @@ func RenderMainRelabelPopup(state *stateStructs.ApplicationState) {
 			recordsToAnalyzeArtIDsFor[song.Song.Record.ID] = song.Song.Record
 
 			// Update the song in the runtime
+			state.Logger.Debugf("Saving modified song '%s' (ID %d, recordID=%d, primaryArtistID=%d, collabCount=%d)", song.Song.Title, song.Song.ID, song.Song.Record.ID, song.Song.PrimaryArtist.ID, len(song.Song.CollabArtists))
 			if err := state.CoreRT.ModifySong(song.Song, true); err != nil {
 				panic(fmt.Sprintf("Failed to modify song '%s': %v", song.Song.Title, err))
 			}
 		}
 
-		state.Logger.Debug("Save: Updating ArtIDs for records by calculating most popular ArtIDs")
+		state.Logger.Debug("Updating ArtIDs for records by calculating most popular ArtIDs")
 
 		// Update ArtIDs for the records
 		for _, record := range recordsToAnalyzeArtIDsFor {
@@ -1323,6 +1330,7 @@ func RenderMainRelabelPopup(state *stateStructs.ApplicationState) {
 			}
 
 			if mostPopularArtID != "" {
+				state.Logger.Debugf("Assigned ArtID '%s' to record '%s' (ID %d, matched %d/%d songs)", mostPopularArtID, record.Name, record.ID, maxCount, len(songsThatAreAMemberOfThisRecord))
 				record.ArtID = mostPopularArtID
 				if record.Artist == nil {
 					fullRecord, err := state.CoreRT.GetRecordByID(record.ID)
@@ -1340,14 +1348,14 @@ func RenderMainRelabelPopup(state *stateStructs.ApplicationState) {
 
 		// Clean up the database after our modifications
 		if supportsRecategorization {
-			state.Logger.Debug("Save: Running orphaned entity cleanup")
+			state.Logger.Debug("Running orphaned entity cleanup")
 
 			if err := state.CoreRT.CleanupOrphanedEntities(); err != nil {
 				panic(fmt.Sprintf("Failed to clean up orphaned records and artists: %v", err))
 			}
 		}
 
-		state.Logger.Debug("Save: Reindexing the UI")
+		state.Logger.Debug("Reindexing the UI")
 
 		// Reindex the UI
 		if err := mediamanagement.BootstrapIndex(state); err != nil {

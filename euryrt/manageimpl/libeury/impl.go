@@ -528,6 +528,8 @@ func (euryRT *LibEuryRT) ImportSong(streamSize int, streamMimeType string, strea
 		return 0, fmt.Errorf("not iniitalized yet")
 	}
 
+	euryRT.logger.Debugf("Importing song stream (size=%d bytes, mimeType='%s')", streamSize, streamMimeType)
+
 	// Create an imports directory to store music if we're not ready yet
 	if err := os.Mkdir(filepath.Join(euryRT.library.LibraryPath, "imports"), 0755); err != nil {
 		return 0, fmt.Errorf("failed to create 'imports' directory for song importing: %w", err)
@@ -544,6 +546,7 @@ func (euryRT *LibEuryRT) ImportSong(streamSize int, streamMimeType string, strea
 
 	// Now with the library path for r/w
 	tempFilePath := filepath.Join(euryRT.library.LibraryPath, tempFileBasePath)
+	euryRT.logger.Debugf("Writing imported song stream to temporary file '%s'", tempFilePath)
 	importedFile, err := os.OpenFile(tempFilePath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 
 	if err != nil {
@@ -590,6 +593,8 @@ func (euryRT *LibEuryRT) ImportSong(streamSize int, streamMimeType string, strea
 
 	sortedFileBasePath := filepath.Join("imports", sanitizedArtistName, sanitizedRecordName, sanitizedSongName+fileExtensions[0])
 
+	euryRT.logger.Debugf("Moving imported song '%s' (ID %d) from '%s' to '%s'", newSong.Title, newSong.ID, tempFileBasePath, sortedFileBasePath)
+
 	// Move the file on disk
 	if err := os.Rename(tempFilePath, filepath.Join(euryRT.library.LibraryPath, sortedFileBasePath)); err != nil {
 		return 0, fmt.Errorf("failed to move file: %w", err)
@@ -601,6 +606,8 @@ func (euryRT *LibEuryRT) ImportSong(streamSize int, streamMimeType string, strea
 	if err := euryRT.db.Save(newSong).Error; err != nil {
 		return 0, fmt.Errorf("failed to save updated song: %w", err)
 	}
+
+	euryRT.logger.Debugf("Successfully imported song '%s' (ID %d) at '%s'", newSong.Title, newSong.ID, newSong.RelativePathFromLibrary)
 
 	// Broadcast creation event
 	euryRT.broadcastSong(core.SongEventAdd, []*core.Song{transformSong(newSong, newSong.ID)})
@@ -1080,6 +1087,7 @@ func (euryRT *LibEuryRT) AddArtToDatabase(imageData image.Image) (artID string, 
 	songArtID := string(imageHashAsString)
 
 	if _, err := os.Stat(filepath.Join(euryRT.statePath, "thumbnails", string(imageHashAsString))); errors.Is(err, os.ErrNotExist) {
+		euryRT.logger.Debugf("Thumbnail '%s' not found in store; downscaling to 256x256 and encoding as JPEG", songArtID)
 		// Downscale image and then write it
 		newImage := image.NewRGBA(image.Rect(0, 0, 256, 256))
 		draw.NearestNeighbor.Scale(newImage, newImage.Rect, imageData, imageData.Bounds(), draw.Over, nil)
@@ -1099,6 +1107,8 @@ func (euryRT *LibEuryRT) AddArtToDatabase(imageData image.Image) (artID string, 
 		if err != nil {
 			return "", fmt.Errorf("failed to encode image '%s' as JPEG: %w", string(imageHashAsString), err)
 		}
+	} else {
+		euryRT.logger.Debugf("Thumbnail '%s' already exists in store; reusing cached ArtID", songArtID)
 	}
 
 	return songArtID, nil
@@ -1239,7 +1249,7 @@ func (euryRT *LibEuryRT) Initialize(storage core.PluginStorage, logger core.Logg
 	autoAddNewSongsToPlaylists, err := storage.KVGet("autoAddNewSongsToPlaylists")
 
 	if err != nil {
-		euryRT.logger.Warnf("failed to get key 'autoAddNewSongsToPlaylists' from KV: %w", err)
+		euryRT.logger.Warnf("Failed to get key 'autoAddNewSongsToPlaylists' from KV: %v", err)
 
 		storage.KVSet("autoAddNewSongsToPlaylists", false)
 		autoAddNewSongsToPlaylists = false
@@ -1272,13 +1282,13 @@ func (euryRT *LibEuryRT) Initialize(storage core.PluginStorage, logger core.Logg
 	euryRT.autoAddNewSongsToPlaylists = autoAddNewSongsToPlaylistBool
 
 	// Index new songs
-	euryRT.logger.Debugf("ScanLibrary->backingThread: scanning library path '%s'", euryRT.library.LibraryPath)
+	euryRT.logger.Debugf("Scanning library path '%s'", euryRT.library.LibraryPath)
 	allMusicFound, err := euryRT.walkToFindAllMusic()
 
 	if err != nil {
 		// Special case: if we failed to scan the filesystem, it's more of an easy fix that needs less visible.
 		// So, we call Panic directly.
-		euryRT.logger.Errorf("ScanLibrary->backingThread: We are about to crash! Failed to scan library path '%s': %s", euryRT.library.LibraryPath, err.Error())
+		euryRT.logger.Errorf("We are about to crash! Failed to scan library path '%s': %s", euryRT.library.LibraryPath, err.Error())
 		return fmt.Errorf("failed to scan library")
 	}
 
@@ -1355,10 +1365,6 @@ func (euryRT *LibEuryRT) RegisterMTFHandler(callback MTFSyncHandlerCallback) {
 // === Internal Functions ===
 
 func (euryRT *LibEuryRT) reindexPlaylist(playlistID uint) error {
-	if !euryRT.hasInitFinished {
-		return fmt.Errorf("not iniitalized yet")
-	}
-
 	// Fetch all songs from the database, to fix ID ordering
 	var songs []database.PlaylistSong
 

@@ -40,6 +40,7 @@ func GetRequestAtSelectionRequest(requests vectors.Vector[imgui.SelectionRequest
 func LoadImageFromArtID(state *stateStructs.ApplicationState, artID string) (*imgui.TextureRef, error) {
 	if req, ok := ImageLoadRequestBuf[artID]; ok {
 		req.RequestCount++
+		state.Logger.Debugf("Reusing cached texture for ArtID '%s' (refCount=%d)", artID, req.RequestCount)
 		return req.TextureBuf, nil
 	}
 
@@ -63,6 +64,8 @@ func LoadImageFromArtID(state *stateStructs.ApplicationState, artID string) (*im
 		TextureBuf:   &texture,
 	}
 
+	state.Logger.Debugf("Allocated new GPU texture for ArtID '%s' (%dx%d)", artID, parsedOriginalImage.Bounds().Dx(), parsedOriginalImage.Bounds().Dy())
+
 	return &texture, nil
 }
 
@@ -70,6 +73,7 @@ func LoadImageFromArtID(state *stateStructs.ApplicationState, artID string) (*im
 func LoadImageFromDeviceArtID(state *stateStructs.ApplicationState, device core.SyncRuntimeDevice, artID string) (*imgui.TextureRef, error) {
 	if req, ok := ImageLoadRequestBuf[artID]; ok {
 		req.RequestCount++
+		state.Logger.Debugf("Reusing cached device texture for ArtID '%s' (refCount=%d)", artID, req.RequestCount)
 		return req.TextureBuf, nil
 	}
 
@@ -93,6 +97,8 @@ func LoadImageFromDeviceArtID(state *stateStructs.ApplicationState, device core.
 		TextureBuf:   &texture,
 	}
 
+	state.Logger.Debugf("Allocated new GPU texture for device ArtID '%s' (%dx%d)", artID, parsedOriginalImage.Bounds().Dx(), parsedOriginalImage.Bounds().Dy())
+
 	return &texture, nil
 }
 
@@ -101,6 +107,7 @@ func UnloadImageFromArtID(state *stateStructs.ApplicationState, artID string) {
 		req.RequestCount--
 
 		if req.RequestCount == 0 {
+			state.Logger.Debugf("Deleting GPU texture for ArtID '%s' (refCount reached 0)", artID)
 			state.CurrentImguiBackend.DeleteTexture(*req.TextureBuf)
 			delete(ImageLoadRequestBuf, artID)
 		}

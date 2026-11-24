@@ -159,7 +159,7 @@ func (rockDevRT *RockDevRT) ImportSongsFromPlaylist(playlistToImport *core.Playl
 								songsImported++
 								rockDevRT.sendImportProgress(fmt.Sprintf("Importing: %s", song.FilePath), int((float32(songsImported)/float32(len(songsInPlaylist)))*100), fmt.Sprintf("%d/%d", songsImported, len(songsInPlaylist)), false)
 
-								rockDevRT.rockboxRT.logger.Debugf("Failed to copy song '%s' to device: %v", song.DisplayName, err)
+								rockDevRT.rockboxRT.logger.Debugf("Failed to copy song '%s' from device: %v", song.DisplayName, err)
 
 								continue
 							}
@@ -169,7 +169,7 @@ func (rockDevRT *RockDevRT) ImportSongsFromPlaylist(playlistToImport *core.Playl
 							songsImported++
 							rockDevRT.sendImportProgress(fmt.Sprintf("Importing: %s", song.FilePath), int((float32(songsImported)/float32(len(songsInPlaylist)))*100), fmt.Sprintf("%d/%d", songsImported, len(songsInPlaylist)), false)
 
-							rockDevRT.rockboxRT.logger.Debugf("Error checking if song exists or not: %v", song.DisplayName, err)
+							rockDevRT.rockboxRT.logger.Debugf("Error checking if song '%s' exists or not: %v", song.DisplayName, err)
 
 							continue
 						}
@@ -212,7 +212,7 @@ func (rockDevRT *RockDevRT) ImportSongsFromPlaylist(playlistToImport *core.Playl
 										songsImported++
 										rockDevRT.sendImportProgress(fmt.Sprintf("Importing: %s", song.FilePath), int((float32(songsImported)/float32(len(songsInPlaylist)))*100), fmt.Sprintf("%d/%d", songsImported, len(songsInPlaylist)), false)
 
-										rockDevRT.rockboxRT.logger.Debugf("Error checking if song exists or not: %v", song.DisplayName, err)
+										rockDevRT.rockboxRT.logger.Debugf("Error checking if song '%s' exists or not: %v", song.DisplayName, err)
 
 										continue
 									}
@@ -323,7 +323,7 @@ func (rockDevRT *RockDevRT) ImportSongsFromPlaylist(playlistToImport *core.Playl
 						songsImported++
 						rockDevRT.sendImportProgress(fmt.Sprintf("Importing: %s", song.FilePath), int((float32(songsImported)/float32(len(songsInPlaylist)))*100), fmt.Sprintf("%d/%d", songsImported, len(songsInPlaylist)), false)
 
-						rockDevRT.rockboxRT.logger.Debugf("Failed to copy song to device: %v", song.DisplayName, err)
+						rockDevRT.rockboxRT.logger.Debugf("Failed to copy song '%s' from device: %v", song.DisplayName, err)
 
 						continue
 					}
@@ -357,7 +357,7 @@ func (rockDevRT *RockDevRT) ImportSongsFromPlaylist(playlistToImport *core.Playl
 				return fmt.Errorf("Failed to create playlist song: %w", err)
 			}
 		} else {
-			rockDevRT.rockboxRT.logger.Warn("Failed to add song path '%s' into the generated playlist, because we could not find it in the resulting songs map. Skipping! (read above logs for clues)", song.FilePath)
+			rockDevRT.rockboxRT.logger.Warnf("Failed to add song path '%s' into the generated playlist, because we could not find it in the resulting songs map. Skipping! (read above logs for clues)", song.FilePath)
 		}
 	}
 

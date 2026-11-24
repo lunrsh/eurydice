@@ -103,6 +103,7 @@ func checkAndExecuteDragAndDrop(state *stateStructs.ApplicationState) {
 			dragDropWrapper.Markers = unsafe.Slice((*uint)(dragDropWrapper.MarkerMemPtr), len(originalMarkerSlice))
 			copy(dragDropWrapper.Markers, originalMarkerSlice)
 
+			state.Logger.Debugf("Initialized drag-and-drop payload from media browser with %d marker(s)", len(originalMarkerSlice))
 			imgui.SetDragDropPayload("media_browser_item", uintptr(dragDropMemory), uint64(dragDropSize))
 		} else {
 			dragDropWrapper = (*mediastate.DragDropWrapper)(dragDropPayload.CData.Data)

@@ -55,6 +55,8 @@ func backingThread(state *stateStructs.ApplicationState) {
 
 	// Check if we're running a migrated copy of Eurydice, and if not, migrate ourselves!
 	if state.Config.JSONConfig.ActiveCommonPlugin == "" && state.Config.JSONConfig.ActiveSyncPlugin == "" {
+		state.Logger.Infof("Detected unmigrated legacy configuration; starting %s countdown before migrating", migrationTimeThreshold)
+
 		// Give users a 10 second timer to opt out of migration
 		state.PageStates.Initialization.MigrationCountdownStart = time.Now()
 
@@ -74,6 +76,7 @@ func backingThread(state *stateStructs.ApplicationState) {
 		}
 
 		// Okay, we're going for it!
+		state.Logger.Info("Starting legacy data migration to libeury plugin store")
 		state.PageStates.Initialization.ProgressMessage = "Migrating data, please wait..."
 		state.PageStates.Initialization.ProgressBar = -1
 		state.PageStates.Initialization.ProgressBarMessage = "Migrating..."
@@ -83,15 +86,29 @@ func backingThread(state *stateStructs.ApplicationState) {
 		kvStore.Hydrate(state, "libeury")
 
 		// Then, move big files
-		if err := os.Rename(filepath.Join(state.Config.AppStatePath, "db.sqlite"), filepath.Join(kvStore.GetFSBasePath(), "db.sqlite")); err != nil {
+		oldDBPath := filepath.Join(state.Config.AppStatePath, "db.sqlite")
+		newDBPath := filepath.Join(kvStore.GetFSBasePath(), "db.sqlite")
+		state.Logger.Debugf("Moving database from '%s' to '%s'", oldDBPath, newDBPath)
+
+		if err := os.Rename(oldDBPath, newDBPath); err != nil {
 			panic(fmt.Sprintf("Failed to move core database: %s", err.Error()))
 		}
 
-		if err := os.Rename(filepath.Join(state.Config.AppStatePath, "thumbnails"), filepath.Join(kvStore.GetFSBasePath(), "thumbnails")); err != nil {
+		oldThumbnailsPath := filepath.Join(state.Config.AppStatePath, "thumbnails")
+		newThumbnailsPath := filepath.Join(kvStore.GetFSBasePath(), "thumbnails")
+		state.Logger.Debugf("Moving thumbnails directory from '%s' to '%s'", oldThumbnailsPath, newThumbnailsPath)
+
+		if err := os.Rename(oldThumbnailsPath, newThumbnailsPath); err != nil {
 			panic(fmt.Sprintf("Failed to move thumbnail store: %s", err.Error()))
 		}
 
 		// Set up KV entries
+		state.Logger.Debugf("Migrating legacy KV entries (autoAddToPlaylists=%v, autoAddToPlaylistID=%d, libraryPath='%s')",
+			state.Config.JSONConfig.AutoAddToPlaylists,
+			state.Config.JSONConfig.AutoAddToPlaylistID,
+			state.Config.JSONConfig.LibraryPath,
+		)
+
 		if err := kvStore.KVSet("autoAddNewSongsToPlaylists", state.Config.JSONConfig.AutoAddToPlaylists); err != nil {
 			panic(fmt.Sprintf("Error setting up KV entry 1: %s", err.Error()))
 		}
@@ -121,6 +138,7 @@ func backingThread(state *stateStructs.ApplicationState) {
 			panic(fmt.Sprintf("Failed to write configuration: %s", err.Error()))
 		}
 
+		state.Logger.Info("Completed legacy data migration")
 		// We're done migrating!
 	}
 
@@ -131,6 +149,8 @@ func backingThread(state *stateStructs.ApplicationState) {
 
 	// Set up plugins
 	var err error
+
+	state.Logger.Debugf("Constructing CoreRT plugin '%s' and SyncRT plugin '%s'", state.Config.JSONConfig.ActiveCommonPlugin, state.Config.JSONConfig.ActiveSyncPlugin)
 
 	if state.CoreRT, err = euryrt.ConstructCRT(state.Config.JSONConfig.ActiveCommonPlugin); err != nil {
 		panic(fmt.Sprintf("Failed to construct CRT '%s': %s", state.Config.JSONConfig.ActiveCommonPlugin, err.Error()))
@@ -151,6 +171,8 @@ func backingThread(state *stateStructs.ApplicationState) {
 	coreRTStore := &utilities.PluginStore{}
 	coreRTStore.Hydrate(state, state.Config.JSONConfig.ActiveCommonPlugin)
 
+	state.Logger.Debugf("Initializing CoreRT ('%s') with storage path '%s'", state.Config.JSONConfig.ActiveCommonPlugin, coreRTStore.GetFSBasePath())
+
 	if err = state.CoreRT.Initialize(coreRTStore, state.Logger); err != nil {
 		panic(fmt.Sprintf("Failed to initialize CoreRT: %s", err.Error()))
 	}
@@ -162,6 +184,8 @@ func backingThread(state *stateStructs.ApplicationState) {
 
 	syncRTStore := &utilities.PluginStore{}
 	syncRTStore.Hydrate(state, state.Config.JSONConfig.ActiveSyncPlugin)
+
+	state.Logger.Debugf("Initializing SyncRT ('%s') with storage path '%s'", state.Config.JSONConfig.ActiveSyncPlugin, syncRTStore.GetFSBasePath())
 
 	if err = state.SyncRT.Initialize(syncRTStore, state.Logger); err != nil {
 		panic(fmt.Sprintf("Failed to initialize SyncRT: %s", err.Error()))
@@ -185,19 +209,23 @@ func backingThread(state *stateStructs.ApplicationState) {
 		}
 
 		debounceTimer = time.AfterFunc(paneDebounceDuration, func() {
+			state.Logger.Debug("Executing debounced refresh for song-displaying panes")
 			refreshSongHavingPanes(state)
 		})
 	}
 
 	state.CoreRT.RegisterArtistHandler(func(event core.ArtistEvent, affectedArtists []*core.Artist) {
+		state.Logger.Debugf("Received ArtistEvent (%d) affecting %d artist(s); scheduling pane refresh", event, len(affectedArtists))
 		schedulePaneRefresh()
 	})
 
 	state.CoreRT.RegisterRecordHandler(func(event core.RecordEvent, affectedRecords []*core.Record) {
+		state.Logger.Debugf("Received RecordEvent (%d) affecting %d record(s); scheduling pane refresh", event, len(affectedRecords))
 		schedulePaneRefresh()
 	})
 
 	state.CoreRT.RegisterSongHandler(func(event core.SongEvent, affectedSongs []*core.Song) {
+		state.Logger.Debugf("Received SongEvent (%d) affecting %d song(s); scheduling pane refresh", event, len(affectedSongs))
 		schedulePaneRefresh()
 	})
 
@@ -208,6 +236,12 @@ func backingThread(state *stateStructs.ApplicationState) {
 				oncrash.Panic("Eurydice crash handler", fmt.Sprintf("Uncaught exception in playlist event listener: %s", err), state.Logger, state.LogFilePath)
 			}
 		}()
+
+		playlistID := uint(0)
+		if affectedPlaylist != nil {
+			playlistID = affectedPlaylist.ID
+		}
+		state.Logger.Debugf("Received PlaylistEvent (%d) for playlist ID %d (%d affected song(s))", event, playlistID, len(affectedSongs))
 
 		switch event {
 		case core.PlaylistEventSongAdded, core.PlaylistEventSongRemoved:

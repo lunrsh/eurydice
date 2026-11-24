@@ -38,7 +38,7 @@ func fauxWrite(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-func openInputFile(c *astikit.Closer, streams map[int]*stream, inputReader io.ReadSeeker) (inputFormatContext *astiav.FormatContext, err error) {
+func openInputFile(logger core.Logger, c *astikit.Closer, streams map[int]*stream, inputReader io.ReadSeeker) (inputFormatContext *astiav.FormatContext, err error) {
 	// Allocate IO context
 	// Use a 32kb buffer to improve reliability
 	inputIOContext, err := astiav.AllocIOContext(32768, false, inputReader.Read, inputReader.Seek, fauxWrite)
@@ -116,6 +116,14 @@ func openInputFile(c *astikit.Closer, streams map[int]*stream, inputReader io.Re
 		// Set time base
 		s.decCodecContext.SetTimeBase(is.TimeBase())
 
+		logger.Debugf("Initialized input audio stream %d: codec=%s, sampleRate=%d, sampleFormat=%s, channels=%s",
+			is.Index(),
+			s.decCodec.Name(),
+			s.decCodecContext.SampleRate(),
+			s.decCodecContext.SampleFormat().Name(),
+			s.decCodecContext.ChannelLayout().String(),
+		)
+
 		// Allocate frame
 		s.decFrame = astiav.AllocFrame()
 		c.Add(s.decFrame.Free)
@@ -127,7 +135,7 @@ func openInputFile(c *astikit.Closer, streams map[int]*stream, inputReader io.Re
 	return
 }
 
-func openOutputFile(codecID astiav.CodecID, bitrate int64, inputFormatContext *astiav.FormatContext, c *astikit.Closer, streams map[int]*stream) (outputFormatContext *astiav.FormatContext, outputBuf *bytes.Buffer, err error) {
+func openOutputFile(logger core.Logger, codecID astiav.CodecID, bitrate int64, inputFormatContext *astiav.FormatContext, c *astikit.Closer, streams map[int]*stream) (outputFormatContext *astiav.FormatContext, outputBuf *bytes.Buffer, err error) {
 	// Create a new output buffer
 	outputBuf = new(bytes.Buffer)
 
@@ -207,7 +215,9 @@ func openOutputFile(codecID astiav.CodecID, bitrate int64, inputFormatContext *a
 		if isLayoutSupported {
 			s.encCodecContext.SetChannelLayout(channelLayout)
 		} else {
-			s.encCodecContext.SetChannelLayout(s.encCodec.SupportedChannelLayouts()[0])
+			fallbackLayout := s.encCodec.SupportedChannelLayouts()[0]
+			logger.Debugf("Input channel layout '%s' not supported by encoder '%s'; falling back to '%s'", s.decCodecContext.ChannelLayout().String(), s.encCodec.Name(), fallbackLayout.String())
+			s.encCodecContext.SetChannelLayout(fallbackLayout)
 		}
 
 		// Update sample rate
@@ -227,6 +237,10 @@ func openOutputFile(codecID astiav.CodecID, bitrate int64, inputFormatContext *a
 					bestMatchingSampleRate = currentlySelectedSampleRate
 					bestDiffSampleRate = currentDiff
 				}
+			}
+
+			if bestMatchingSampleRate != targetSampleRate {
+				logger.Debugf("Input sample rate %d Hz not directly supported by encoder '%s'; selected closest rate %d Hz", targetSampleRate, s.encCodec.Name(), bestMatchingSampleRate)
 			}
 
 			s.encCodecContext.SetSampleRate(bestMatchingSampleRate)
@@ -259,6 +273,15 @@ func openOutputFile(codecID astiav.CodecID, bitrate int64, inputFormatContext *a
 
 		// Update stream
 		s.outputStream.SetTimeBase(s.encCodecContext.TimeBase())
+
+		logger.Debugf("Configured output audio stream %d: encoder=%s, bitRate=%d, sampleRate=%d, sampleFormat=%s, channels=%s",
+			s.outputStream.Index(),
+			s.encCodec.Name(),
+			s.encCodecContext.BitRate(),
+			s.encCodecContext.SampleRate(),
+			s.encCodecContext.SampleFormat().Name(),
+			s.encCodecContext.ChannelLayout().String(),
+		)
 	}
 
 	// Write header
@@ -270,9 +293,9 @@ func openOutputFile(codecID astiav.CodecID, bitrate int64, inputFormatContext *a
 	return
 }
 
-func initFilters(c *astikit.Closer, streams map[int]*stream) (err error) {
+func initFilters(logger core.Logger, c *astikit.Closer, streams map[int]*stream) (err error) {
 	// Loop through audio streams
-	for _, s := range streams {
+	for streamIndex, s := range streams {
 		// Allocate graph
 		if s.filterGraph = astiav.AllocFilterGraph(); s.filterGraph == nil {
 			err = errors.New("graph is nil")
@@ -313,6 +336,7 @@ func initFilters(c *astikit.Closer, streams map[int]*stream) (err error) {
 		buffersink := astiav.FindFilterByName("abuffersink")
 
 		content := fmt.Sprintf("aformat=sample_fmts=%s:channel_layouts=%s:sample_rates=%d", s.encCodecContext.SampleFormat().Name(), s.encCodecContext.ChannelLayout().String(), s.encCodecContext.SampleRate())
+		logger.Debugf("Initializing audio filter graph for stream %d with filter '%s'", streamIndex, content)
 
 		// Check filters
 		if buffersrc == nil {
@@ -542,12 +566,13 @@ func TranscodeSong(logger core.Logger, destCodec astiav.CodecID, destBitrate int
 	var err error
 	var outputBuf *bytes.Buffer
 
-	if inputFormatContext, err = openInputFile(c, streams, source); err != nil {
+	if inputFormatContext, err = openInputFile(logger, c, streams, source); err != nil {
 		return nil, fmt.Errorf("opening input file failed: %w", err)
 	}
 
 	// Open output file
 	if outputFormatContext, outputBuf, err = openOutputFile(
+		logger,
 		destCodec,
 		destBitrate,
 		inputFormatContext,
@@ -557,7 +582,7 @@ func TranscodeSong(logger core.Logger, destCodec astiav.CodecID, destBitrate int
 	}
 
 	// Init filters
-	if err := initFilters(c, streams); err != nil {
+	if err := initFilters(logger, c, streams); err != nil {
 		return nil, fmt.Errorf("initializing filters failed: %w", err)
 	}
 
@@ -657,6 +682,8 @@ func TranscodeSong(logger core.Logger, destCodec astiav.CodecID, destBitrate int
 	if err := outputFormatContext.WriteTrailer(); err != nil {
 		return nil, fmt.Errorf("writing trailer failed: %v", err)
 	}
+
+	logger.Debugf("Transcoding finished; produced %d bytes", outputBuf.Len())
 
 	// Done
 	return outputBuf, nil
