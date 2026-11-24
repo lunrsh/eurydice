@@ -24,6 +24,9 @@ import (
 type JSONConfig struct {
 	PluginKVStore map[string]map[string]any // Powers KV store for plugins
 
+	ActiveCommonPlugin string
+	ActiveSyncPlugin   string
+
 	InstallationID      uint   // legacy
 	LibraryPath         string // legacy
 	AutoAddToPlaylistID uint   // legacy

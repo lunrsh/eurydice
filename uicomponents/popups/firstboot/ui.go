@@ -1,6 +1,7 @@
 package firstboot
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path"
@@ -130,6 +131,21 @@ func Render(state *stateStructs.ApplicationState) {
 
 		// Sync configuration
 		state.Config.JSONConfig.HasOOBEFinished = true
+		state.Config.JSONConfig.ActiveCommonPlugin = "libeury"
+		state.Config.JSONConfig.ActiveSyncPlugin = "rockbox"
+
+		// Write the updated configuration to text
+		updatedConfiguration, err := json.Marshal(state.Config.JSONConfig)
+
+		if err != nil {
+			panic(fmt.Sprintf("Failed to marshal configuration: %s", err.Error()))
+		}
+
+		// Save it to disk
+		if err := os.WriteFile(state.Config.JSONConfigPath, updatedConfiguration, 0644); err != nil {
+			panic(fmt.Sprintf("Failed to write configuration: %s", err.Error()))
+		}
+
 		state.PageStates.FirstBoot.HasFirstbootPageOpenedAlready = false
 		state.PageStates.FirstBoot.PageNo = 0 // incase the user finds a way to run this again?
 

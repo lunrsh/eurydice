@@ -10,15 +10,19 @@ import (
 	"path/filepath"
 	"runtime"
 
+	// Imported because Rockbox doesn't get imported elsewise
+	_ "git.lunr.sh/luna/eurydice/euryrt/manageimpl/libeury"
+	_ "git.lunr.sh/luna/eurydice/euryrt/syncimpl/rockbox"
+
 	"git.lunr.sh/luna/eurydice/oncrash"
 	"git.lunr.sh/luna/eurydice/state"
 	"git.lunr.sh/luna/eurydice/themes"
 	"git.lunr.sh/luna/eurydice/uicomponents/popups/devicemanagement"
 	"git.lunr.sh/luna/eurydice/uicomponents/popups/filestometadata"
 	"git.lunr.sh/luna/eurydice/uicomponents/popups/firstboot"
+	"git.lunr.sh/luna/eurydice/uicomponents/popups/initialize"
 	"git.lunr.sh/luna/eurydice/uicomponents/popups/labeling"
 	"git.lunr.sh/luna/eurydice/uicomponents/popups/metadatatofiles"
-	"git.lunr.sh/luna/eurydice/uicomponents/popups/scanlibrary"
 	"git.lunr.sh/luna/eurydice/uicomponents/sync"
 	"git.lunr.sh/luna/eurydice/uicomponents/widgets/mediamanagement"
 	"git.lunr.sh/luna/eurydice/uicomponents/widgets/playlistmanagement"
@@ -421,7 +425,7 @@ func mainLoop() {
 	}
 
 	if imgui.BeginPopupModalV("Initializing...", nil, imgui.WindowFlagsAlwaysAutoResize) {
-		scanlibrary.Render(appState)
+		initialize.Render(appState)
 	}
 
 	// HACK: we do it this way because of import cycle issues :(

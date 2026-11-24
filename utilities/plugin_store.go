@@ -57,7 +57,7 @@ func (store *PluginStore) KVSet(key string, value any) error {
 
 // Returns the base file path that you should use for any big files/block storage.
 func (store *PluginStore) GetFSBasePath() string {
-	return store.appState.Config.AppStatePath
+	return filepath.Join(store.appState.Config.AppStatePath, "plugins", store.pluginID)
 }
 
 // Initialize the PluginStore
@@ -68,6 +68,10 @@ func (store *PluginStore) Hydrate(appState *state.ApplicationState, pluginID str
 
 	store.appState = appState
 	store.pluginID = filepath.Clean(pluginID)
+
+	if store.appState.Config.JSONConfig.PluginKVStore == nil {
+		store.appState.Config.JSONConfig.PluginKVStore = map[string]map[string]any{}
+	}
 
 	// Create the KV store if it does not currently exist
 	if _, ok := store.appState.Config.JSONConfig.PluginKVStore[store.pluginID]; !ok {

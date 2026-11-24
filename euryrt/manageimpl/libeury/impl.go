@@ -1209,6 +1209,8 @@ func (euryRT *LibEuryRT) Initialize(storage core.PluginStorage, logger core.Logg
 	// Set up first library we find, and if we can't find any, attempt to create one
 	// TOOD: this is a temp measure until we properly write init stuffs for this
 
+	euryRT.library = &database.Library{}
+
 	if err := euryRT.db.First(euryRT.library).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			// This method will be replaced... at some point... once we write the setup UI code

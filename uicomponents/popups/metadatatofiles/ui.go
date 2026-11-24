@@ -92,6 +92,7 @@ func Render(state *stateStructs.ApplicationState) {
 	}
 
 	progressMessage := state.PageStates.MTFUpdate.ProgressMessage
+
 	if progressMessage == "" {
 		progressMessage = "Initializing runtime..."
 	}
