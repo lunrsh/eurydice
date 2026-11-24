@@ -3,14 +3,14 @@ package songmanagement
 import (
 	"fmt"
 
+	"git.lunr.sh/luna/eurydice/euryrt/core"
 	stateStructs "git.lunr.sh/luna/eurydice/state"
-	"git.lunr.sh/luna/eurydice/state/database"
 	"git.lunr.sh/luna/eurydice/state/widgetstate/songmanagementstate"
 	"git.lunr.sh/luna/eurydice/utilities"
 )
 
-func BootstrapIndex(state *stateStructs.ApplicationState, playlistID uint) error {
-	// Clear out the existing songs in the state
+// Unloads all images held by the currently displayed songs, and clears out the song list.
+func clearDisplayedSongs(state *stateStructs.ApplicationState) {
 	for _, song := range state.PageStates.SongManagement.Songs {
 		if song.Image != nil {
 			utilities.UnloadImageFromArtID(state, song.ArtID)
@@ -18,35 +18,71 @@ func BootstrapIndex(state *stateStructs.ApplicationState, playlistID uint) error
 	}
 
 	state.PageStates.SongManagement.Songs = []*songmanagementstate.SongInList{}
+}
 
-	// Fetch all the songs in this playlist
-	playlist := &database.Playlist{}
+// Returns true if the PlaylistSong points to a Song we can actually display.
+//
+// NOTE: Keeping the backing store consistent is the CoreRT's responsibility now, so instead of repairing anything
+// here (like we used to when we accessed the database directly), we just log and skip anything we can't display.
+func isDisplayablePlaylistSong(state *stateStructs.ApplicationState, playlistSong *core.PlaylistSong) bool {
+	if playlistSong.Song == nil || playlistSong.Song.IsHollowObject {
+		state.Logger.Errorf("INCONSISTENT STATE ERROR: PlaylistSong %d does not point to a Song that exists! Skipping it.", playlistSong.ID)
+		return false
+	}
 
-	// Get all required details about the song, incl. collaborators, main artist, and what record we're on
-	if err := state.Config.Database.Preload("Songs.Song.CollabArtists").Preload("Songs.Song.PrimaryArtist").Preload("Songs.Song.Record").Where("library_id = ? AND id = ?", state.Config.ActiveLibrary.ID, playlistID).First(playlist).Error; err != nil {
+	return true
+}
+
+// Builds a SongInList from a given CoreRT PlaylistSong.
+func newSongInList(playlistSong *core.PlaylistSong) *songmanagementstate.SongInList {
+	song := playlistSong.Song
+
+	// Build string list of all the artists
+	listOfAllArtists := make([]string, 0, len(song.CollabArtists)+1)
+
+	if song.PrimaryArtist != nil {
+		listOfAllArtists = append(listOfAllArtists, song.PrimaryArtist.Name)
+	}
+
+	for _, collaborator := range song.CollabArtists {
+		listOfAllArtists = append(listOfAllArtists, collaborator.Name)
+	}
+
+	recordName := ""
+
+	if song.Record != nil {
+		recordName = song.Record.Name
+	}
+
+	return &songmanagementstate.SongInList{
+		PlaylistContainerID: playlistSong.ID,
+		SongID:              song.ID,
+		ArtID:               song.ArtID,
+		Index:               playlistSong.SortIndex,
+		Name:                song.Title,
+		Record:              recordName,
+		Artists:             listOfAllArtists,
+	}
+}
+
+func BootstrapIndex(state *stateStructs.ApplicationState, playlistID uint) error {
+	// Clear out the existing songs in the state
+	clearDisplayedSongs(state)
+
+	// Fetch all the songs in this playlist, incl. collaborators, main artist, and what record we're on
+	playlistSongs, err := state.CoreRT.GetPlaylistContents(playlistID)
+
+	if err != nil {
 		return fmt.Errorf("failed to fetch songs in playlist: %w", err)
 	}
 
-	for _, songInPlaylist := range playlist.Songs {
-		// Build string list of all the artists
-		listOfAllArtists := []string{songInPlaylist.Song.PrimaryArtist.Name}
-
-		for _, collaborator := range songInPlaylist.Song.CollabArtists {
-			listOfAllArtists = append(listOfAllArtists, collaborator.Name)
-		}
-
-		displayedSong := &songmanagementstate.SongInList{
-			PlaylistContainerID: songInPlaylist.ID,
-			SongID:              songInPlaylist.Song.ID,
-			ArtID:               songInPlaylist.Song.ArtID,
-			Index:               songInPlaylist.SortIndex,
-			Name:                songInPlaylist.Song.Title,
-			Record:              songInPlaylist.Song.Record.Name,
-			Artists:             listOfAllArtists,
+	for _, songInPlaylist := range playlistSongs {
+		if !isDisplayablePlaylistSong(state, songInPlaylist) {
+			continue
 		}
 
 		// Add the song to the displayed songs list
-		state.PageStates.SongManagement.Songs = append(state.PageStates.SongManagement.Songs, displayedSong)
+		state.PageStates.SongManagement.Songs = append(state.PageStates.SongManagement.Songs, newSongInList(songInPlaylist))
 	}
 
 	state.PageStates.SongManagement.PlaylistID = playlistID
@@ -60,78 +96,39 @@ func BootstrapIndex(state *stateStructs.ApplicationState, playlistID uint) error
 
 func LoadAllSongs(state *stateStructs.ApplicationState) error {
 	// Clear out the existing songs in the state
-	for _, song := range state.PageStates.SongManagement.Songs {
-		if song.Image != nil {
-			utilities.UnloadImageFromArtID(state, song.ArtID)
-		}
-	}
-
-	state.PageStates.SongManagement.Songs = []*songmanagementstate.SongInList{}
-	songs := []*database.PlaylistSong{}
+	clearDisplayedSongs(state)
 
 	// We have a list of all the songs we have found, so we can get a list of who has this song in their playlist
 	foundSongs := map[uint]*songmanagementstate.SongInList{} // map of song ID to song in list
 
-	if err := state.Config.Database.Preload("Playlist").Preload("Song.CollabArtists").Preload("Song.PrimaryArtist").Preload("Song.Record").Where("library_id = ?", state.Config.ActiveLibrary.ID).Find(&songs).Error; err != nil {
-		return fmt.Errorf("failed to fetch song list: %w", err)
+	playlists, err := state.CoreRT.GetPlaylists()
+
+	if err != nil {
+		return fmt.Errorf("failed to fetch playlists: %w", err)
 	}
 
-	for _, songInDatabase := range songs {
-		// HACK 1: this is a workaround for an issue where the database gets into an inconsistent state because of a missing song.
-		// THIS IS NOT A PROPER SOLUTION, however, this is a "migration" path because the database can be currently corrupted in past builds without this fix.
+	for _, playlist := range playlists {
+		playlistSongs, err := state.CoreRT.GetPlaylistContents(playlist.ID)
 
-		// If the current song in the database doesn't have a matching song, kill it with fire!
-		if songInDatabase.Song == nil {
-			state.Logger.Errorf("INCONSISTENT STATE ERROR: Playlist's song does not point to a song in database that exists! Deleting this song!")
-			state.Logger.Errorf("If you are not migrating from action run 40 or earlier, report this issue!")
-
-			if err := state.Config.Database.Delete(songInDatabase).Error; err != nil {
-				return fmt.Errorf("failed to delete song: %w", err)
-			}
-
-			if err := utilities.ReindexDeletedSongs(state, songInDatabase.PlaylistID); err != nil {
-				return fmt.Errorf("failed to reindex songs in playlist: %w", err)
-			}
-
-			continue
+		if err != nil {
+			return fmt.Errorf("failed to fetch songs in playlist %d: %w", playlist.ID, err)
 		}
 
-		// HACK 2: This is of same reasons of HACK 1 above, but instead, it's a missing playlist for the song, and not a missing "backing song" if that makes sense.
-		// The root cause of this is still not fully known, but I currently believe it's a race condition. It should be fixed from now on, though. - @luna
-		if songInDatabase.Playlist == nil {
-			state.Logger.Errorf("INCONSISTENT STATE ERROR: Playlist's song does not point to a playlist that actually exists! Deleting this song!")
-			state.Logger.Errorf("If you are not migrating from action run 40 or earlier, report this issue!")
-
-			if err := state.Config.Database.Delete(songInDatabase).Error; err != nil {
-				return fmt.Errorf("failed to delete song: %w", err)
+		for _, songInPlaylist := range playlistSongs {
+			if !isDisplayablePlaylistSong(state, songInPlaylist) {
+				continue
 			}
 
-			continue
-		}
+			if song, ok := foundSongs[songInPlaylist.Song.ID]; ok {
+				song.InPlaylists += ", " + playlist.Name
+			} else {
+				displayedSong := newSongInList(songInPlaylist)
+				displayedSong.InPlaylists = playlist.Name
 
-		if song, ok := foundSongs[songInDatabase.Song.ID]; ok {
-			song.InPlaylists += ", " + songInDatabase.Playlist.Name
-		} else {
-			// Build string list of all the artists
-			listOfAllArtists := []string{songInDatabase.Song.PrimaryArtist.Name}
-
-			for _, collaborator := range songInDatabase.Song.CollabArtists {
-				listOfAllArtists = append(listOfAllArtists, collaborator.Name)
+				// Add the song to the displayed songs list, and the map of songs
+				state.PageStates.SongManagement.Songs = append(state.PageStates.SongManagement.Songs, displayedSong)
+				foundSongs[songInPlaylist.Song.ID] = displayedSong
 			}
-
-			displayedSong := &songmanagementstate.SongInList{
-				PlaylistContainerID: songInDatabase.ID,
-				SongID:              songInDatabase.SongID,
-				ArtID:               songInDatabase.Song.ArtID,
-				InPlaylists:         songInDatabase.Playlist.Name,
-				Name:                songInDatabase.Song.Title,
-				Record:              songInDatabase.Song.Record.Name,
-				Artists:             listOfAllArtists,
-			}
-
-			// Add the song to the displayed songs list, and the map of songs
-			state.PageStates.SongManagement.Songs = append(state.PageStates.SongManagement.Songs, displayedSong)
-			foundSongs[songInDatabase.Song.ID] = displayedSong
 		}
 	}
 

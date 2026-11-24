@@ -116,5 +116,5 @@ type SyncRuntime interface {
 	// and b: pluggable inside Eurydice.
 	//
 	// logger is a Logger interface which should be compatible with most logging frameworks.
-	Initialize(pluginStorage PluginStorage, logger Logger) bool
+	Initialize(pluginStorage PluginStorage, logger Logger) error
 }

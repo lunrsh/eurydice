@@ -25,6 +25,8 @@ type MgmtState struct {
 	ErrHint          string
 	IsErrRecoverable bool
 
+	PlaylistsOnDevice []*core.Playlist
+
 	DisplayedPlaylist *core.Playlist
 	PlaylistToDelete  *core.Playlist
 	PlaylistToImport  *core.Playlist
@@ -32,10 +34,16 @@ type MgmtState struct {
 	DeletionDeleteAssociatedSongs bool
 	DeletionIsDone                bool
 
-	Devices        []*MgmtDevice
-	SelectedDevice core.AppCommonRuntime
+	ImportState int
 
-	DisplayedSongs []*core.Song
+	ProgressMessage    string
+	ProgressBar        int
+	ProgressBarMessage string
+
+	Devices        []*MgmtDevice
+	SelectedDevice core.SyncRuntimeDevice
+
+	DisplayedSongs []*DisplayedSong
 
 	UISelectedDeviceIndex int32
 }

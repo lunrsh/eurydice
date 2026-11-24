@@ -1,8 +1,11 @@
 package core
 
-type SongEvent int
-type RecordEvent int
-type ArtistEvent int
+type (
+	SongEvent     int
+	RecordEvent   int
+	ArtistEvent   int
+	PlaylistEvent int
+)
 
 const (
 	// Fires when a song gets updated
@@ -25,6 +28,17 @@ const (
 	ArtistEventDelete ArtistEvent = 22
 	// Fires when an artist gets added
 	ArtistEventAdd ArtistEvent = 23
+
+	// Fires when a playlist gets created
+	PlaylistEventPlaylistCreated PlaylistEvent = 31
+	// Fires when a song gets added into a playlist
+	PlaylistEventSongAdded PlaylistEvent = 32
+	// Fires when a song gets removed from a playlist
+	PlaylistEventSongRemoved PlaylistEvent = 33
+	// Fires when a playlist gets removed
+	PlaylistEventPlaylistRemoved PlaylistEvent = 34
+	// Fires when a playlist gets updated (e.g. renamed)
+	PlaylistEventPlaylistUpdated PlaylistEvent = 35
 )
 
 // Callback for the Song event. See: RegisterSongHandler() in CommonRuntime.
@@ -47,6 +61,15 @@ type RecordCallback func(event RecordEvent, affectedRecords []*Record)
 //
 // affectedArtists: implicated artists for the given event.
 type ArtistCallback func(event ArtistEvent, affectedArtists []*Artist)
+
+// Callback for the Playlist event. See: RegisterPlaylistHandler() in CommonRuntime.
+//
+// event: event time, see constants regarding playlists.
+//
+// affectedPlaylist: implicated playlist for the given event.
+//
+// affectedSongs: affected songs for the given event, only used in PlaylistEventSongAdded/PlaylistEventSongRemoved. may be empty or nil.
+type PlaylistCallback func(event PlaylistEvent, affectedPlaylist *Playlist, affectedSongs []*Song)
 
 // Callback for the init handler. See: RegisterInitHandler() in CommonRuntime.
 //

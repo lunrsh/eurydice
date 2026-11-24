@@ -22,7 +22,7 @@ import (
 )
 
 type JSONConfig struct {
-	PluginKVStore map[string]interface{} // Powers KV store for plugins
+	PluginKVStore map[string]map[string]any // Powers KV store for plugins
 
 	InstallationID      uint   // legacy
 	LibraryPath         string // legacy

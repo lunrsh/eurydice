@@ -99,7 +99,7 @@ func (rockDevRT *RockDevRT) DeleteOnDevicePlaylist(playlist *core.Playlist, dele
 
 	for _, playlistEntryInMetadata := range rockDevRT.metadata.Playlists {
 		// We're just trying to find candidates *from the exact same copy of Eurydice* that we're deleting.
-		if playlistEntryInMetadata.InstallationID == playlistFromMetadata.InstallationID && playlistEntryInMetadata.LibraryID == playlistFromMetadata.LibraryID {
+		if playlistEntryInMetadata.PluginID == rockDevRT.upstreamRuntime.PluginID() && playlistEntryInMetadata.InstanceID == rockDevRT.upstreamRuntime.GetUniqueInstanceID() {
 			if playlistEntryInMetadata == playlistFromMetadata {
 				continue // skip ourselves
 			}
@@ -195,11 +195,13 @@ func (rockDevRT *RockDevRT) DeleteOnDevicePlaylist(playlist *core.Playlist, dele
 
 	// We don't need to continue any further if we're keeping the songs on the device once we're done
 	if !deleteSongs {
+		rockDevRT.sendDeletionProgress("Done.", 100, "Done!", true)
 		return nil
 	}
 
 	// Finally, iterate and delete the songs
-	for _, songOnDisk := range songsOnDiskToRemove {
+	for songIndex, songOnDisk := range songsOnDiskToRemove {
+		rockDevRT.sendDeletionProgress(fmt.Sprintf("Deleting song: %s", songOnDisk), int((float32(songIndex+1)/float32(len(songsOnDiskToRemove)))*100), fmt.Sprintf("%d/%d", songIndex+1, len(songsOnDiskToRemove)), false)
 		songPath := filepath.Join(rockDevRT.mountpoint, songOnDisk)
 
 		if err := os.Remove(songPath); err != nil {
@@ -227,6 +229,7 @@ func (rockDevRT *RockDevRT) DeleteOnDevicePlaylist(playlist *core.Playlist, dele
 	}
 
 	rockDevRT.rockboxRT.logger.Debug("Done.")
+	rockDevRT.sendDeletionProgress("Done.", 100, "Done!", true)
 
 	// We're done!
 	return nil

@@ -11,7 +11,6 @@ import (
 
 	"git.lunr.sh/luna/eurydice/euryrt/core"
 	"golang.org/x/image/bmp"
-	"gorm.io/gorm"
 )
 
 // Gets the available quality levels that this implementation supports.
@@ -121,7 +120,7 @@ func (rockDevRT *RockDevRT) GetSongsFromPlaylistOnDevice(corePlaylistInstance *c
 			var songFromDatabase *core.Song
 
 			if songFromDatabase, err = rockDevRT.upstreamRuntime.GetSongByID(uint(song.EurydiceSongID)); err != nil {
-				if errors.Is(err, gorm.ErrRecordNotFound) {
+				if errors.Is(err, &core.ErrNoExist{}) {
 					hasFailedToPullSong = true
 					goto startOfSongLoop // to start the loop over with the generic fallback that we typically use w/ external playlists
 				} else {
@@ -190,15 +189,15 @@ func (rockDevRT *RockDevRT) GetArt(artID string) (image image.Image, isFromUpstr
 		// Decode the image file
 		decodedFile, err := bmp.Decode(bitmapFile)
 
-		if err != nil {
-			return decodedFile, true, nil
+		if err == nil {
+			return decodedFile, false, nil
 		} else {
-			return nil, true, fmt.Errorf("failed to decode image: %w", err)
+			return nil, false, fmt.Errorf("failed to decode image: %w", err)
 		}
 	} else {
 		artFile, err := rockDevRT.upstreamRuntime.GetArt(artID)
 
-		return artFile, false, err
+		return artFile, true, err
 	}
 }
 

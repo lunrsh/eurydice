@@ -179,6 +179,17 @@ type AppCommonRuntime interface {
 	// be empty.
 	CreatePlaylist(playlistName string) (playlistID uint, err error)
 
+	// Deletes the playlist with the given ID. Implementations MUST also remove every PlaylistSong belonging to
+	// said playlist. The underlying Songs MUST NOT be deleted.
+	//
+	// If the playlist does not exist, implementations MUST return *ErrNoExist.
+	DeletePlaylist(playlistID uint) error
+
+	// Renames the playlist with the given ID. Playlists' names MAY be empty.
+	//
+	// If the playlist does not exist, implementations MUST return *ErrNoExist.
+	RenamePlaylist(playlistID uint, newName string) error
+
 	// Creates an arbitrary artist inside the database.
 	//
 	// This function is OPTIONAL. If not implemented, implementations MUST return *ErrUnsupported.
@@ -197,7 +208,16 @@ type AppCommonRuntime interface {
 	//
 	// **IF NOT IMPLEMENTED, RECATEGORIZATION IS NOT SUPPORTED AND WILL BE DISABLED.**
 	// It is thus recommended that you implement CreateArbitraryRecord unless technologically infeasible.
-	CreateArbitraryRecord(record *Record) (artistID uint, err error)
+	CreateArbitraryRecord(record *Record, artistID uint) (recordID uint, err error)
+
+	// Cleans up any records and artists that no longer have any associated songs.
+	//
+	// This function is OPTIONAL. If not implemented, implementations MUST return *ErrUnsupported.
+	//
+	// This function is used internally after recategorizing Songs.
+	//
+	// **IF NOT IMPLEMENTED, RECATEGORIZATION IS NOT SUPPORTED AND WILL BE DISABLED.**
+	CleanupOrphanedEntities() error
 
 	// Creates a new image for Songs to use for this given backend.
 	//
@@ -241,6 +261,13 @@ type AppCommonRuntime interface {
 	// NOTE: if you are writing this function as a EXTISM-based WASM plugin, Eurydice MAY automatically handle wrapping
 	// your plugin as something that runs on a background thread anyways.
 	RegisterArtistHandler(callback ArtistCallback)
+
+	// Registers a Playlist handler for Playlist events. You MUST implement at least a form of this. Implementations SHOULD
+	// handle these in linear order on a background thread to not lag the main thread.
+	//
+	// NOTE: if you are writing this function as a EXTISM-based WASM plugin, Eurydice MAY automatically handle wrapping
+	// your plugin as something that runs on a background thread anyways.
+	RegisterPlaylistHandler(callback PlaylistCallback)
 
 	// Registers a handler for Eurydice's startup UI for you to show progress of initialization.
 	//

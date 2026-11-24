@@ -10,7 +10,8 @@ const (
 	// Required functions to be implemented in CRT for you to accurately report this feature flag:
 	//
 	//    CreateArbitraryArtist(artist *Artist) (artistID uint, err error)
-	//    CreateArbitraryRecord(record *Record) (artistID uint, err error)
+	//    CreateArbitraryRecord(record *Record, artistID uint) (recordID uint, err error)
+	//    CleanupOrphanedEntities() error
 	FeatureFlagRecategorizationEnabled CommonRuntimeFlag = 1 << 0
 
 	// If set, tells the Eurydice client (& plugins) that you support adding a new ArtID to use in songs at a later time.

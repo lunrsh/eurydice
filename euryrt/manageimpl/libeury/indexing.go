@@ -493,69 +493,74 @@ func (euryRT *LibEuryRT) indexNewMusic(uniqueMusicFound []string) error {
 // IMPORTANT: musicFound is NOT a list of music to remove. It is a list of music to KEEP.
 //
 // Used internally for scanning the library and cleaning up the database (backingThread, step 4).
-func (euryRT *LibEuryRT) cleanupDatabase(musicFound []string) error {
+func (euryRT *LibEuryRT) cleanupDatabase(musicFound []string, disableMusicDeletion bool) error {
 	euryRT.broadcastInit("Cleaning Up...", -1, "Cleaning...", false)
-	allSongs := []database.Song{}
-
-	if err := euryRT.db.Where("library_id = ?", euryRT.library.ID).Find(&allSongs).Error; err != nil {
-		return fmt.Errorf("failed to find all songs: %w", err)
-	}
 
 	// Use hash maps for looking up songs, and for playlists to reindex
 	playlistsToReindexMap := map[uint]bool{}
-	songPathMap := make(map[string]bool, len(allSongs))
 
-	for _, path := range musicFound {
-		songPathMap[strings.TrimPrefix(path, euryRT.library.LibraryPath)] = true
-	}
+	// Only delete songs if we're told to
+	if !disableMusicDeletion {
+		allSongs := []database.Song{}
 
-	// First, clean up songs that are no longer in the filesystem
-	for _, song := range allSongs {
-		if !songPathMap[song.RelativePathFromLibrary] {
-			// First, check to see if this song is in any playlists, before we delete the song itself
-			playlistEntries := []database.PlaylistSong{}
+		if err := euryRT.db.Where("library_id = ?", euryRT.library.ID).Find(&allSongs).Error; err != nil {
+			return fmt.Errorf("failed to find all songs: %w", err)
+		}
 
-			if err := euryRT.db.Where("song_id = ?", song.ID).Find(&playlistEntries).Error; err != nil {
-				return fmt.Errorf("failed to find playlists that contain the current song: %w", err)
-			}
+		songPathMap := make(map[string]bool, len(allSongs))
 
-			// Delete any entries
-			for _, entry := range playlistEntries {
-				if err := euryRT.db.Delete(&entry).Error; err != nil {
-					return fmt.Errorf("failed to delete song's entry in a playlist: %w", err)
+		for _, path := range musicFound {
+			songPathMap[strings.TrimPrefix(path, euryRT.library.LibraryPath)] = true
+		}
+
+		// First, clean up songs that are no longer in the filesystem
+		for _, song := range allSongs {
+			if !songPathMap[song.RelativePathFromLibrary] {
+				// First, check to see if this song is in any playlists, before we delete the song itself
+				playlistEntries := []database.PlaylistSong{}
+
+				if err := euryRT.db.Where("song_id = ?", song.ID).Find(&playlistEntries).Error; err != nil {
+					return fmt.Errorf("failed to find playlists that contain the current song: %w", err)
 				}
 
-				euryRT.logger.Debugf("ScanLibrary->backingThread->cleanupDatabase: Deleted song '%s' from playlist ID '%d'", song.Title, entry.PlaylistID)
-
-				playlistsToReindexMap[entry.PlaylistID] = true
-			}
-
-			if err := euryRT.db.Delete(&song).Error; err != nil {
-				return fmt.Errorf("failed to delete song: %w", err)
-			}
-
-			euryRT.logger.Debugf("ScanLibrary->backingThread->cleanupDatabase: Deleted song '%s'", song.Title)
-
-			// If we have a thumbnail attached to this song, we check to see if there are any songs or records still using the thumbnail, and if not, delete it
-			if song.ArtID != "" {
-				var songsWithThumbnailCount int64
-				var recordsWithThumbnailCount int64
-
-				// Checking all songs, regardless of library, is intentional, as they can be reused across libraries
-				if err := euryRT.db.Model(&database.Song{}).Where("art_id = ?", song.ArtID).Count(&songsWithThumbnailCount).Error; err != nil {
-					return fmt.Errorf("failed to find songs with thumbnail: %w", err)
-				}
-
-				if err := euryRT.db.Model(&database.Record{}).Where("art_id = ?", song.ArtID).Count(&recordsWithThumbnailCount).Error; err != nil {
-					return fmt.Errorf("failed to find records with thumbnail: %w", err)
-				}
-
-				if songsWithThumbnailCount == 0 && recordsWithThumbnailCount == 0 {
-					if err := os.Remove(filepath.Join(euryRT.statePath, "thumbnails", song.ArtID)); err != nil {
-						return fmt.Errorf("failed to remove thumbnail: %w", err)
+				// Delete any entries
+				for _, entry := range playlistEntries {
+					if err := euryRT.db.Delete(&entry).Error; err != nil {
+						return fmt.Errorf("failed to delete song's entry in a playlist: %w", err)
 					}
 
-					euryRT.logger.Debugf("ScanLibrary->backingThread->cleanupDatabase: Deleted thumbnail ID '%s'", song.ArtID)
+					euryRT.logger.Debugf("ScanLibrary->backingThread->cleanupDatabase: Deleted song '%s' from playlist ID '%d'", song.Title, entry.PlaylistID)
+
+					playlistsToReindexMap[entry.PlaylistID] = true
+				}
+
+				if err := euryRT.db.Delete(&song).Error; err != nil {
+					return fmt.Errorf("failed to delete song: %w", err)
+				}
+
+				euryRT.logger.Debugf("ScanLibrary->backingThread->cleanupDatabase: Deleted song '%s'", song.Title)
+
+				// If we have a thumbnail attached to this song, we check to see if there are any songs or records still using the thumbnail, and if not, delete it
+				if song.ArtID != "" {
+					var songsWithThumbnailCount int64
+					var recordsWithThumbnailCount int64
+
+					// Checking all songs, regardless of library, is intentional, as they can be reused across libraries
+					if err := euryRT.db.Model(&database.Song{}).Where("art_id = ?", song.ArtID).Count(&songsWithThumbnailCount).Error; err != nil {
+						return fmt.Errorf("failed to find songs with thumbnail: %w", err)
+					}
+
+					if err := euryRT.db.Model(&database.Record{}).Where("art_id = ?", song.ArtID).Count(&recordsWithThumbnailCount).Error; err != nil {
+						return fmt.Errorf("failed to find records with thumbnail: %w", err)
+					}
+
+					if songsWithThumbnailCount == 0 && recordsWithThumbnailCount == 0 {
+						if err := os.Remove(filepath.Join(euryRT.statePath, "thumbnails", song.ArtID)); err != nil {
+							return fmt.Errorf("failed to remove thumbnail: %w", err)
+						}
+
+						euryRT.logger.Debugf("ScanLibrary->backingThread->cleanupDatabase: Deleted thumbnail ID '%s'", song.ArtID)
+					}
 				}
 			}
 		}

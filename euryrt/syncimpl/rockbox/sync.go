@@ -74,7 +74,7 @@ func (rockDevRT *RockDevRT) fetchSongsToSync(sync *syncState) (map[uint]*core.So
 	// - what songs to add
 	// And also updates on-device metadata if any updates are needed
 	for songIndex, song := range rockDevRT.metadata.Songs {
-		rockDevRT.sendImportProgress(fmt.Sprintf("Fetching metadata: (device)/%s", song.RelativePath), int((float32(songIndex+1)/float32(len(rockDevRT.metadata.Songs)))*100), fmt.Sprintf("%d/%d", songIndex+1, len(rockDevRT.metadata.Songs)), false)
+		rockDevRT.sendSyncProgress(fmt.Sprintf("Fetching metadata: (device)/%s", song.RelativePath), int((float32(songIndex+1)/float32(len(rockDevRT.metadata.Songs)))*100), fmt.Sprintf("%d/%d", songIndex+1, len(rockDevRT.metadata.Songs)), false)
 
 		// Rebuild the installation list to remove or add any new installations of this song
 		// Seperate slice so we don't interfere with the original list mid-interation
@@ -104,14 +104,14 @@ func (rockDevRT *RockDevRT) fetchSongsToSync(sync *syncState) (map[uint]*core.So
 			hasFoundOurself = true
 
 			// If the song doesn't exist, but we want a copy of it, we re-copy it, because that's not the proper way to remove stuff around these parts!
-			if _, err := os.Stat(filepath.Join(sync.Device.mountpoint, song.RelativePath)); err != nil {
+			if _, err := os.Stat(filepath.Join(rockDevRT.mountpoint, song.RelativePath)); err != nil {
 				if errors.Is(err, syscall.ENOTDIR) {
 					// What?
 					// The folder containing songs has become a file, which... has happened to me personally and thus might happen to other people
 					rockDevRT.rockboxRT.logger.Error("Ooops: folder became a file! Attempting to do delete this corrupted folder, and do a rebuild of this album")
 					rockDevRT.rockboxRT.logger.Error("This should not happen! Check your device and cables! Nontheless, continuing...")
 
-					currentDirectory := filepath.Dir(filepath.Join(sync.Device.mountpoint, song.RelativePath))
+					currentDirectory := filepath.Dir(filepath.Join(rockDevRT.mountpoint, song.RelativePath))
 
 					if err = os.Remove(currentDirectory); err != nil {
 						// Ah. FUCK.
@@ -152,7 +152,7 @@ func (rockDevRT *RockDevRT) fetchSongsToSync(sync *syncState) (map[uint]*core.So
 
 					// Check if we need to rebuild metadata, and if so, rebuild it, update the relative paths, delete the old stuff, and resync
 					if song.MetadataHash != calculateMetadataHash(songFromDatabase) {
-						if err := os.Remove(filepath.Join(sync.Device.mountpoint, song.RelativePath)); err != nil && !errors.Is(err, os.ErrNotExist) {
+						if err := os.Remove(filepath.Join(rockDevRT.mountpoint, song.RelativePath)); err != nil && !errors.Is(err, os.ErrNotExist) {
 							rockDevRT.rockboxRT.logger.Errorf("Failed to remove song '%s' during song metadata rebuild: %v\n", song.RelativePath, err)
 							delete(songsToSync, installation.SongID) // uuuuh, let's just ignore this song...
 							continue
@@ -183,7 +183,7 @@ func (rockDevRT *RockDevRT) fetchSongsToSync(sync *syncState) (map[uint]*core.So
 					song.QualityLevel = sync.AudioQuality
 					songsThatDoNotNeedMetadata[installation.SongID] = true
 
-					if err := os.Remove(filepath.Join(sync.Device.mountpoint, song.RelativePath)); err != nil {
+					if err := os.Remove(filepath.Join(rockDevRT.mountpoint, song.RelativePath)); err != nil {
 						rockDevRT.rockboxRT.logger.Errorf("Failed to remove song %s: %v\n", song.RelativePath, err)
 					}
 
@@ -213,7 +213,7 @@ func (rockDevRT *RockDevRT) fetchSongsToSync(sync *syncState) (map[uint]*core.So
 			if foundSongs, ok := songNamesToSong[songTitle]; ok {
 				// We found a matching song title, but now we need to check the metadata with taglib to verify that this song
 				// is actually correct.
-				tags, err := taglib.ReadTags(filepath.Join(sync.Device.mountpoint, song.RelativePath))
+				tags, err := taglib.ReadTags(filepath.Join(rockDevRT.mountpoint, song.RelativePath))
 
 				if err != nil {
 					rockDevRT.rockboxRT.logger.Warnf("Failed to read tags for song '%s': %v. Deleting and rebuilding...", songTitle, err)
@@ -287,6 +287,8 @@ func (rockDevRT *RockDevRT) fetchSongsToSync(sync *syncState) (map[uint]*core.So
 		}
 	}
 
+	rockDevRT.metadata.Songs = rebuiltSongList
+
 	// Return our values
 	return songsToSync, songsThatDoNotNeedMetadata, songsToDelete, nil
 }
@@ -297,6 +299,8 @@ func (rockDevRT *RockDevRT) copySongs(sync *syncState, songsToSync map[uint]*cor
 	sync.CurrentTimeIndex = 0
 
 	// Iterate over the songs to sync
+	syncedSongCounter := 0
+
 	for songIndex, song := range songsToSync {
 		startTime := time.Now()
 		restartCounter := 0
@@ -311,7 +315,7 @@ func (rockDevRT *RockDevRT) copySongs(sync *syncState, songsToSync map[uint]*cor
 		artistNameNoSpecialChars := SanitizePath(rockDevRT.metadata.Version, song.PrimaryArtist.Name)
 		recordNameNoSpecialChars := SanitizePath(rockDevRT.metadata.Version, song.Record.Name)
 
-		directoryPath := filepath.Join(sync.Device.mountpoint, "Songs", artistNameNoSpecialChars, recordNameNoSpecialChars)
+		directoryPath := filepath.Join(rockDevRT.mountpoint, "Songs", artistNameNoSpecialChars, recordNameNoSpecialChars)
 		songPath := rockDevRT.calculateRelativePath(sync, song)
 
 		if err := os.MkdirAll(directoryPath, 0755); err != nil {
@@ -352,7 +356,7 @@ func (rockDevRT *RockDevRT) copySongs(sync *syncState, songsToSync map[uint]*cor
 			}
 
 			// Copy file
-			if err := copyFile(sourceStream, filepath.Join(sync.Device.mountpoint, songPath)); err != nil {
+			if err := copyFile(sourceStream, filepath.Join(rockDevRT.mountpoint, songPath)); err != nil {
 				unwrappedErr := errors.Unwrap(err)
 
 				// ...someone please clean this check up
@@ -406,6 +410,7 @@ func (rockDevRT *RockDevRT) copySongs(sync *syncState, songsToSync map[uint]*cor
 			}
 
 			rockDevRT.rockboxRT.logger.Debug("Sync->backingThread: Read all chunks")
+			sourceStream.Close()
 
 			// Calculate what bitrate to use
 			var destBitRate int64
@@ -434,7 +439,7 @@ func (rockDevRT *RockDevRT) copySongs(sync *syncState, songsToSync map[uint]*cor
 			}
 
 			// Transcode now
-			outputStream, err := ffmpegrt.TranscodeSong(sync.Device.rockboxRT.logger, destCodec, destBitRate, bytes.NewReader(song))
+			outputStream, err := ffmpegrt.TranscodeSong(rockDevRT.rockboxRT.logger, destCodec, destBitRate, bytes.NewReader(song))
 
 			// Handle transcode errors
 			if err != nil {
@@ -458,7 +463,7 @@ func (rockDevRT *RockDevRT) copySongs(sync *syncState, songsToSync map[uint]*cor
 			}
 
 			// Write to disk
-			if err := copyFile(outputStream, filepath.Join(sync.Device.mountpoint, songPath)); err != nil {
+			if err := copyFile(outputStream, filepath.Join(rockDevRT.mountpoint, songPath)); err != nil {
 				unwrappedErr := errors.Unwrap(err)
 
 				// ...someone please clean this check up
@@ -538,7 +543,7 @@ func (rockDevRT *RockDevRT) copySongs(sync *syncState, songsToSync map[uint]*cor
 
 		rockDevRT.rockboxRT.logger.Debug("Sync->backingThread: Writing tags to target media")
 
-		if err := taglib.WriteTags(filepath.Join(sync.Device.mountpoint, songPath), newTags, taglib.Clear); err != nil {
+		if err := taglib.WriteTags(filepath.Join(rockDevRT.mountpoint, songPath), newTags, taglib.Clear); err != nil {
 			// Do similar checks for the tag writing
 			if err.Error() == "can't save file" {
 				if restartCounter == 3 {
@@ -572,7 +577,7 @@ func (rockDevRT *RockDevRT) copySongs(sync *syncState, songsToSync map[uint]*cor
 			}
 
 			// Write it
-			if err := taglib.WriteImage(filepath.Join(sync.Device.mountpoint, songPath), buf.Bytes()); err != nil {
+			if err := taglib.WriteImage(filepath.Join(rockDevRT.mountpoint, songPath), buf.Bytes()); err != nil {
 				return fmt.Errorf("failed to embed thumbnail into image: %w", err)
 			}
 		}
@@ -582,7 +587,7 @@ func (rockDevRT *RockDevRT) copySongs(sync *syncState, songsToSync map[uint]*cor
 			if _, err := os.Stat(filepath.Join(directoryPath, "cover.bmp")); err != nil {
 				if errors.Is(err, os.ErrNotExist) {
 					rockDevRT.rockboxRT.logger.Debug("Sync->backingThread: cover.bmp does not exist, writing")
-					existingImage, err := rockDevRT.upstreamRuntime.GetArt(song.ArtID)
+					existingImage, err := rockDevRT.upstreamRuntime.GetArt(song.Record.ArtID)
 
 					if err != nil {
 						return fmt.Errorf("failed to read album thumbnail: %w", err)
@@ -671,7 +676,8 @@ func (rockDevRT *RockDevRT) copySongs(sync *syncState, songsToSync map[uint]*cor
 
 		// Update the total songs synced count
 		timeRemaining := calculateRollingTimeAverage(sync, len(songsToSync)-int(songIndex)-1)
-		rockDevRT.sendImportProgress(fmt.Sprintf("Syncing song: %s - %s (%s)", song.PrimaryArtist.Name, song.Title, timeRemaining), int((float32(songIndex+1)/float32(len(songsToSync)))*100), fmt.Sprintf("%d/%d", songIndex+1, len(songsToSync)), false)
+		rockDevRT.sendSyncProgress(fmt.Sprintf("Syncing song: %s - %s (%s)", song.PrimaryArtist.Name, song.Title, timeRemaining), int((float32(syncedSongCounter+1)/float32(len(songsToSync)))*100), fmt.Sprintf("%d/%d", songIndex+1, len(songsToSync)), false)
+		syncedSongCounter++
 	}
 
 	return nil
@@ -680,7 +686,7 @@ func (rockDevRT *RockDevRT) copySongs(sync *syncState, songsToSync map[uint]*cor
 // Syncs the playlists on the device, removing any that no longer exist and adding any new ones, merging if necessary
 func (rockDevRT *RockDevRT) syncPlaylists(sync *syncState) error {
 	// First, create the Playlists folder if it doesn't exist
-	if err := os.MkdirAll(filepath.Join(sync.Device.mountpoint, "Playlists"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(rockDevRT.mountpoint, "Playlists"), 0755); err != nil {
 		return fmt.Errorf("failed to create Playlists folder: %w", err)
 	}
 
@@ -720,7 +726,7 @@ func (rockDevRT *RockDevRT) syncPlaylists(sync *syncState) error {
 
 			// If we don't have this playlist in the database, remove it from the device
 			if !hasThisPlaylistInLocalDatabase {
-				if err := os.Remove(filepath.Join(sync.Device.mountpoint, onDevicePlaylist.RelativePath)); err != nil && !os.IsNotExist(err) {
+				if err := os.Remove(filepath.Join(rockDevRT.mountpoint, onDevicePlaylist.RelativePath)); err != nil && !os.IsNotExist(err) {
 					panic(fmt.Sprintf("Failed to remove playlist: %v", err))
 				}
 			}
@@ -750,7 +756,7 @@ func (rockDevRT *RockDevRT) syncPlaylists(sync *syncState) error {
 		if playlistMetadataEntry == nil {
 			snapshotFolder := filepath.Join(".eurydice", "ertplaylistsnapshots", strconv.Itoa(int(rockDevRT.upstreamRuntime.GetUniqueInstanceID())))
 
-			if err := os.MkdirAll(filepath.Join(sync.Device.mountpoint, snapshotFolder), 0755); err != nil {
+			if err := os.MkdirAll(filepath.Join(rockDevRT.mountpoint, snapshotFolder), 0755); err != nil {
 				return fmt.Errorf("failed to create playlist directory: %w", err)
 			}
 
@@ -769,7 +775,7 @@ func (rockDevRT *RockDevRT) syncPlaylists(sync *syncState) error {
 					playlistFilePath = filepath.Join("Playlists", sanitizedPlaylistName+".m3u8")
 				}
 
-				if _, err := os.Stat(filepath.Join(sync.Device.mountpoint, playlistFilePath)); err == nil {
+				if _, err := os.Stat(filepath.Join(rockDevRT.mountpoint, playlistFilePath)); err == nil {
 					playlistDuplicateFilenameCount++
 					continue
 				}
@@ -790,7 +796,7 @@ func (rockDevRT *RockDevRT) syncPlaylists(sync *syncState) error {
 
 			rockDevRT.metadata.Playlists = append(rockDevRT.metadata.Playlists, playlistMetadataEntry)
 		} else if playlistMetadataEntry.LastKnownName != playlist.Name {
-			if err := os.Remove(filepath.Join(sync.Device.mountpoint, playlistMetadataEntry.RelativePath)); err != nil {
+			if err := os.Remove(filepath.Join(rockDevRT.mountpoint, playlistMetadataEntry.RelativePath)); err != nil {
 				return fmt.Errorf("failed to remove old playlist with outdated name: %w", err)
 			}
 
@@ -807,7 +813,7 @@ func (rockDevRT *RockDevRT) syncPlaylists(sync *syncState) error {
 					playlistFilePath = filepath.Join("Playlists", cleanedPlaylistName+".m3u8")
 				}
 
-				if _, err := os.Stat(filepath.Join(sync.Device.mountpoint, playlistFilePath)); err == nil {
+				if _, err := os.Stat(filepath.Join(rockDevRT.mountpoint, playlistFilePath)); err == nil {
 					playlistDuplicateFilenameCount++
 					continue
 				}
@@ -820,7 +826,7 @@ func (rockDevRT *RockDevRT) syncPlaylists(sync *syncState) error {
 		}
 
 		// Read existing playlist and compare hashes (if it exists)
-		if playlistFile, err := os.ReadFile(filepath.Join(sync.Device.mountpoint, playlistMetadataEntry.RelativePath)); err == nil {
+		if playlistFile, err := os.ReadFile(filepath.Join(rockDevRT.mountpoint, playlistMetadataEntry.RelativePath)); err == nil {
 			playlistHashOnDisk := md5.Sum(playlistFile)
 			playlistHashInMetadata, err := hex.DecodeString(playlistMetadataEntry.PlaylistHash)
 
@@ -847,7 +853,7 @@ func (rockDevRT *RockDevRT) syncPlaylists(sync *syncState) error {
 					continue
 				}
 
-				playlistContentsSnapshotStr, err := os.ReadFile(filepath.Join(sync.Device.mountpoint, playlistMetadataEntry.SnapshotPath))
+				playlistContentsSnapshotStr, err := os.ReadFile(filepath.Join(rockDevRT.mountpoint, playlistMetadataEntry.SnapshotPath))
 
 				if err != nil {
 					rockDevRT.rockboxRT.logger.Warnf("Failed to read playlist snapshot: %v", err)
@@ -981,7 +987,7 @@ func (rockDevRT *RockDevRT) Sync(playlistsToSync []*core.Playlist, removeOrphane
 	sync.PlaylistList = playlistsToSync
 
 	// Step 1: Fetch data from the device and the database
-	rockDevRT.sendImportProgress("Fetching data from the connected Rockbox player...", -1, "Fetching...", false)
+	rockDevRT.sendSyncProgress("Fetching data from the connected Rockbox player...", -1, "Fetching...", false)
 	rockDevRT.rockboxRT.logger.Debugf("Sync->backingThread: Parsing Eurydice metadata")
 
 	songsToSync, songsThatDoNotNeedMetadata, songsToDelete, err := rockDevRT.fetchSongsToSync(sync)
@@ -993,9 +999,9 @@ func (rockDevRT *RockDevRT) Sync(playlistsToSync []*core.Playlist, removeOrphane
 	rockDevRT.rockboxRT.logger.Debugf("Sync->backingThread: Fetched metadata, about to start copying process. Going to copy %d songs", len(songsToSync))
 
 	// Step 2: copy the songs over
-	rockDevRT.sendImportProgress("Copying songs...", -1, "Copying...", false)
+	rockDevRT.sendSyncProgress("Copying songs...", -1, "Copying...", false)
 
-	eurydiceMetadataPath := filepath.Join(sync.Device.mountpoint, ".eurydice.json")
+	eurydiceMetadataPath := filepath.Join(rockDevRT.mountpoint, ".eurydice.json")
 
 	if err := rockDevRT.copySongs(sync, songsToSync, songsThatDoNotNeedMetadata, eurydiceMetadataPath); err != nil {
 		panic(fmt.Sprintf("Failed to copy songs: %v", err))
@@ -1004,19 +1010,23 @@ func (rockDevRT *RockDevRT) Sync(playlistsToSync []*core.Playlist, removeOrphane
 	// Step 3: if needed, delete old songs
 	if sync.DeleteOldSongs && len(songsToDelete) > 0 {
 		for songIndex, song := range songsToDelete {
-			rockDevRT.sendImportProgress(fmt.Sprintf("Deleting song: (device)/%s", song.RelativePath), int((float32(songIndex+1)/float32(len(songsToDelete)))*100), fmt.Sprintf("%d/%d", songIndex+1, len(songsToDelete)), false)
+			rockDevRT.sendSyncProgress(fmt.Sprintf("Deleting song: (device)/%s", song.RelativePath), int((float32(songIndex+1)/float32(len(songsToDelete)))*100), fmt.Sprintf("%d/%d", songIndex+1, len(songsToDelete)), false)
+
+			if err := os.Remove(filepath.Join(rockDevRT.mountpoint, song.RelativePath)); err != nil && !errors.Is(err, os.ErrNotExist) {
+				panic(fmt.Sprintf("Failed to delete song: %v", err))
+			}
 		}
 	}
 
 	// Step 4: sync playlists
-	rockDevRT.sendImportProgress("Syncing playlists...", -1, "Syncing...", false)
+	rockDevRT.sendSyncProgress("Syncing playlists...", -1, "Syncing...", false)
 
 	if err := rockDevRT.syncPlaylists(sync); err != nil {
 		panic(fmt.Sprintf("Failed to sync playlists: %v", err))
 	}
 
 	// Step 5: cleanup tasks
-	rockDevRT.sendImportProgress("Cleaning up...", -1, "Cleaning...", false)
+	rockDevRT.sendSyncProgress("Cleaning up...", -1, "Cleaning...", false)
 
 	marshalledMetadata, err := json.Marshal(rockDevRT.metadata)
 
@@ -1027,6 +1037,8 @@ func (rockDevRT *RockDevRT) Sync(playlistsToSync []*core.Playlist, removeOrphane
 	if err := os.WriteFile(eurydiceMetadataPath, marshalledMetadata, 0644); err != nil {
 		panic(fmt.Sprintf("Failed to write metadata: %v", err))
 	}
+
+	rockDevRT.sendSyncProgress("Finished syncing!", 100, "Done!", true)
 
 	return true, nil
 }

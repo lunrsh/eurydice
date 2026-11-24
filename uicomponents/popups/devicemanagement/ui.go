@@ -1,24 +1,19 @@
 package devicemanagement
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
-	"git.lunr.sh/luna/eurydice/euryrt/manageimpl/eurydice/database"
+	"git.lunr.sh/luna/eurydice/euryrt/core"
+	"git.lunr.sh/luna/eurydice/oncrash"
 	stateStructs "git.lunr.sh/luna/eurydice/state"
 	"git.lunr.sh/luna/eurydice/state/popupstate/mgmtstate"
-	"git.lunr.sh/luna/eurydice/state/syncstate"
 	"git.lunr.sh/luna/eurydice/uicomponents/widgets/mediamanagement"
 	"git.lunr.sh/luna/eurydice/uicomponents/widgets/playlistmanagement"
 	"git.lunr.sh/luna/eurydice/uicomponents/widgets/songmanagement"
 	"git.lunr.sh/luna/eurydice/utilities"
 	"github.com/AllenDang/cimgui-go/imgui"
 	"github.com/shirou/gopsutil/v4/disk"
-	"gorm.io/gorm"
 )
 
 const tableFlags = imgui.TableFlagsSizingFixedFit |
@@ -29,7 +24,80 @@ const tableFlags = imgui.TableFlagsSizingFixedFit |
 
 var greyText = imgui.Vec4{X: 172.0 / 255, Y: 172.0 / 255, Z: 172.0 / 255, W: 255.0 / 255}
 
+func selectAndInitDevice(state *stateStructs.ApplicationState, deviceIndex int32) error {
+	if int(deviceIndex) < 0 || int(deviceIndex) >= len(state.PageStates.DeviceMgmt.Devices) {
+		return fmt.Errorf("invalid device index: %d", deviceIndex)
+	}
+
+	targetDevice := state.PageStates.DeviceMgmt.Devices[deviceIndex]
+
+	if !state.SyncRT.MatchDevice(targetDevice.Mountpoint) {
+		return fmt.Errorf("selected device at %s is not supported by active sync runtime (%s)", targetDevice.Mountpoint, state.SyncRT.PluginID())
+	}
+
+	initializedDevice, err := state.SyncRT.InitializeDevice(targetDevice.Mountpoint, state.CoreRT)
+
+	if err != nil {
+		return fmt.Errorf("failed to initialize device at %s: %w", targetDevice.Mountpoint, err)
+	}
+
+	// Register handlers once on the newly initialized device instance
+	initializedDevice.RegisterDeletionHandler(func(progressMessage string, progressBar int, progressBarMessage string, doneDeleting bool) {
+		if progressMessage != "" {
+			state.PageStates.DeviceMgmt.ProgressMessage = progressMessage
+		}
+
+		state.PageStates.DeviceMgmt.ProgressBar = progressBar
+
+		if progressBarMessage != "" {
+			state.PageStates.DeviceMgmt.ProgressBarMessage = progressBarMessage
+		}
+
+		if doneDeleting {
+			state.PageStates.DeviceMgmt.DeletionIsDone = true
+		}
+	})
+
+	initializedDevice.RegisterImportHandler(func(progressMessage string, progressBar int, progressBarMessage string, doneImporting bool) {
+		if progressMessage != "" {
+			state.PageStates.DeviceMgmt.ProgressMessage = progressMessage
+		}
+
+		state.PageStates.DeviceMgmt.ProgressBar = progressBar
+
+		if progressBarMessage != "" {
+			state.PageStates.DeviceMgmt.ProgressBarMessage = progressBarMessage
+		}
+
+		if doneImporting {
+			state.PageStates.DeviceMgmt.ImportState = mgmtstate.ImportStateDone
+		}
+	})
+
+	state.PageStates.DeviceMgmt.SelectedDevice = initializedDevice
+	state.PageStates.DeviceMgmt.DisplayedPlaylist = nil
+	state.PageStates.DeviceMgmt.DisplayedSongs = []*mgmtstate.DisplayedSong{}
+
+	playlistsOnDevice, err := initializedDevice.GetPlaylistsOnDevice()
+
+	if err != nil {
+		return fmt.Errorf("failed to get playlists on device: %w", err)
+	}
+
+	state.PageStates.DeviceMgmt.PlaylistsOnDevice = playlistsOnDevice
+
+	return nil
+}
+
 func scanAndUpdateDevices(state *stateStructs.ApplicationState) {
+	// We rebuild the device list from scratch each time this is run, so we save the current device name to set the
+	// selected device after the list is rebuilt.
+	var currentDeviceName string // pulled from Devices.Name; should be /dev/sda1, D:, etc.
+
+	if int(state.PageStates.DeviceMgmt.UISelectedDeviceIndex) >= 0 && int(state.PageStates.DeviceMgmt.UISelectedDeviceIndex) < len(state.PageStates.DeviceMgmt.Devices) {
+		currentDeviceName = state.PageStates.DeviceMgmt.Devices[state.PageStates.DeviceMgmt.UISelectedDeviceIndex].Name
+	}
+
 	// Clear the device list
 	state.PageStates.DeviceMgmt.Devices = []*mgmtstate.MgmtDevice{}
 
@@ -40,30 +108,12 @@ func scanAndUpdateDevices(state *stateStructs.ApplicationState) {
 		panic(fmt.Sprintf("Failed to get partitions: %v", err))
 	}
 
-	// We rebuild the device list from scratch each time this is run, so we save the current device name to set the
-	// selected device after the list is rebuilt.
-	var currentDeviceName string // pulled from Devices.Name; should be /dev/sda1, D:, etc.
-	var validDeviceIndex int32   // used to update UISelectedDeviceIndex in the event that we find a suitable replacement device
-
-	if state.PageStates.DeviceMgmt.SelectedDevice != nil {
-		currentDeviceName = state.PageStates.DeviceMgmt.SelectedDevice.Name
-	}
+	var validDeviceIndex int32 // used to update UISelectedDeviceIndex in the event that we find a suitable replacement device
+	matchedPreviousDevice := false
 
 	for _, partition := range partitions {
-		if _, err := os.ReadDir(filepath.Join(partition.Mountpoint, ".rockbox")); err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				// Check if we have Eurydice metadata on this partition, and if we don't, then skip this
-				if _, err := os.ReadFile(filepath.Join(partition.Mountpoint, ".eurydice.json")); err != nil {
-					state.Logger.Debugf("Partition %s does not contain a .rockbox directory or a eurydice metadata file, skipping", partition.Mountpoint)
-					continue
-				}
-			} else if errors.Is(err, os.ErrPermission) {
-				state.Logger.Debugf("Partition %s's .rockbox directory is not accessible, skipping", partition.Mountpoint)
-				continue
-			} else {
-				state.Logger.Errorf("Unexpected error: %v", err)
-				continue
-			}
+		if !state.SyncRT.MatchDevice(partition.Mountpoint) {
+			continue
 		}
 
 		diskUsage, err := disk.Usage(partition.Mountpoint)
@@ -82,94 +132,53 @@ func scanAndUpdateDevices(state *stateStructs.ApplicationState) {
 		state.PageStates.DeviceMgmt.Devices = append(state.PageStates.DeviceMgmt.Devices, foundDevice)
 
 		if foundDevice.Name == currentDeviceName {
-			state.PageStates.DeviceMgmt.SelectedDevice = foundDevice
 			state.PageStates.DeviceMgmt.UISelectedDeviceIndex = validDeviceIndex
+			matchedPreviousDevice = true
 		}
 
 		validDeviceIndex++ // increment after appending to Devices so the index matches the device's position in the slice
 
-		state.Logger.Infof("Found a matching Rockbox device: %s (%s)", partition.Device, partition.Mountpoint)
+		state.Logger.Infof("Found a matching device (%s): %s (%s)", state.SyncRT.PluginID(), partition.Device, partition.Mountpoint)
 	}
-}
 
-func getMetadataOnDevice(state *stateStructs.ApplicationState) error {
-	// Reset state and then pull the metadata file on disk
-	state.PageStates.DeviceMgmt.DisplayedPlaylist = nil
-	state.PageStates.DeviceMgmt.MetadataOnDevice = &syncstate.SyncMetadata{}
-	metadataOnDevice, err := os.ReadFile(filepath.Join(state.PageStates.DeviceMgmt.SelectedDevice.Mountpoint, ".eurydice.json"))
+	if !matchedPreviousDevice {
+		state.PageStates.DeviceMgmt.UISelectedDeviceIndex = 0
+	}
 
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
+	if len(state.PageStates.DeviceMgmt.Devices) > 0 {
+		if err := selectAndInitDevice(state, state.PageStates.DeviceMgmt.UISelectedDeviceIndex); err != nil {
+			state.Logger.Errorf("Failed to initialize device after scan: %v", err)
+			state.PageStates.DeviceMgmt.ErrHint = fmt.Sprintf("Failed to get metadata on device: %v", err)
+			state.PageStates.DeviceMgmt.IsErrRecoverable = false
 		}
-
-		return fmt.Errorf("failed to read metadata on device: %w", err)
 	}
-
-	// Parse it!
-	err = json.Unmarshal(metadataOnDevice, state.PageStates.DeviceMgmt.MetadataOnDevice)
-
-	if err != nil {
-		return fmt.Errorf("failed to unmarshal metadata on device: %w", err)
-	}
-
-	return nil
 }
 
-func populateSongsFromGivenPlaylist(state *stateStructs.ApplicationState, playlist *syncstate.PlaylistMetadata) error {
+func populateSongsFromGivenPlaylist(state *stateStructs.ApplicationState, playlist *core.Playlist) error {
 	state.PageStates.DeviceMgmt.DisplayedSongs = []*mgmtstate.DisplayedSong{} // Clear out any existing songs
 
-	isFromOurEurydiceInstance := playlist.InstallationID == state.Config.JSONConfig.InstallationID && playlist.LibraryID == state.Config.ActiveLibrary.ID
-	playlistContents, err := os.ReadFile(filepath.Join(state.PageStates.DeviceMgmt.SelectedDevice.Mountpoint, playlist.RelativePath))
+	songsOnDevice, err := state.PageStates.DeviceMgmt.SelectedDevice.GetSongsFromPlaylistOnDevice(playlist)
 
 	if err != nil {
-		return fmt.Errorf("failed to read playlist contents: %w", err)
+		return fmt.Errorf("failed to get songs from playlist on device: %w", err)
 	}
 
-	parsedPlaylistContents, err := utilities.TinyPlaylistParser(string(playlistContents))
-
-	if err != nil {
-		return fmt.Errorf("failed to parse playlist contents: %w", err)
-	}
-
-	for _, song := range parsedPlaylistContents {
-		hasFailedToPullSong := false
-
-	startOfSongLoop: // When we fail to pull a song, we retry with the generic fallback
-		if isFromOurEurydiceInstance && !hasFailedToPullSong {
-			songFromDatabase := &database.Song{}
-
-			// TODO: Not caching artists & IDs will cause memory leaks later. Too bad!
-			if err := state.Config.Database.Preload("PrimaryArtist").Preload("CollabArtists").Preload("Record").Where("id = ?", song.EurydiceSongID).First(songFromDatabase).Error; err != nil {
-				if errors.Is(err, gorm.ErrRecordNotFound) {
-					hasFailedToPullSong = true
-					goto startOfSongLoop // to start the loop over with the generic fallback that we typically use w/ external playlists
-				} else {
-					return fmt.Errorf("failed to find song in database: %w", err)
-				}
-			}
-
-			artists := make([]string, 1, len(songFromDatabase.CollabArtists)+1)
-			artists[0] = songFromDatabase.PrimaryArtist.Name
-
-			for _, artist := range songFromDatabase.CollabArtists {
-				artists = append(artists, artist.Name)
-			}
-
-			state.PageStates.DeviceMgmt.DisplayedSongs = append(state.PageStates.DeviceMgmt.DisplayedSongs, &mgmtstate.DisplayedSong{
-				SongID: songFromDatabase.ID,
-				ArtID:  songFromDatabase.ArtID,
-
-				Name:    songFromDatabase.Title,
-				Artists: artists,
-			})
-		} else {
-			state.PageStates.DeviceMgmt.DisplayedSongs = append(state.PageStates.DeviceMgmt.DisplayedSongs, &mgmtstate.DisplayedSong{
-				SongID:  uint(song.EurydiceSongID),
-				Name:    song.DisplayName,
-				Artists: []string{song.FilePath},
-			})
+	for _, song := range songsOnDevice {
+		artists := []string{}
+		if song.PrimaryArtist != nil {
+			artists = append(artists, song.PrimaryArtist.Name)
 		}
+
+		for _, collabArtist := range song.CollabArtists {
+			artists = append(artists, collabArtist.Name)
+		}
+
+		state.PageStates.DeviceMgmt.DisplayedSongs = append(state.PageStates.DeviceMgmt.DisplayedSongs, &mgmtstate.DisplayedSong{
+			SongID:  song.ID,
+			ArtID:   song.ArtID,
+			Name:    song.Title,
+			Artists: artists,
+		})
 	}
 
 	state.PageStates.DeviceMgmt.DisplayedPlaylist = playlist
@@ -181,12 +190,55 @@ func populateSongsFromGivenPlaylist(state *stateStructs.ApplicationState, playli
 func cleanupState(state *stateStructs.ApplicationState) {
 	state.PageStates.DeviceMgmt.Devices = []*mgmtstate.MgmtDevice{}
 	state.PageStates.DeviceMgmt.DisplayedSongs = []*mgmtstate.DisplayedSong{}
+	state.PageStates.DeviceMgmt.PlaylistsOnDevice = []*core.Playlist{}
 
 	state.PageStates.DeviceMgmt.DisplayedPlaylist = nil
-	state.PageStates.DeviceMgmt.MetadataOnDevice = nil
 	state.PageStates.DeviceMgmt.SelectedDevice = nil
 
 	state.PageStates.DeviceMgmt.UISelectedDeviceIndex = 0
+}
+
+func deleteBackingThread(state *stateStructs.ApplicationState) {
+	defer func() {
+		if err := recover(); err != nil {
+			oncrash.Panic("Eurydice crash handler", fmt.Sprintf("Uncaught exception in device deletion background task: %s", err), state.Logger, state.LogFilePath)
+		}
+	}()
+
+	err := state.PageStates.DeviceMgmt.SelectedDevice.DeleteOnDevicePlaylist(
+		state.PageStates.DeviceMgmt.PlaylistToDelete,
+		state.PageStates.DeviceMgmt.DeletionDeleteAssociatedSongs,
+	)
+
+	if err != nil {
+		state.Logger.Errorf("Failed to delete playlist on device: %v", err)
+		state.PageStates.DeviceMgmt.ErrHint = fmt.Sprintf("Failed to delete playlist on device: %v", err)
+		state.PageStates.DeviceMgmt.IsErrRecoverable = true
+	}
+
+	// Wait until DeleteOnDevicePlaylist completes to mark done
+	state.PageStates.DeviceMgmt.DeletionIsDone = true
+}
+
+func importBackingThread(state *stateStructs.ApplicationState) {
+	defer func() {
+		if err := recover(); err != nil {
+			oncrash.Panic("Eurydice crash handler", fmt.Sprintf("Uncaught exception in device import background task: %s", err), state.Logger, state.LogFilePath)
+		}
+	}()
+
+	err := state.PageStates.DeviceMgmt.SelectedDevice.ImportSongsFromPlaylist(
+		state.PageStates.DeviceMgmt.PlaylistToImport,
+	)
+
+	if err != nil {
+		state.Logger.Errorf("Failed to import playlist from device: %v", err)
+		state.PageStates.DeviceMgmt.ErrHint = fmt.Sprintf("Failed to import playlist from device: %v", err)
+		state.PageStates.DeviceMgmt.IsErrRecoverable = true
+	}
+
+	// Wait until ImportSongsFromPlaylist completes to mark done
+	state.PageStates.DeviceMgmt.ImportState = mgmtstate.ImportStateDone
 }
 
 func renderDeletingPlaylistPopup(state *stateStructs.ApplicationState) {
@@ -205,11 +257,33 @@ func renderDeletingPlaylistPopup(state *stateStructs.ApplicationState) {
 		return
 	}
 
-	imgui.Text("Deleting playlist...\n")
+	progressMessage := state.PageStates.DeviceMgmt.ProgressMessage
+	if progressMessage == "" {
+		progressMessage = "Deleting playlist..."
+	}
+
+	if len(progressMessage) > 65 {
+		progressMessage = "..." + progressMessage[len(progressMessage)-(65-3):]
+	}
+
+	imgui.Text(progressMessage + "\n")
 	imgui.Separator()
 	imgui.SetCursorPosY(imgui.CursorPosY() + 1) // Do this because it's not exactly the same
 
-	imgui.ProgressBarV(float32(imgui.Time()*-0.25), imgui.Vec2{X: 600, Y: 0}, "Deleting...")
+	progressBarMessage := state.PageStates.DeviceMgmt.ProgressBarMessage
+	if progressBarMessage == "" {
+		progressBarMessage = "Deleting..."
+	}
+
+	var fraction float32
+	if state.PageStates.DeviceMgmt.ProgressBar < 0 {
+		fraction = float32(imgui.Time() * -0.25)
+	} else {
+		capped := min(state.PageStates.DeviceMgmt.ProgressBar, 100)
+		fraction = float32(capped) / 100.0
+	}
+
+	imgui.ProgressBarV(fraction, imgui.Vec2{X: 600, Y: 0}, progressBarMessage)
 	imgui.EndPopup()
 }
 
@@ -241,31 +315,34 @@ func renderImportingPlaylistPopup(state *stateStructs.ApplicationState) {
 		return
 	}
 
-	switch state.PageStates.DeviceMgmt.ImportState {
-	case mgmtstate.ImportStateImportingSongs:
-		imgui.Text("Adding or copying songs from the connected device, please wait...\n")
-		currentSongPath := state.PageStates.DeviceMgmt.CurrentSongPath
+	progressMessage := state.PageStates.DeviceMgmt.ProgressMessage
 
-		if len(currentSongPath) > 65 {
-			// Truncate characters but leave room for the ellipsis prefix
-			currentSongPath = "..." + currentSongPath[len(currentSongPath)-(65-3):]
-		}
-
-		imgui.Text(fmt.Sprintf("Currently adding: %s\n", currentSongPath))
-		imgui.Separator()
-		imgui.SetCursorPosY(imgui.CursorPosY() + 1) // Do this because it's not exactly the same
-
-		progressBarText := fmt.Sprintf("Adding... (%d/%d)", state.PageStates.DeviceMgmt.TotalSongsImported+1, state.PageStates.DeviceMgmt.TotalSongsToImport+1)
-
-		imgui.ProgressBarV(float32(state.PageStates.DeviceMgmt.TotalSongsImported)/float32(state.PageStates.DeviceMgmt.TotalSongsToImport), imgui.Vec2{X: 600, Y: 0}, progressBarText)
-	case mgmtstate.ImportStateImportingPlaylist:
-		imgui.Text("Importing playlist, please wait...\n")
-		imgui.Separator()
-		imgui.SetCursorPosY(imgui.CursorPosY() + 1) // Do this because it's not exactly the same
-
-		imgui.ProgressBarV(float32(imgui.Time()*-0.25), imgui.Vec2{X: 600, Y: 0}, "Initializing...")
+	if progressMessage == "" {
+		progressMessage = "Adding or copying songs from the connected device, please wait..."
 	}
 
+	if len(progressMessage) > 65 {
+		progressMessage = "..." + progressMessage[len(progressMessage)-(65-3):]
+	}
+
+	imgui.Text(progressMessage + "\n")
+	imgui.Separator()
+	imgui.SetCursorPosY(imgui.CursorPosY() + 1) // Do this because it's not exactly the same
+
+	progressBarMessage := state.PageStates.DeviceMgmt.ProgressBarMessage
+	if progressBarMessage == "" {
+		progressBarMessage = "Importing..."
+	}
+
+	var fraction float32
+	if state.PageStates.DeviceMgmt.ProgressBar < 0 {
+		fraction = float32(imgui.Time() * -0.25)
+	} else {
+		capped := min(state.PageStates.DeviceMgmt.ProgressBar, 100)
+		fraction = float32(capped) / 100.0
+	}
+
+	imgui.ProgressBarV(fraction, imgui.Vec2{X: 600, Y: 0}, progressBarMessage)
 	imgui.EndPopup()
 }
 
@@ -275,9 +352,9 @@ func Render(state *stateStructs.ApplicationState) {
 	shouldOpenImportPopup := false
 
 	if imgui.BeginPopupModalV("Delete Playlist? | Device Management", nil, imgui.WindowFlagsAlwaysAutoResize) {
-		imgui.Text(fmt.Sprintf("Are you sure you want to delete the playlist '%s'?", state.PageStates.DeviceMgmt.PlaylistToDelete.LastKnownName))
+		imgui.Text(fmt.Sprintf("Are you sure you want to delete the playlist '%s'?", state.PageStates.DeviceMgmt.PlaylistToDelete.Name))
 
-		if state.PageStates.DeviceMgmt.PlaylistToDelete.InstallationID != state.Config.JSONConfig.InstallationID || state.PageStates.DeviceMgmt.PlaylistToDelete.LibraryID != state.Config.ActiveLibrary.ID {
+		if state.PageStates.DeviceMgmt.PlaylistToDelete.IsHollowObject {
 			imgui.Text("WARNING! This playlist is not associated with your current library. If this is a shared device, this will affect other people!")
 		}
 
@@ -286,10 +363,14 @@ func Render(state *stateStructs.ApplicationState) {
 		imgui.Spacing()
 
 		if imgui.Button("Delete") {
+			state.PageStates.DeviceMgmt.DeletionIsDone = false
+			state.PageStates.DeviceMgmt.ProgressMessage = "Deleting playlist..."
+			state.PageStates.DeviceMgmt.ProgressBar = -1
+			state.PageStates.DeviceMgmt.ProgressBarMessage = "Deleting..."
+
 			go deleteBackingThread(state)
 
 			imgui.CloseCurrentPopup()
-			state.PageStates.DeviceMgmt.DeletionIsDone = false
 
 			shouldOpenDeletionPopup = true
 		}
@@ -305,16 +386,20 @@ func Render(state *stateStructs.ApplicationState) {
 	}
 
 	if imgui.BeginPopupModalV("Import Playlist? | Device Management", nil, imgui.WindowFlagsAlwaysAutoResize) {
-		imgui.Text(fmt.Sprintf("Are you sure you would like to import the playlist '%s'?", state.PageStates.DeviceMgmt.PlaylistToImport.LastKnownName))
+		imgui.Text(fmt.Sprintf("Are you sure you would like to import the playlist '%s'?", state.PageStates.DeviceMgmt.PlaylistToImport.Name))
 		imgui.Text("This will also copy over any applicable songs that are not present in your library!")
 
 		imgui.Spacing()
 
 		if imgui.Button("Import") {
+			state.PageStates.DeviceMgmt.ImportState = mgmtstate.ImportStateImportingSongs
+			state.PageStates.DeviceMgmt.ProgressMessage = "Importing songs..."
+			state.PageStates.DeviceMgmt.ProgressBar = -1
+			state.PageStates.DeviceMgmt.ProgressBarMessage = "Importing..."
+
 			go importBackingThread(state)
 
 			imgui.CloseCurrentPopup()
-			state.PageStates.DeviceMgmt.ImportState = mgmtstate.ImportStateImportingSongs
 
 			shouldOpenImportPopup = true
 		}
@@ -347,9 +432,7 @@ func Render(state *stateStructs.ApplicationState) {
 
 	if state.PageStates.DeviceMgmt.SelectedDevice == nil {
 		if len(state.PageStates.DeviceMgmt.Devices) > 0 {
-			state.PageStates.DeviceMgmt.SelectedDevice = state.PageStates.DeviceMgmt.Devices[0]
-
-			if err := getMetadataOnDevice(state); err != nil {
+			if err := selectAndInitDevice(state, 0); err != nil {
 				state.PageStates.DeviceMgmt.ErrHint = fmt.Sprintf("Failed to get metadata on device: %v", err)
 				state.PageStates.DeviceMgmt.IsErrRecoverable = false
 
@@ -366,7 +449,7 @@ func Render(state *stateStructs.ApplicationState) {
 			scanAndUpdateDevices(state)
 
 			if len(state.PageStates.DeviceMgmt.Devices) == 0 {
-				state.PageStates.DeviceMgmt.ErrHint = "No devices running Rockbox found! Is your music player plugged in?"
+				state.PageStates.DeviceMgmt.ErrHint = "No compatible devices found! Is your music player plugged in?"
 				state.PageStates.DeviceMgmt.IsErrRecoverable = false
 
 				imgui.CloseCurrentPopup()
@@ -377,27 +460,20 @@ func Render(state *stateStructs.ApplicationState) {
 				imgui.OpenPopupStr("Error | Device Management")
 
 				return
-			} else {
-				state.PageStates.DeviceMgmt.SelectedDevice = state.PageStates.DeviceMgmt.Devices[0]
+			} else if state.PageStates.DeviceMgmt.ErrHint != "" {
+				imgui.CloseCurrentPopup()
+				imgui.EndPopup()
 
-				if err := getMetadataOnDevice(state); err != nil {
-					state.PageStates.DeviceMgmt.ErrHint = fmt.Sprintf("Failed to get metadata on device: %v", err)
-					state.PageStates.DeviceMgmt.IsErrRecoverable = false
+				cleanupState(state)
 
-					imgui.CloseCurrentPopup()
-					imgui.EndPopup()
+				imgui.OpenPopupStr("Error | Device Management")
 
-					cleanupState(state)
-
-					imgui.OpenPopupStr("Error | Device Management")
-
-					return
-				}
+				return
 			}
 		}
 	}
 
-	displayedDeviceList := []string{}
+	displayedDeviceList := make([]string, 0, len(state.PageStates.DeviceMgmt.Devices))
 
 	for _, device := range state.PageStates.DeviceMgmt.Devices {
 		var displayedText string
@@ -417,11 +493,8 @@ func Render(state *stateStructs.ApplicationState) {
 	imgui.SetNextItemWidth(570)
 
 	if imgui.ComboStrarr("##SelectedDevice", &state.PageStates.DeviceMgmt.UISelectedDeviceIndex, displayedDeviceList, int32(len(displayedDeviceList))) {
-		state.PageStates.DeviceMgmt.SelectedDevice = state.PageStates.DeviceMgmt.Devices[state.PageStates.DeviceMgmt.UISelectedDeviceIndex]
-
-		if err := getMetadataOnDevice(state); err != nil {
+		if err := selectAndInitDevice(state, state.PageStates.DeviceMgmt.UISelectedDeviceIndex); err != nil {
 			state.PageStates.DeviceMgmt.UISelectedDeviceIndex = 0
-			state.PageStates.DeviceMgmt.SelectedDevice = state.PageStates.DeviceMgmt.Devices[state.PageStates.DeviceMgmt.UISelectedDeviceIndex]
 
 			state.PageStates.DeviceMgmt.ErrHint = fmt.Sprintf("Failed to get metadata on device: %v", err)
 			state.PageStates.DeviceMgmt.IsErrRecoverable = true
@@ -462,16 +535,18 @@ func Render(state *stateStructs.ApplicationState) {
 	shouldShowDeletionPopup := false
 	shouldShowImportPopup := false
 
-	if imgui.BeginChildStrV("##PlaylistSelection", imgui.Vec2{X: 250, Y: 300}, imgui.ChildFlagsBorders, 0) {
-		for _, playlist := range state.PageStates.DeviceMgmt.MetadataOnDevice.Playlists {
-			playlistOrigin := playlist.InstallationID ^ playlist.LibraryID // generate a unique identifier for the playlist's origin
+	supportsImporting := state.PageStates.DeviceMgmt.SelectedDevice != nil &&
+		state.PageStates.DeviceMgmt.SelectedDevice.GetSupportedExtensions()&core.FeatureFlagImportingImplemented != 0 &&
+		state.CoreRT.GetSupportedExtensions()&core.FeatureFlagRemoteImportEnabled != 0
 
+	if imgui.BeginChildStrV("##PlaylistSelection", imgui.Vec2{X: 250, Y: 300}, imgui.ChildFlagsBorders, 0) {
+		for playlistIndex, playlist := range state.PageStates.DeviceMgmt.PlaylistsOnDevice {
 			// We create a selectable for each playlist
 			// We do custom text tricks so we can't just have a button/selectable directly
 			cursorBefore := imgui.CursorPos()
 			textWidth := imgui.ContentRegionAvail().X - 45
 
-			if imgui.SelectableBoolV(fmt.Sprintf("##%d%d", playlistOrigin, playlist.PlaylistID), state.PageStates.DeviceMgmt.DisplayedPlaylist == playlist, 0, imgui.Vec2{X: textWidth, Y: imgui.TextLineHeight()}) {
+			if imgui.SelectableBoolV(fmt.Sprintf("##%d_%d", playlistIndex, playlist.ID), state.PageStates.DeviceMgmt.DisplayedPlaylist == playlist, 0, imgui.Vec2{X: textWidth, Y: imgui.TextLineHeight()}) {
 				if err := populateSongsFromGivenPlaylist(state, playlist); err != nil {
 					state.PageStates.DeviceMgmt.ErrHint = fmt.Sprintf("Failed to get metadata on device: %v", err)
 					state.PageStates.DeviceMgmt.IsErrRecoverable = true
@@ -480,7 +555,7 @@ func Render(state *stateStructs.ApplicationState) {
 
 			imgui.SetCursorPos(cursorBefore)
 
-			if playlist.InstallationID != state.Config.JSONConfig.InstallationID || playlist.LibraryID != state.Config.ActiveLibrary.ID {
+			if playlist.IsHollowObject {
 				imgui.PushFont(state.FontItalic, 14)
 				imgui.TextColored(greyText, "External")
 				imgui.PopFont()
@@ -490,13 +565,13 @@ func Render(state *stateStructs.ApplicationState) {
 				imgui.SameLine()
 			}
 
-			imgui.Text(playlist.LastKnownName)
+			imgui.Text(playlist.Name)
 			imgui.SameLine()
 			imgui.SetCursorPosX(textWidth + 14 + 2)
 
 			imgui.PushFont(state.FontIcons, 14)
 
-			if imgui.SelectableBoolV(fmt.Sprintf("\uf2ed##%d%d", playlistOrigin, playlist.PlaylistID), false, 0, imgui.Vec2{X: 14, Y: 0}) {
+			if imgui.SelectableBoolV(fmt.Sprintf("\uf2ed##%d_%d", playlistIndex, playlist.ID), false, 0, imgui.Vec2{X: 14, Y: 0}) {
 				state.PageStates.DeviceMgmt.PlaylistToDelete = playlist
 				shouldShowDeletionPopup = true
 			}
@@ -512,14 +587,22 @@ func Render(state *stateStructs.ApplicationState) {
 
 			imgui.SameLine()
 
+			if !supportsImporting {
+				imgui.BeginDisabled()
+			}
+
 			imgui.PushFont(state.FontIcons, 16)
 
-			if imgui.SelectableBoolV(fmt.Sprintf("\uf0c7##%d%d", playlistOrigin, playlist.PlaylistID), false, 0, imgui.Vec2{X: 14, Y: 0}) {
+			if imgui.SelectableBoolV(fmt.Sprintf("\uf0c7##%d_%d", playlistIndex, playlist.ID), false, 0, imgui.Vec2{X: 14, Y: 0}) {
 				state.PageStates.DeviceMgmt.PlaylistToImport = playlist
 				shouldShowImportPopup = true
 			}
 
 			imgui.PopFont()
+
+			if !supportsImporting {
+				imgui.EndDisabled()
+			}
 
 			if imgui.IsItemHoveredV(imgui.HoveredFlagsDelayNormal) {
 				if imgui.BeginTooltip() {
@@ -575,7 +658,7 @@ func Render(state *stateStructs.ApplicationState) {
 
 					var err error
 
-					song.Image, err = utilities.LoadImageFromArtID(state, song.ArtID)
+					song.Image, err = utilities.LoadImageFromDeviceArtID(state, state.PageStates.DeviceMgmt.SelectedDevice, song.ArtID)
 
 					if err != nil {
 						panic(fmt.Sprintf("Failed to load image for song '%s': %s", song.Name, err.Error()))

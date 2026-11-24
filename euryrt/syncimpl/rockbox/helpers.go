@@ -42,7 +42,7 @@ func SanitizePath(metadataVersion int, name string) string {
 func safePathJoin(base, userInput string) string {
 	joinedPath := filepath.Join(base, userInput)
 
-	if !strings.HasPrefix(userInput, base) {
+	if !strings.HasPrefix(joinedPath, base) {
 		return base
 	} else {
 		return joinedPath
@@ -165,11 +165,11 @@ func (rockDevRT *RockDevRT) writePlaylistToDevice(sync *syncState, playlist *cor
 	// We don't need much features! However, some of the feature we need to support are custom ones! So, we handroll generation of the m3u8 playlist
 	playlistBytes := []byte(rockDevRT.generateM3U8Playlist(sync, playlist.Songs))
 
-	if err := os.WriteFile(filepath.Join(sync.Device.mountpoint, metadata.RelativePath), []byte(playlistBytes), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(rockDevRT.mountpoint, metadata.RelativePath), []byte(playlistBytes), 0644); err != nil {
 		return fmt.Errorf("failed to write playlist to device: %w", err)
 	}
 
-	if err := os.WriteFile(filepath.Join(sync.Device.mountpoint, metadata.SnapshotPath), []byte(playlistBytes), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(rockDevRT.mountpoint, metadata.SnapshotPath), []byte(playlistBytes), 0644); err != nil {
 		return fmt.Errorf("failed to write playlist snapshot: %w", err)
 	}
 
@@ -185,8 +185,7 @@ func (rockDevRT *RockDevRT) writePlaylistToDevice(sync *syncState, playlist *cor
 func calculateMetadataHash(song *core.Song) string {
 	md5Hash := md5.New()
 
-	songIndex := []byte{}
-	binary.LittleEndian.AppendUint32(songIndex, uint32(song.ID))
+	songIndex := binary.LittleEndian.AppendUint32([]byte{}, uint32(song.ID))
 	md5Hash.Write(songIndex)
 
 	io.WriteString(md5Hash, song.Title)

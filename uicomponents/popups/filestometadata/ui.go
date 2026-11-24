@@ -3,50 +3,71 @@ package filestometadata
 import (
 	"fmt"
 
+	"git.lunr.sh/luna/eurydice/euryrt/manageimpl/libeury"
+	"git.lunr.sh/luna/eurydice/oncrash"
 	stateStructs "git.lunr.sh/luna/eurydice/state"
-	"git.lunr.sh/luna/eurydice/state/popupstate/ftmstate"
 	"git.lunr.sh/luna/eurydice/uicomponents/widgets/mediamanagement"
 	"git.lunr.sh/luna/eurydice/uicomponents/widgets/playlistmanagement"
 	"git.lunr.sh/luna/eurydice/uicomponents/widgets/songmanagement"
 	"github.com/AllenDang/cimgui-go/imgui"
 )
 
-func Render(state *stateStructs.ApplicationState) {
-	switch state.PageStates.FTMUpdate.StepNo {
-	case ftmstate.StepIdle:
-		imgui.Text("Initializing runtime...\n")
-		imgui.Separator()
-		imgui.SetCursorPosY(imgui.CursorPosY() + 1) // Do this because it's not exactly the same
-
-		imgui.ProgressBarV(float32(imgui.Time()*-0.25), imgui.Vec2{X: 600, Y: 0}, "Initializing...")
-
-		go backingThread(state)
-		state.PageStates.FTMUpdate.StepNo = ftmstate.StepUpdatingFiles // do this to ensure backingThread doesn't start multiple times
-	case ftmstate.StepUpdatingFiles:
-		currentSongPath := state.PageStates.FTMUpdate.CurrentSongPath
-
-		if len(currentSongPath) > 65 {
-			// Truncate characters but leave room for the ellipsis prefix
-			currentSongPath = "..." + currentSongPath[len(currentSongPath)-(65-3):]
+func backingThread(state *stateStructs.ApplicationState, euryRT *libeury.LibEuryRT) {
+	defer func() {
+		if err := recover(); err != nil {
+			oncrash.Panic("Eurydice crash handler", fmt.Sprintf("Uncaught exception in background task: %s", err), state.Logger, state.LogFilePath)
 		}
+	}()
 
-		imgui.Text(fmt.Sprintf("Currently updating: %s\n", currentSongPath))
-		imgui.Separator()
-		imgui.SetCursorPosY(imgui.CursorPosY() + 1) // Do this because it's not exactly the same
+	if err := euryRT.SyncLocalFileStoreToMetadata(); err != nil {
+		panic(fmt.Sprintf("Failed to sync files to metadata: %v", err))
+	}
 
-		progressBarText := fmt.Sprintf("Updating... (%d/%d)", state.PageStates.FTMUpdate.TotalSongsUpdated+1, state.PageStates.FTMUpdate.TotalSongsToUpdate+1)
+	state.PageStates.FTMUpdate.DoneSyncing = true
+}
 
-		imgui.ProgressBarV(float32(state.PageStates.FTMUpdate.TotalSongsUpdated)/float32(state.PageStates.FTMUpdate.TotalSongsToUpdate), imgui.Vec2{X: 600, Y: 0}, progressBarText)
-	case ftmstate.StepCleaningUp:
-		imgui.Text("Removing missing songs from database, please wait...\n")
-		imgui.Separator()
-		imgui.SetCursorPosY(imgui.CursorPosY() + 1) // Do this because it's not exactly the same
+func Render(state *stateStructs.ApplicationState) {
+	euryRT, ok := state.CoreRT.(*libeury.LibEuryRT)
 
-		imgui.ProgressBarV(float32(imgui.Time()*-0.25), imgui.Vec2{X: 600, Y: 0}, "Cleaning...")
-	case ftmstate.StepFinished:
-		// Once we reach StepFinished, initialize the indexers.
-		// This needs to run on the main thread, because of the calls here (that can call imgui functions), so it's a bit of a hack running this here.
+	if !ok {
+		state.Logger.Warn("Attempted to run Files to Metadata sync on a non-LibEury runtime")
+		imgui.CloseCurrentPopup()
+		imgui.EndPopup()
+		return
+	}
 
+	if !state.PageStates.FTMUpdate.HasRegisteredHandler {
+		state.PageStates.FTMUpdate.HasRegisteredHandler = true
+
+		euryRT.RegisterFTMHandler(func(progressMessage string, progressBar int, progressBarMessage string, doneSyncing bool) {
+			if progressMessage != "" {
+				state.PageStates.FTMUpdate.ProgressMessage = progressMessage
+			}
+
+			state.PageStates.FTMUpdate.ProgressBar = progressBar
+
+			if progressBarMessage != "" {
+				state.PageStates.FTMUpdate.ProgressBarMessage = progressBarMessage
+			}
+
+			if doneSyncing {
+				state.PageStates.FTMUpdate.DoneSyncing = true
+			}
+		})
+	}
+
+	if !state.PageStates.FTMUpdate.IsRunning && !state.PageStates.FTMUpdate.DoneSyncing {
+		state.PageStates.FTMUpdate.IsRunning = true
+		state.PageStates.FTMUpdate.DoneSyncing = false
+		state.PageStates.FTMUpdate.ProgressMessage = "Initializing runtime..."
+		state.PageStates.FTMUpdate.ProgressBar = -1
+		state.PageStates.FTMUpdate.ProgressBarMessage = "Initializing..."
+
+		go backingThread(state, euryRT)
+	}
+
+	if state.PageStates.FTMUpdate.DoneSyncing {
+		// Once we finish syncing, re-initialize the UI indexers on the main thread.
 		if err := mediamanagement.BootstrapIndex(state); err != nil {
 			panic(fmt.Sprintf("Failed to bootstrap media management index: %v", err))
 		}
@@ -59,13 +80,45 @@ func Render(state *stateStructs.ApplicationState) {
 			panic(fmt.Sprintf("Failed to bootstrap song management index: %v", err))
 		}
 
-		// Now we're done!
-		state.PageStates.FTMUpdate.StepNo = ftmstate.StepIdle
-		state.PageStates.FTMUpdate.TotalSongsToUpdate = 0
-		state.PageStates.FTMUpdate.TotalSongsUpdated = 0
+		state.PageStates.FTMUpdate.IsRunning = false
+		state.PageStates.FTMUpdate.DoneSyncing = false
+		state.PageStates.FTMUpdate.ProgressMessage = ""
+		state.PageStates.FTMUpdate.ProgressBar = -1
+		state.PageStates.FTMUpdate.ProgressBarMessage = ""
 
 		imgui.CloseCurrentPopup()
+		imgui.EndPopup()
+		return
 	}
 
+	progressMessage := state.PageStates.FTMUpdate.ProgressMessage
+
+	if progressMessage == "" {
+		progressMessage = "Initializing runtime..."
+	}
+
+	if len(progressMessage) > 65 {
+		// Truncate characters but leave room for the ellipsis prefix
+		progressMessage = "..." + progressMessage[len(progressMessage)-(65-3):]
+	}
+
+	imgui.Text(progressMessage + "\n")
+	imgui.Separator()
+	imgui.SetCursorPosY(imgui.CursorPosY() + 1) // Do this because it's not exactly the same
+
+	progressBarMessage := state.PageStates.FTMUpdate.ProgressBarMessage
+	if progressBarMessage == "" {
+		progressBarMessage = "Initializing..."
+	}
+
+	var fraction float32
+	if state.PageStates.FTMUpdate.ProgressBar < 0 {
+		fraction = float32(imgui.Time() * -0.25)
+	} else {
+		capped := min(state.PageStates.FTMUpdate.ProgressBar, 100)
+		fraction = float32(capped) / 100.0
+	}
+
+	imgui.ProgressBarV(fraction, imgui.Vec2{X: 600, Y: 0}, progressBarMessage)
 	imgui.EndPopup()
 }

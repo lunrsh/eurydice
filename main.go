@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"git.lunr.sh/luna/eurydice/euryrt/manageimpl/eurydice/database"
 	"git.lunr.sh/luna/eurydice/oncrash"
 	"git.lunr.sh/luna/eurydice/state"
 	"git.lunr.sh/luna/eurydice/themes"
@@ -31,8 +30,6 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/muesli/termenv"
 	"golang.design/x/clipboard"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 )
 
 var (
@@ -413,61 +410,17 @@ func mainLoop() {
 		imgui.OpenPopupStr("First Launch Wizard")
 	}
 
-	// set up the active library ID if it hasn't been set yet, but only if we're not in setup
-	if appState.Config.ActiveLibrary == nil && !appState.PageStates.FirstBoot.HasFirstbootPageOpenedAlready {
-		appState.Config.ActiveLibrary = &database.Library{}
-		libraryRequest := appState.Config.Database.Where("library_path = ?", appState.Config.JSONConfig.LibraryPath).First(appState.Config.ActiveLibrary)
-
-		if libraryRequest.Error != nil {
-			if libraryRequest.Error == gorm.ErrRecordNotFound {
-				// We didn't find our library in the database, so, we go through the initialization process again
-
-				// Check if the library path exists, and if we can read from it
-				// Also, we try to add a slash to the end of the path to ensure it's a directory & so we read the contents
-				if _, err := os.Stat(filepath.Join(appState.Config.JSONConfig.LibraryPath, "/")); err != nil {
-					if os.IsNotExist(err) {
-						appState.PageStates.FirstBoot.ErrHint = "The path you provided to the library in the configuration does not exist."
-						imgui.EndPopup()
-						imgui.OpenPopupStr("Library Initialization Error | Eurydice Startup")
-
-						return
-					} else if os.IsPermission(err) {
-						appState.PageStates.FirstBoot.ErrHint = "You do not have permission to read from the the library you provided."
-						imgui.EndPopup()
-						imgui.OpenPopupStr("Library Initialization Error | Eurydice Startup")
-
-						return
-					} else {
-						appState.PageStates.FirstBoot.ErrHint = fmt.Sprintf("An unknown error occurred: %v", err)
-						imgui.EndPopup()
-						imgui.OpenPopupStr("Library Initialization Error | Eurydice Startup")
-
-						return
-					}
-				}
-
-				appState.Config.ActiveLibrary.LibraryPath = appState.Config.JSONConfig.LibraryPath
-				appState.Config.Database.Create(appState.Config.ActiveLibrary)
-			} else {
-				panic(fmt.Sprintf("Failed to find music library in database: %s", libraryRequest.Error.Error()))
-			}
-		}
-
-		appState.Logger.Debugf("Fetched library w/ ID %d", appState.Config.ActiveLibrary.ID)
-	}
-
 	// open the popup if the local library needs to be scanned and it's set to scan on launch, but only if we're not in setup
-	if !appState.PageStates.FirstBoot.HasFirstbootPageOpenedAlready && !appState.PageStates.LibraryScan.HasLibraryScanPageOpenedAlready {
-		appState.PageStates.LibraryScan.HasLibraryScanPageOpenedAlready = true
-		imgui.OpenPopupStr("Scanning Library...")
-		appState.Logger.Debug("Running library scanner")
+	if !appState.PageStates.FirstBoot.HasFirstbootPageOpenedAlready && !appState.PageStates.Initialization.HasInitPageOpenedAlready {
+		appState.PageStates.Initialization.HasInitPageOpenedAlready = true
+		imgui.OpenPopupStr("Initializing...")
 	}
 
 	if imgui.BeginPopupModalV("First Launch Wizard", nil, imgui.WindowFlagsAlwaysAutoResize) {
 		firstboot.Render(appState)
 	}
 
-	if imgui.BeginPopupModalV("Scanning Library...", nil, imgui.WindowFlagsAlwaysAutoResize) {
+	if imgui.BeginPopupModalV("Initializing...", nil, imgui.WindowFlagsAlwaysAutoResize) {
 		scanlibrary.Render(appState)
 	}
 
@@ -624,11 +577,6 @@ func main() {
 		panic(fmt.Sprintf("Failed to create application assets directory: %v", err))
 	}
 
-	// Finally, make the thumbnail database directory
-	if err = os.MkdirAll(filepath.Join(applicationStatePath, "thumbnails"), 0755); err != nil && !errors.Is(err, os.ErrExist) {
-		panic(fmt.Sprintf("Failed to create thumbnail database directory: %v", err))
-	}
-
 	// Initialize application state files (song database, etc.)
 	appConfig := &state.JSONConfig{}
 	appConfigText, err := os.ReadFile(filepath.Join(applicationStatePath, "config.json"))
@@ -660,39 +608,6 @@ func main() {
 		}
 	}
 
-	// User is running an older build of Eurydice that doesn't have an installation ID set, so we set one
-	if appConfig.InstallationID == 0 {
-		logger.Warn("InstallationID is not set, generating a new one!")
-		appConfig.InstallationID = rand.Uint()
-
-		marshalledConfig, err := json.Marshal(appConfig)
-
-		if err != nil {
-			panic(fmt.Sprintf("Failed to marshal configuration: %v", err))
-		}
-
-		if err = os.WriteFile(filepath.Join(applicationStatePath, "config.json"), marshalledConfig, 0644); err != nil {
-			panic(fmt.Sprintf("Failed to write JSON configuration: %s (try deleting the config directory?)", err.Error()))
-		}
-	}
-
-	songDatabase, err := gorm.Open(sqlite.Open(filepath.Join(applicationStatePath, "db.sqlite")), &gorm.Config{})
-
-	if err != nil {
-		panic(fmt.Sprintf("Failed to initialize song database: %s (database might be corrupt! try deleting the config directory?)", err.Error()))
-	}
-
-	if err = songDatabase.AutoMigrate(
-		&database.Song{},
-		&database.Artist{},
-		&database.Record{},
-		&database.Playlist{},
-		&database.PlaylistSong{},
-		&database.Library{},
-	); err != nil {
-		panic(fmt.Sprintf("Failed to migrate database: %s (Database is definitely corrupt! Try deleting the config directory?)", err.Error()))
-	}
-
 	// Initialize global application state variables
 
 	appState = &state.ApplicationState{
@@ -706,8 +621,6 @@ func main() {
 			JSONConfig:     appConfig,
 
 			AppStatePath: applicationStatePath,
-
-			Database: songDatabase,
 		},
 
 		PageStates: &state.IndividualPageStates{},

@@ -1,12 +1,16 @@
 package labeling
 
 import (
+	"bytes"
 	"fmt"
+	"image"
+	"image/jpeg"
+	_ "image/png"
 	"os"
 	"path/filepath"
 
+	"git.lunr.sh/luna/eurydice/euryrt/core"
 	stateStructs "git.lunr.sh/luna/eurydice/state"
-	"git.lunr.sh/luna/eurydice/state/database"
 	"git.lunr.sh/luna/eurydice/state/popupstate/labelingstate"
 	"git.lunr.sh/luna/eurydice/uicomponents/widgets/mediamanagement"
 	"git.lunr.sh/luna/eurydice/uicomponents/widgets/playlistmanagement"
@@ -27,8 +31,7 @@ const multiSelectFlags = imgui.MultiSelectFlagsClearOnEscape | imgui.MultiSelect
 var greyText = imgui.Vec4{X: 172.0 / 255, Y: 172.0 / 255, Z: 172.0 / 255, W: 255.0 / 255}
 
 func prepareRecordDropdownFromPrimaryArtist(state *stateStructs.ApplicationState) error {
-	allRecords := []*database.Record{}
-	recordNameMap := make(map[string]*database.Record)
+	recordNameMap := make(map[string]*core.Record)
 
 	// If manual entry is incomplete, and we're doing manual entry for the primary artist, skip running
 	// Or, if we don't have any artists, also skip running!
@@ -41,13 +44,18 @@ func prepareRecordDropdownFromPrimaryArtist(state *stateStructs.ApplicationState
 		state.PageStates.Labeling.LabelingSubPopup.DropdownIsDisabled = false
 	}
 
-	if err := state.Config.Database.Where("library_id = ? AND artist_id = ?", state.Config.ActiveLibrary.ID, state.PageStates.Labeling.LabelingSubPopup.Artists[0].Artist.ID).Find(&allRecords).Error; err != nil {
-		return fmt.Errorf("failed to prepare record dropdown: %w", err)
+	var allRecords []*core.Record
+	if state.PageStates.Labeling.LabelingSubPopup.Artists[0].Artist.ID != 0 {
+		var err error
+		allRecords, err = state.CoreRT.GetAllRecordsFromArtist(state.PageStates.Labeling.LabelingSubPopup.Artists[0].Artist.ID)
+		if err != nil {
+			return fmt.Errorf("failed to prepare record dropdown: %w", err)
+		}
 	}
 
 	state.PageStates.Labeling.LabelingSubPopup.DropdownExistingRecords = allRecords
 
-	// Abort early because it's a custom entry, and we don't want to mess with taht
+	// Abort early because it's a custom entry, and we don't want to mess with that
 	if state.PageStates.Labeling.LabelingSubPopup.SelectedRecord != nil && state.PageStates.Labeling.LabelingSubPopup.SelectedRecord.ID == 0 {
 		return nil
 	}
@@ -61,10 +69,12 @@ func prepareRecordDropdownFromPrimaryArtist(state *stateStructs.ApplicationState
 	state.PageStates.Labeling.LabelingSubPopup.SelectedRecord = nil // if we're still nil, then we couldn't find a match, and we js give up
 
 	for _, song := range state.PageStates.Labeling.LabelingSubPopup.SongsToRelabel {
-		if record, ok := recordNameMap[song.Song.Record.Name]; ok {
-			state.PageStates.Labeling.LabelingSubPopup.SelectedRecord = record
-			state.PageStates.Labeling.LabelingSubPopup.DropdownTextPreview = record.Name
-			break
+		if song.Song.Record != nil {
+			if record, ok := recordNameMap[song.Song.Record.Name]; ok {
+				state.PageStates.Labeling.LabelingSubPopup.SelectedRecord = record
+				state.PageStates.Labeling.LabelingSubPopup.DropdownTextPreview = record.Name
+				break
+			}
 		}
 	}
 
@@ -107,18 +117,19 @@ func renameDialogInternal(state *stateStructs.ApplicationState) {
 	if imgui.Button("Apply") {
 		// These can use different names for... name, so we just switch on type
 		switch item := state.PageStates.Labeling.LabelingRenamePopup.ItemToEdit.(type) {
-		case *database.Song:
+		case *core.Song:
 			item.Title = state.PageStates.Labeling.LabelingRenamePopup.NewName
-		case *database.Record:
+		case *core.Record:
 			item.Name = state.PageStates.Labeling.LabelingRenamePopup.NewName
-		case *database.Artist:
+			state.PageStates.Labeling.LabelingSubPopup.DropdownTextPreview = item.Name
+		case *core.Artist:
 			item.Name = state.PageStates.Labeling.LabelingRenamePopup.NewName
 
 			// Also sync artists in here
 			if len(state.PageStates.Labeling.LabelingSubPopup.Artists) != 0 {
 				for _, song := range state.PageStates.Labeling.LabelingSubPopup.SongsToRelabel {
 					song.Song.PrimaryArtist = state.PageStates.Labeling.LabelingSubPopup.Artists[0].Artist
-					song.Song.CollabArtists = make([]*database.Artist, 0, len(state.PageStates.Labeling.LabelingSubPopup.Artists)-1)
+					song.Song.CollabArtists = make([]*core.Artist, 0, len(state.PageStates.Labeling.LabelingSubPopup.Artists)-1)
 
 					if len(state.PageStates.Labeling.LabelingSubPopup.Artists) > 1 {
 						for _, collabArtist := range state.PageStates.Labeling.LabelingSubPopup.Artists[1:] {
@@ -149,6 +160,10 @@ func renameDialogInternal(state *stateStructs.ApplicationState) {
 }
 
 func renderSubpopup(state *stateStructs.ApplicationState) {
+	supportedExtensions := state.CoreRT.GetSupportedExtensions()
+	supportsRecategorization := supportedExtensions&core.FeatureFlagRecategorizationEnabled != 0
+	supportsAddingArt := supportedExtensions&core.FeatureFlagAddingArtEnabled != 0
+
 	imgui.Text("Select and change any properties you want to modify, and click Save to apply your changes, or Cancel to discard your changes.")
 	imgui.Text("WARNING: This will apply and override the properties of all of the songs you selected.")
 	imgui.Spacing()
@@ -274,7 +289,12 @@ func renderSubpopup(state *stateStructs.ApplicationState) {
 			imgui.SetNextItemWidth(imgui.ContentRegionAvail().X)
 			imgui.SetNextItemShortcut(imgui.KeyChord(imgui.ModCtrl | imgui.KeyF))
 
-			imgui.InputTextWithHint("##SelectArtistText", "Filter or Create Record (Ctrl+F)", &state.PageStates.Labeling.LabelingSubPopup.DropdownSearchBuffer, 0, func(inputEvent imgui.InputTextCallbackData) int {
+			recordFilterHint := "Filter or Create Record (Ctrl+F)"
+			if !supportsRecategorization {
+				recordFilterHint = "Filter Records (Ctrl+F)"
+			}
+
+			imgui.InputTextWithHint("##SelectArtistText", recordFilterHint, &state.PageStates.Labeling.LabelingSubPopup.DropdownSearchBuffer, 0, func(inputEvent imgui.InputTextCallbackData) int {
 				var dropdownSearchRunes [256]rune
 				clear(dropdownSearchRunes[:])
 				copy(dropdownSearchRunes[:], []rune(state.PageStates.Labeling.LabelingSubPopup.DropdownSearchBuffer))
@@ -289,11 +309,10 @@ func renderSubpopup(state *stateStructs.ApplicationState) {
 
 			state.PageStates.Labeling.LabelingSubPopup.DropdownTextFilter.Build()
 
-			if imgui.IsKeyPressedBool(imgui.KeyEnter) {
+			if supportsRecategorization && imgui.IsKeyPressedBool(imgui.KeyEnter) {
 				// Create a new record based on the search buffer
-				state.PageStates.Labeling.LabelingSubPopup.SelectedRecord = &database.Record{
-					Name:      state.PageStates.Labeling.LabelingSubPopup.DropdownSearchBuffer,
-					LibraryID: state.Config.ActiveLibrary.ID,
+				state.PageStates.Labeling.LabelingSubPopup.SelectedRecord = &core.Record{
+					Name: state.PageStates.Labeling.LabelingSubPopup.DropdownSearchBuffer,
 				}
 
 				state.PageStates.Labeling.LabelingSubPopup.DropdownTextPreview = state.PageStates.Labeling.LabelingSubPopup.DropdownSearchBuffer
@@ -379,11 +398,25 @@ func renderSubpopup(state *stateStructs.ApplicationState) {
 
 				for _, song := range state.PageStates.Labeling.LabelingSubPopup.SongsToRelabel {
 					if !hasGottenArtYet[song.Song.ArtID] && song.Song.ArtID != "" {
-						if err := utilities.CopyFile(filepath.Join(state.Config.AppStatePath, "thumbnails", song.Song.ArtID), filepath.Join(artDirectory, song.Song.ArtID)+".jpg"); err != nil {
-							state.Logger.Warnf("Failed to copy album art for ArtID %s: %v", song.Song.ArtID, err)
+						artImage, err := state.CoreRT.GetArt(song.Song.ArtID)
+						if err != nil {
+							state.Logger.Warnf("Failed to get album art for ArtID %s: %v", song.Song.ArtID, err)
 							continue
 						}
 
+						outFile, err := os.OpenFile(filepath.Join(artDirectory, song.Song.ArtID)+".jpg", os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+						if err != nil {
+							state.Logger.Warnf("Failed to create output file for ArtID %s: %v", song.Song.ArtID, err)
+							continue
+						}
+
+						if err := jpeg.Encode(outFile, artImage, &jpeg.Options{Quality: 95}); err != nil {
+							outFile.Close()
+							state.Logger.Warnf("Failed to encode album art for ArtID %s: %v", song.Song.ArtID, err)
+							continue
+						}
+
+						outFile.Close()
 						hasGottenArtYet[song.Song.ArtID] = true
 					}
 				}
@@ -392,6 +425,10 @@ func renderSubpopup(state *stateStructs.ApplicationState) {
 
 		imgui.SameLine()
 
+		if !supportsAddingArt {
+			imgui.BeginDisabled()
+		}
+
 		if imgui.ButtonV("Replace or Add Album Art", imgui.Vec2{X: imgui.ContentRegionAvail().X, Y: 0}) {
 			artFile, err := dialog.File().Title("Music Library Location").Filter("Image files", "jpg", "png", "jpeg").Load()
 
@@ -399,22 +436,30 @@ func renderSubpopup(state *stateStructs.ApplicationState) {
 				state.Logger.Warnf("Failed to load album art: %v", err)
 			} else if artFile != "" {
 				if artFileContents, err := os.ReadFile(artFile); err == nil {
-					if artID, err := utilities.AddToArtIDPool(state, artFileContents); err == nil {
-						for _, song := range state.PageStates.Labeling.LabelingSubPopup.SongsToRelabel {
-							// WTF? Why do we need to leak GPU memory here?
-							// I love UI development - luna
-							//utilities.UnloadImageFromArtID(state, song.Song.ArtID)
+					if decodedImage, _, err := image.Decode(bytes.NewReader(artFileContents)); err == nil {
+						if artID, err := state.CoreRT.AddArtToDatabase(decodedImage); err == nil {
+							for _, song := range state.PageStates.Labeling.LabelingSubPopup.SongsToRelabel {
+								// WTF? Why do we need to leak GPU memory here?
+								// I love UI development - luna
+								//utilities.UnloadImageFromArtID(state, song.Song.ArtID)
 
-							song.Image = nil
-							song.Song.ArtID = artID
+								song.Image = nil
+								song.Song.ArtID = artID
+							}
+						} else {
+							state.Logger.Warnf("Failed to add album art to pool: %v", err)
 						}
 					} else {
-						state.Logger.Warnf("Failed to add album art to pool: %v", err)
+						state.Logger.Warnf("Failed to decode album art: %v", err)
 					}
 				} else {
 					state.Logger.Warnf("Failed to read album art: %v", err)
 				}
 			}
+		}
+
+		if !supportsAddingArt {
+			imgui.EndDisabled()
 		}
 
 		imgui.Spacing()
@@ -432,14 +477,14 @@ func renderSubpopup(state *stateStructs.ApplicationState) {
 			alreadyAddedArtists := map[uint]bool{}
 
 			for _, song := range state.PageStates.Labeling.LabelingSubPopup.SongsToRelabel {
-				if !alreadyAddedArtists[song.Song.PrimaryArtistID] {
+				if song.Song.PrimaryArtist != nil && !alreadyAddedArtists[song.Song.PrimaryArtist.ID] {
 					dereferenedArtist := *song.Song.PrimaryArtist
 
 					state.PageStates.Labeling.LabelingSubPopup.Artists = append(state.PageStates.Labeling.LabelingSubPopup.Artists, &labelingstate.LabelingWrappedArtist{
 						Artist: &dereferenedArtist,
 					})
 
-					alreadyAddedArtists[song.Song.PrimaryArtistID] = true
+					alreadyAddedArtists[song.Song.PrimaryArtist.ID] = true
 				}
 
 				for _, artist := range song.Song.CollabArtists {
@@ -517,7 +562,12 @@ func renderSubpopup(state *stateStructs.ApplicationState) {
 							imgui.SetNextItemWidth(imgui.ContentRegionAvail().X)
 							imgui.SetNextItemShortcut(imgui.KeyChord(imgui.ModCtrl | imgui.KeyF))
 
-							imgui.InputTextWithHint("##SelectArtistText", "Filter or Create Artist (Ctrl+F)", &artist.DropdownSearchBuffer, 0, func(inputEvent imgui.InputTextCallbackData) int {
+							artistFilterHint := "Filter or Create Artist (Ctrl+F)"
+							if !supportsRecategorization {
+								artistFilterHint = "Filter Artists (Ctrl+F)"
+							}
+
+							imgui.InputTextWithHint("##SelectArtistText", artistFilterHint, &artist.DropdownSearchBuffer, 0, func(inputEvent imgui.InputTextCallbackData) int {
 								var dropdownSearchRunes [256]rune
 								clear(dropdownSearchRunes[:])
 								copy(dropdownSearchRunes[:], []rune(artist.DropdownSearchBuffer))
@@ -532,10 +582,9 @@ func renderSubpopup(state *stateStructs.ApplicationState) {
 
 							artist.DropdownTextFilter.Build()
 
-							if imgui.IsKeyPressedBool(imgui.KeyEnter) {
-								artist.Artist = &database.Artist{
-									Name:      artist.DropdownSearchBuffer,
-									LibraryID: state.Config.ActiveLibrary.ID,
+							if supportsRecategorization && imgui.IsKeyPressedBool(imgui.KeyEnter) {
+								artist.Artist = &core.Artist{
+									Name: artist.DropdownSearchBuffer,
 								}
 
 								artist.DropdownExistingArtists = nil
@@ -552,7 +601,7 @@ func renderSubpopup(state *stateStructs.ApplicationState) {
 										song.Song.PrimaryArtist = state.PageStates.Labeling.LabelingSubPopup.Artists[0].Artist
 									}
 
-									song.Song.CollabArtists = make([]*database.Artist, 0, len(state.PageStates.Labeling.LabelingSubPopup.Artists)-1)
+									song.Song.CollabArtists = make([]*core.Artist, 0, len(state.PageStates.Labeling.LabelingSubPopup.Artists)-1)
 
 									if len(state.PageStates.Labeling.LabelingSubPopup.Artists) > 1 {
 										for _, collabArtist := range state.PageStates.Labeling.LabelingSubPopup.Artists[1:] {
@@ -597,7 +646,7 @@ func renderSubpopup(state *stateStructs.ApplicationState) {
 												song.Song.PrimaryArtist = state.PageStates.Labeling.LabelingSubPopup.Artists[0].Artist
 											}
 
-											song.Song.CollabArtists = make([]*database.Artist, 0, len(state.PageStates.Labeling.LabelingSubPopup.Artists)-1)
+											song.Song.CollabArtists = make([]*core.Artist, 0, len(state.PageStates.Labeling.LabelingSubPopup.Artists)-1)
 
 											if len(state.PageStates.Labeling.LabelingSubPopup.Artists) > 1 {
 												for _, collabArtist := range state.PageStates.Labeling.LabelingSubPopup.Artists[1:] {
@@ -609,6 +658,12 @@ func renderSubpopup(state *stateStructs.ApplicationState) {
 											}
 
 											song.HasBeenEdited = true
+										}
+
+										if artistIndex == 0 {
+											if err := prepareRecordDropdownFromPrimaryArtist(state); err != nil {
+												panic(fmt.Sprintf("Failed to prepare record dropdown: %v", err))
+											}
 										}
 
 										imgui.CloseCurrentPopup()
@@ -675,17 +730,22 @@ func renderSubpopup(state *stateStructs.ApplicationState) {
 
 		// Add Artist
 		if imgui.Button("+") || (imgui.IsWindowFocusedV(imgui.FocusedFlagsRootAndChildWindows) && !isRenamePopupOpen && imgui.IsKeyDown(imgui.ModShift) && imgui.IsKeyPressedBool(imgui.KeyEqual)) {
-			allArtists := []*database.Artist{}
+			allArtists, err := state.CoreRT.GetAllArtists()
 
-			if err := state.Config.Database.Where("library_id = ?", state.Config.ActiveLibrary.ID).Find(&allArtists).Error; err != nil {
+			if err != nil {
 				panic(err)
+			}
+
+			previewText := "Select or Create Artist"
+			if !supportsRecategorization {
+				previewText = "Select Artist"
 			}
 
 			state.PageStates.Labeling.LabelingSubPopup.Artists = append(state.PageStates.Labeling.LabelingSubPopup.Artists, &labelingstate.LabelingWrappedArtist{
 				Artist:                  nil,
 				DropdownExistingArtists: allArtists,
 				DropdownSearchBuffer:    "",
-				DropdownTextPreview:     "Select or Create Artist",
+				DropdownTextPreview:     previewText,
 			})
 
 			// We don't update the songs here because creating a song just shows a dropdown, and we are thus waiting for the user to select from said dropdown
@@ -709,13 +769,9 @@ func renderSubpopup(state *stateStructs.ApplicationState) {
 			newLengthOfArtists := len(state.PageStates.Labeling.LabelingSubPopup.Artists) - int(state.PageStates.Labeling.LabelingSubPopup.ArtistsSelectionStorage.Size())
 			newArtists := make([]*labelingstate.LabelingWrappedArtist, 0, newLengthOfArtists)
 
-			hasDeletedFirstArtist := false
+			hasDeletedFirstArtist := state.PageStates.Labeling.LabelingSubPopup.ArtistsSelectionStorage.Contains(imgui.ID(0))
 
 			for artistIndex, artist := range state.PageStates.Labeling.LabelingSubPopup.Artists {
-				if artistIndex == 0 {
-					hasDeletedFirstArtist = true
-				}
-
 				// Exclude the selections
 				if !state.PageStates.Labeling.LabelingSubPopup.ArtistsSelectionStorage.Contains(imgui.ID(artistIndex)) {
 					newArtists = append(newArtists, artist)
@@ -730,7 +786,7 @@ func renderSubpopup(state *stateStructs.ApplicationState) {
 			if len(state.PageStates.Labeling.LabelingSubPopup.Artists) != 0 {
 				for _, song := range state.PageStates.Labeling.LabelingSubPopup.SongsToRelabel {
 					song.Song.PrimaryArtist = state.PageStates.Labeling.LabelingSubPopup.Artists[0].Artist
-					song.Song.CollabArtists = make([]*database.Artist, 0, len(state.PageStates.Labeling.LabelingSubPopup.Artists)-1)
+					song.Song.CollabArtists = make([]*core.Artist, 0, len(state.PageStates.Labeling.LabelingSubPopup.Artists)-1)
 
 					if len(state.PageStates.Labeling.LabelingSubPopup.Artists) > 1 {
 						for _, collabArtist := range state.PageStates.Labeling.LabelingSubPopup.Artists[1:] {
@@ -799,7 +855,7 @@ func renderSubpopup(state *stateStructs.ApplicationState) {
 					song.Song.PrimaryArtist = state.PageStates.Labeling.LabelingSubPopup.Artists[0].Artist
 				}
 
-				song.Song.CollabArtists = make([]*database.Artist, 0, len(state.PageStates.Labeling.LabelingSubPopup.Artists)-1)
+				song.Song.CollabArtists = make([]*core.Artist, 0, len(state.PageStates.Labeling.LabelingSubPopup.Artists)-1)
 
 				if len(state.PageStates.Labeling.LabelingSubPopup.Artists) > 1 {
 					for _, collabArtist := range state.PageStates.Labeling.LabelingSubPopup.Artists[1:] {
@@ -864,7 +920,7 @@ func renderSubpopup(state *stateStructs.ApplicationState) {
 					song.Song.PrimaryArtist = state.PageStates.Labeling.LabelingSubPopup.Artists[0].Artist
 				}
 
-				song.Song.CollabArtists = make([]*database.Artist, 0, len(state.PageStates.Labeling.LabelingSubPopup.Artists)-1)
+				song.Song.CollabArtists = make([]*core.Artist, 0, len(state.PageStates.Labeling.LabelingSubPopup.Artists)-1)
 
 				if len(state.PageStates.Labeling.LabelingSubPopup.Artists) > 1 {
 					for _, collabArtist := range state.PageStates.Labeling.LabelingSubPopup.Artists[1:] {
@@ -894,7 +950,7 @@ func renderSubpopup(state *stateStructs.ApplicationState) {
 
 		state.PageStates.Labeling.LabelingSubPopup.Artists = []*labelingstate.LabelingWrappedArtist{}
 		state.PageStates.Labeling.LabelingSubPopup.SongsToRelabel = []*labelingstate.LabelingWrappedSong{}
-		state.PageStates.Labeling.LabelingSubPopup.DropdownExistingRecords = []*database.Record{}
+		state.PageStates.Labeling.LabelingSubPopup.DropdownExistingRecords = []*core.Record{}
 		state.PageStates.Labeling.LabelingSubPopup.SelectedRecord = nil
 		state.PageStates.Labeling.LabelingSubPopup.HasLoadedArtists = false
 
@@ -915,7 +971,7 @@ func renderSubpopup(state *stateStructs.ApplicationState) {
 
 	if imgui.Button("Apply") {
 		updatedSongMap := make(map[uint]*labelingstate.LabelingWrappedSong)
-		updatedArtistMap := make(map[uint]*database.Artist)
+		updatedArtistMap := make(map[uint]*core.Artist)
 
 		for _, updatedSong := range state.PageStates.Labeling.LabelingSubPopup.SongsToRelabel {
 			updatedSong.Song.Record = state.PageStates.Labeling.LabelingSubPopup.SelectedRecord // TODO: why do we do this here instead of earlier?
@@ -923,7 +979,9 @@ func renderSubpopup(state *stateStructs.ApplicationState) {
 		}
 
 		for _, updatedArtist := range state.PageStates.Labeling.LabelingSubPopup.Artists {
-			updatedArtistMap[updatedArtist.Artist.ID] = updatedArtist.Artist
+			if updatedArtist.Artist != nil {
+				updatedArtistMap[updatedArtist.Artist.ID] = updatedArtist.Artist
+			}
 		}
 
 		for _, song := range state.PageStates.Labeling.SongsToRelabel {
@@ -932,8 +990,10 @@ func renderSubpopup(state *stateStructs.ApplicationState) {
 			}
 
 			// Sync artists (if they get renamed)
-			if newArtist, ok := updatedArtistMap[song.Song.PrimaryArtistID]; ok {
-				song.Song.PrimaryArtist = newArtist
+			if song.Song.PrimaryArtist != nil {
+				if newArtist, ok := updatedArtistMap[song.Song.PrimaryArtist.ID]; ok {
+					song.Song.PrimaryArtist = newArtist
+				}
 			}
 
 			for _, collabArtists := range song.Song.CollabArtists {
@@ -947,7 +1007,7 @@ func renderSubpopup(state *stateStructs.ApplicationState) {
 
 		state.PageStates.Labeling.LabelingSubPopup.Artists = []*labelingstate.LabelingWrappedArtist{}
 		state.PageStates.Labeling.LabelingSubPopup.SongsToRelabel = []*labelingstate.LabelingWrappedSong{}
-		state.PageStates.Labeling.LabelingSubPopup.DropdownExistingRecords = []*database.Record{}
+		state.PageStates.Labeling.LabelingSubPopup.DropdownExistingRecords = []*core.Record{}
 		state.PageStates.Labeling.LabelingSubPopup.SelectedRecord = nil
 		state.PageStates.Labeling.LabelingSubPopup.HasLoadedArtists = false
 
@@ -1053,7 +1113,10 @@ func RenderMainRelabelPopup(state *stateStructs.ApplicationState) {
 					imgui.SetCursorPosY(cursorY + imgui.TextLineHeight() + 2) // Add some pixels for padding
 				}
 
-				artists := song.Song.PrimaryArtist.Name
+				artists := ""
+				if song.Song.PrimaryArtist != nil {
+					artists = song.Song.PrimaryArtist.Name
+				}
 
 				for _, collabArtist := range song.Song.CollabArtists {
 					artists += ", " + collabArtist.Name
@@ -1123,11 +1186,14 @@ func RenderMainRelabelPopup(state *stateStructs.ApplicationState) {
 	imgui.SameLine()
 
 	if imgui.Button("Save") {
-		recordsToAnalyzeArtIDsFor := make(map[uint]*database.Record) // used to determine what records we need to calculate average ArtIDs for
-		newRecords := make(map[string][]*database.Record)            // used to store new records that we need to create, or match from other songs
-		newArtists := make(map[string]*database.Artist)              // used to store new artists that we need to create, or match from other songs
+		supportsRecategorization := state.CoreRT.GetSupportedExtensions()&core.FeatureFlagRecategorizationEnabled != 0
+
+		recordsToAnalyzeArtIDsFor := make(map[uint]*core.Record) // used to determine what records we need to calculate average ArtIDs for
+		newRecords := make(map[string][]*core.Record)            // used to store new records that we need to create, or match from other songs
+		newArtists := make(map[string]*core.Artist)              // used to store new artists that we need to create, or match from other songs
 
 		updatedArtists := make(map[uint]bool) // used to indicate whether an artist was updated or not
+		updatedRecords := make(map[uint]bool) // used to indicate whether an existing record was updated or not
 
 		// Update any last minute properties that may need to be synced, then save them to the database
 		state.Logger.Debugf("Save: Updating %d songs", len(state.PageStates.Labeling.SongsToRelabel))
@@ -1138,79 +1204,105 @@ func RenderMainRelabelPopup(state *stateStructs.ApplicationState) {
 			if song.Song.PrimaryArtist.ID == 0 {
 				if newArtist, ok := newArtists[song.Song.PrimaryArtist.Name]; ok {
 					song.Song.PrimaryArtist = newArtist
-				} else {
-					state.Config.Database.Create(song.Song.PrimaryArtist)
+				} else if supportsRecategorization {
+					createdID, err := state.CoreRT.CreateArbitraryArtist(song.Song.PrimaryArtist)
+
+					if err != nil {
+						panic(fmt.Sprintf("Failed to create primary artist '%s': %v", song.Song.PrimaryArtist.Name, err))
+					}
+
+					song.Song.PrimaryArtist.ID = createdID
 					newArtists[song.Song.PrimaryArtist.Name] = song.Song.PrimaryArtist
 				}
-			} else if _, ok := updatedArtists[song.Song.PrimaryArtist.ID]; !ok { // Update an artist incase the name got updated
-				state.Config.Database.Save(song.Song.PrimaryArtist)
+			} else if !updatedArtists[song.Song.PrimaryArtist.ID] { // Update an artist incase the name got updated
+				if err := state.CoreRT.ModifyArtist(song.Song.PrimaryArtist, false); err != nil {
+					panic(fmt.Sprintf("Failed to update primary artist '%s': %v", song.Song.PrimaryArtist.Name, err))
+				}
+
 				updatedArtists[song.Song.PrimaryArtist.ID] = true // mark this artist as updated
 			}
 
 			// Same thing but for the collab artists!
-			for _, collabArtist := range song.Song.CollabArtists {
+			for collabIdx, collabArtist := range song.Song.CollabArtists {
 				if collabArtist.ID == 0 {
 					if newArtist, ok := newArtists[collabArtist.Name]; ok {
-						collabArtist = newArtist
-					} else {
-						state.Config.Database.Create(collabArtist)
+						song.Song.CollabArtists[collabIdx] = newArtist
+					} else if supportsRecategorization {
+						createdID, err := state.CoreRT.CreateArbitraryArtist(collabArtist)
+
+						if err != nil {
+							panic(fmt.Sprintf("Failed to create collab artist '%s': %v", collabArtist.Name, err))
+						}
+
+						collabArtist.ID = createdID
 						newArtists[collabArtist.Name] = collabArtist
 					}
-				} else if _, ok := updatedArtists[collabArtist.ID]; !ok {
-					state.Config.Database.Save(collabArtist)
+				} else if !updatedArtists[collabArtist.ID] {
+					if err := state.CoreRT.ModifyArtist(collabArtist, false); err != nil {
+						panic(fmt.Sprintf("Failed to update collab artist '%s': %v", collabArtist.Name, err))
+					}
+
 					updatedArtists[collabArtist.ID] = true // mark this collabArtist as updated
 				}
 			}
 
 			// If the record is not yet created, match it from the newRecords map, or create a new one
 			if song.Song.Record.ID == 0 {
+				matchedExistingNew := false
+
 				if newRecordEntries, ok := newRecords[song.Song.Record.Name]; ok {
 					for _, newRecord := range newRecordEntries {
-						if newRecord.ArtistID == song.Song.PrimaryArtist.ID {
+						if newRecord.Artist != nil && newRecord.Artist.ID == song.Song.PrimaryArtist.ID {
 							song.Song.Record = newRecord
+							matchedExistingNew = true
 							break
 						}
 					}
-
-					// We haven't matched, create a new record
-					song.Song.Record.ArtistID = song.Song.PrimaryArtist.ID
-					state.Config.Database.Create(song.Song.Record)
-
-					// TODO: is this necessary?
-					if newRecords[song.Song.Record.Name] == nil {
-						newRecords[song.Song.Record.Name] = make([]*database.Record, 0, 1)
-					}
-
-					newRecords[song.Song.Record.Name] = append(newRecords[song.Song.Record.Name], song.Song.Record)
-				} else {
-					song.Song.Record.ArtistID = song.Song.PrimaryArtist.ID
-					state.Config.Database.Create(song.Song.Record)
-
-					// TODO: is this necessary?
-					if newRecordEntries, ok := newRecords[song.Song.Record.Name]; ok {
-						newRecordEntries = append(newRecordEntries, song.Song.Record)
-					} else {
-						newRecordEntries = []*database.Record{song.Song.Record}
-					}
 				}
+
+				if !matchedExistingNew && supportsRecategorization {
+					song.Song.Record.Artist = song.Song.PrimaryArtist
+
+					createdRecordID, err := state.CoreRT.CreateArbitraryRecord(song.Song.Record, song.Song.PrimaryArtist.ID)
+					if err != nil {
+						panic(fmt.Sprintf("Failed to create record '%s': %v", song.Song.Record.Name, err))
+					}
+
+					song.Song.Record.ID = createdRecordID
+					newRecords[song.Song.Record.Name] = append(newRecords[song.Song.Record.Name], song.Song.Record)
+				}
+			} else if !updatedRecords[song.Song.Record.ID] {
+				if song.Song.Record.Artist == nil {
+					song.Song.Record.Artist = song.Song.PrimaryArtist
+				}
+
+				if err := state.CoreRT.ModifyRecord(song.Song.Record, false); err != nil {
+					panic(fmt.Sprintf("Failed to update record '%s': %v", song.Song.Record.Name, err))
+				}
+
+				updatedRecords[song.Song.Record.ID] = true
 			}
 
 			// Update last minute metadata
 			recordsToAnalyzeArtIDsFor[song.Song.Record.ID] = song.Song.Record
-			song.Song.RecordID = song.Song.Record.ID
-			song.Song.PrimaryArtistID = song.Song.PrimaryArtist.ID
 
-			// Update the song in the database
-			state.Config.Database.Save(song.Song)
+			// Update the song in the runtime
+			if err := state.CoreRT.ModifySong(song.Song, true); err != nil {
+				panic(fmt.Sprintf("Failed to modify song '%s': %v", song.Song.Title, err))
+			}
 		}
 
 		state.Logger.Debug("Save: Updating ArtIDs for records by calculating most popular ArtIDs")
 
 		// Update ArtIDs for the records
 		for _, record := range recordsToAnalyzeArtIDsFor {
-			songsThatAreAMemberOfThisRecord := []*database.Song{}
+			if record.ArtID != "" {
+				continue
+			}
 
-			if err := state.Config.Database.Where("record_id = ?", record.ID).Find(&songsThatAreAMemberOfThisRecord).Error; err != nil {
+			songsThatAreAMemberOfThisRecord, err := state.CoreRT.GetAllSongsFromRecord(record.ID)
+
+			if err != nil {
 				panic(fmt.Sprintf("Failed to find songs for record %d: %v", record.ID, err))
 			}
 
@@ -1230,48 +1322,28 @@ func RenderMainRelabelPopup(state *stateStructs.ApplicationState) {
 				}
 			}
 
-			if record.ArtID != "" {
-				continue
-			}
+			if mostPopularArtID != "" {
+				record.ArtID = mostPopularArtID
+				if record.Artist == nil {
+					fullRecord, err := state.CoreRT.GetRecordByID(record.ID)
 
-			record.ArtID = mostPopularArtID
-			state.Config.Database.Save(record)
+					if err == nil {
+						record.Artist = fullRecord.Artist
+					}
+				}
+
+				if err := state.CoreRT.ModifyRecord(record, false); err != nil {
+					panic(fmt.Sprintf("Failed to update ArtID for record %d: %v", record.ID, err))
+				}
+			}
 		}
 
 		// Clean up the database after our modifications
-		state.Logger.Debug("Save: Running database cleanup steps")
+		if supportsRecategorization {
+			state.Logger.Debug("Save: Running orphaned entity cleanup")
 
-		// Clean up empty records
-		allRecords := []database.Record{}
-
-		if err := state.Config.Database.Preload("Songs").Find(&allRecords).Error; err != nil {
-			panic(fmt.Sprintf("Failed to find all records: %v", err))
-		}
-
-		for _, record := range allRecords {
-			if len(record.Songs) == 0 {
-				if err := state.Config.Database.Delete(&record).Error; err != nil {
-					panic(fmt.Sprintf("Failed to delete record: %v", err))
-				}
-
-				state.Logger.Debugf("ScanLibrary->backingThread->cleanupDatabase: Deleted record '%s'", record.Name)
-			}
-		}
-
-		// Clean up artists that have no songs anymore
-		allArtists := []database.Artist{}
-
-		if err := state.Config.Database.Preload("PrimarySongs").Preload("CollabSongs").Find(&allArtists).Error; err != nil {
-			panic(fmt.Sprintf("Failed to find all artists: %v", err))
-		}
-
-		for _, artist := range allArtists {
-			if len(artist.PrimarySongs) == 0 && len(artist.CollabSongs) == 0 {
-				if err := state.Config.Database.Delete(&artist).Error; err != nil {
-					panic(fmt.Sprintf("Failed to delete artist: %v", err))
-				}
-
-				state.Logger.Debugf("ScanLibrary->backingThread->cleanupDatabase: Deleted artist '%s'", artist.Name)
+			if err := state.CoreRT.CleanupOrphanedEntities(); err != nil {
+				panic(fmt.Sprintf("Failed to clean up orphaned records and artists: %v", err))
 			}
 		}
 
@@ -1336,9 +1408,13 @@ func RenderMainRelabelPopup(state *stateStructs.ApplicationState) {
 					dereffedSong.PrimaryArtist = &dereffedPrimaryArtist
 				}
 
-				for _, collabArtist := range dereffedSong.CollabArtists {
-					dereffedCollabArtist := *collabArtist
-					collabArtist = &dereffedCollabArtist
+				if len(dereffedSong.CollabArtists) > 0 {
+					copiedCollabs := make([]*core.Artist, len(dereffedSong.CollabArtists))
+					for i, collabArtist := range dereffedSong.CollabArtists {
+						dereffedCollabArtist := *collabArtist
+						copiedCollabs[i] = &dereffedCollabArtist
+					}
+					dereffedSong.CollabArtists = copiedCollabs
 				}
 
 				newLabelingWrappedSong := &labelingstate.LabelingWrappedSong{

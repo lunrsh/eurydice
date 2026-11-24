@@ -23,6 +23,7 @@ type sortContainer struct {
 	LevenshteinDifference int
 }
 
+// TODO: migrate this to seperate Search()
 func backgroundSearchDaemon(state *stateStructs.ApplicationState) {
 	// Set up crash handler
 	defer func() {

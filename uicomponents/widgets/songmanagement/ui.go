@@ -13,7 +13,6 @@ import (
 	"unsafe"
 
 	stateStructs "git.lunr.sh/luna/eurydice/state"
-	"git.lunr.sh/luna/eurydice/state/database"
 	"git.lunr.sh/luna/eurydice/state/popupstate/labelingstate"
 	"git.lunr.sh/luna/eurydice/state/widgetstate/mediastate"
 	"git.lunr.sh/luna/eurydice/state/widgetstate/songmanagementstate"
@@ -40,10 +39,14 @@ func SetupRelabeling(state *stateStructs.ApplicationState) error {
 	fetchedSongs := make([]*labelingstate.LabelingWrappedSong, len(state.PageStates.SongManagement.Songs))
 
 	for songIndex, visibleSong := range state.PageStates.SongManagement.Songs {
-		fetchedSongs[songIndex] = &labelingstate.LabelingWrappedSong{}
+		song, err := state.CoreRT.GetSongByID(visibleSong.SongID)
 
-		if err := state.Config.Database.Preload("PrimaryArtist").Preload("CollabArtists").Preload("Record").Where("id = ?", visibleSong.SongID).First(&fetchedSongs[songIndex].Song).Error; err != nil {
-			return fmt.Errorf("failed to fetch song %d: %v", visibleSong.SongID, err)
+		if err != nil {
+			return fmt.Errorf("failed to fetch song %d: %w", visibleSong.SongID, err)
+		}
+
+		fetchedSongs[songIndex] = &labelingstate.LabelingWrappedSong{
+			Song: song,
 		}
 	}
 
@@ -152,13 +155,10 @@ func checkAndExecuteDragAndDrop(state *stateStructs.ApplicationState) {
 
 func deleteSongs(state *stateStructs.ApplicationState) error {
 	for _, song := range state.PageStates.SongManagement.SongsToDelete {
-		if err := state.Config.Database.Where("id = ?", song.PlaylistContainerID).Delete(&database.PlaylistSong{}).Error; err != nil {
+		// NOTE: The CoreRT is responsible for reindexing the playlist after removal
+		if err := state.CoreRT.RemoveSongFromPlaylist(state.PageStates.SongManagement.PlaylistID, song.SongID); err != nil {
 			return fmt.Errorf("failed to delete song: %w", err)
 		}
-	}
-
-	if err := utilities.ReindexDeletedSongs(state, state.PageStates.SongManagement.PlaylistID); err != nil {
-		return fmt.Errorf("failed to reindex songs after deletion: %w", err)
 	}
 
 	// Sync the UI by re-bootstrapping the index

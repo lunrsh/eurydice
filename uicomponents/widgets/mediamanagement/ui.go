@@ -15,7 +15,6 @@ import (
 	"golang.design/x/clipboard"
 
 	stateStructs "git.lunr.sh/luna/eurydice/state"
-	"git.lunr.sh/luna/eurydice/state/database"
 	"git.lunr.sh/luna/eurydice/state/popupstate/labelingstate"
 	"git.lunr.sh/luna/eurydice/state/widgetstate/mediastate"
 	"git.lunr.sh/luna/eurydice/utilities"
@@ -76,6 +75,9 @@ func SetupRelabeling(state *stateStructs.ApplicationState) error {
 	}
 
 	// Then, convert them to a list of songs specifically
+	//
+	// Songs returned from the CoreRT are REQUIRED to have PrimaryArtist, CollabArtists, and Record populated, so we don't
+	// need to fetch any more information ourselves.
 	songMarkerSlice, err := utilities.GetSongListFromMarkers(state, originalMarkerSlice)
 
 	if err != nil {
@@ -86,40 +88,6 @@ func SetupRelabeling(state *stateStructs.ApplicationState) error {
 	state.PageStates.Labeling.SongsToRelabel = make([]*labelingstate.LabelingWrappedSong, 0, len(songMarkerSlice))
 
 	for _, song := range songMarkerSlice {
-		// We probably need to fetch more information first! So let's rock
-
-		// Fetch the primary artist
-		if song.PrimaryArtistID != 0 && song.PrimaryArtist == nil {
-			if err := state.Config.Database.Where("id = ?", song.PrimaryArtistID).First(&song.PrimaryArtist).Error; err != nil {
-				return fmt.Errorf("failed to fetch primary artist for song %d: %w", song.PrimaryArtistID, err)
-			}
-		}
-
-		// Fetch the collab artists
-		if len(song.CollabArtists) == 0 {
-			// FIXME: This isn't ideal, but it works, I guess?
-			otherArtistIDsOnThisSong := []uint{}
-
-			if err := state.Config.Database.Where("song_id = ?", song.ID).Table("song_other_artists").Pluck("artist_id", &otherArtistIDsOnThisSong).Error; err != nil {
-				panic(fmt.Sprintf("Failed to fetch other artist IDs on song %d: %s", song.ID, err))
-			}
-
-			artistsOnThisSong := make([]*database.Artist, len(otherArtistIDsOnThisSong))
-
-			if err := state.Config.Database.Where("id IN ?", otherArtistIDsOnThisSong).Find(&artistsOnThisSong).Error; err != nil {
-				panic(fmt.Sprintf("Failed to fetch collab artists for song %d: %s", song.ID, err))
-			}
-
-			song.CollabArtists = artistsOnThisSong
-		}
-
-		// Fetch the record
-		if song.RecordID != 0 && song.Record == nil {
-			if err := state.Config.Database.Where("id = ?", song.RecordID).First(&song.Record).Error; err != nil {
-				return fmt.Errorf("failed to fetch record for song %d: %w", song.RecordID, err)
-			}
-		}
-
 		state.PageStates.Labeling.SongsToRelabel = append(state.PageStates.Labeling.SongsToRelabel, &labelingstate.LabelingWrappedSong{
 			Song: song,
 		})
@@ -262,35 +230,39 @@ func ingestMarkersForPasteOrDrop(state *stateStructs.ApplicationState, markers [
 		case mediastate.StateIDSong:
 			state.PageStates.MediaManagement.SelectionStorage.SetItemSelected(imgui.InternalImHashStrV(fmt.Sprintf("##Song%d", id), 0, 0), true)
 
-			// Now we find the parents by querying the database and then select them also. god.
-			song := &database.Song{}
+			// Now we find the parents by querying the CoreRT and then select them also. god.
+			song, err := state.CoreRT.GetSongByID(id)
 
-			if err := state.Config.Database.Where("id = ?", id).First(song).Error; err != nil {
-				return fmt.Errorf("failed to find record that's a parent of song %d: %v", id, err)
+			if err != nil {
+				return fmt.Errorf("failed to find song %d to select its parents: %w", id, err)
 			}
 
 			// Select the parent record
-			recordImguiID := imgui.InternalImHashStrV(fmt.Sprintf("##Record%d", song.RecordID), 0, 0)
-			copyPasteTreeNodesToOpen[recordImguiID] = true
+			if song.Record != nil {
+				recordImguiID := imgui.InternalImHashStrV(fmt.Sprintf("##Record%d", song.Record.ID), 0, 0)
+				copyPasteTreeNodesToOpen[recordImguiID] = true
+			}
 
 			// Depending on the sort order, also select the artist
-			if state.PageStates.MediaManagement.SortMethod == mediastate.SortArtistThenAlbum {
-				artistImguiID := imgui.InternalImHashStrV(fmt.Sprintf("##Artist%d", song.PrimaryArtistID), 0, 0)
+			if state.PageStates.MediaManagement.SortMethod == mediastate.SortArtistThenAlbum && song.PrimaryArtist != nil {
+				artistImguiID := imgui.InternalImHashStrV(fmt.Sprintf("##Artist%d", song.PrimaryArtist.ID), 0, 0)
 				copyPasteTreeNodesToOpen[artistImguiID] = true
 			}
 		case mediastate.StateIDRecord:
 			state.PageStates.MediaManagement.SelectionStorage.SetItemSelected(imgui.InternalImHashStrV(fmt.Sprintf("##Record%d", id), 0, 0), true)
 
 			if state.PageStates.MediaManagement.SortMethod == mediastate.SortArtistThenAlbum {
-				record := &database.Record{}
+				record, err := state.CoreRT.GetRecordByID(id)
 
-				if err := state.Config.Database.Where("id = ?", id).First(record).Error; err != nil {
-					return fmt.Errorf("failed to find record that's a parent of song %d: %v", id, err)
+				if err != nil {
+					return fmt.Errorf("failed to find record %d to select its parent: %w", id, err)
 				}
 
-				// Select the parent record
-				artistImguiID := imgui.InternalImHashStrV(fmt.Sprintf("##Artist%d", record.ArtistID), 0, 0)
-				copyPasteTreeNodesToOpen[artistImguiID] = true
+				// Select the parent artist
+				if record.Artist != nil {
+					artistImguiID := imgui.InternalImHashStrV(fmt.Sprintf("##Artist%d", record.Artist.ID), 0, 0)
+					copyPasteTreeNodesToOpen[artistImguiID] = true
+				}
 			}
 		case mediastate.StateIDArtist:
 			state.PageStates.MediaManagement.SelectionStorage.SetItemSelected(imgui.InternalImHashStrV(fmt.Sprintf("##Artist%d", id), 0, 0), true)

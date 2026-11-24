@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"image"
 	"image/jpeg"
@@ -139,7 +140,7 @@ func (euryRT *LibEuryRT) GetAllRecordsFromArtist(artistID uint) ([]*core.Record,
 
 	var originalRecords []database.Record
 
-	if err := euryRT.db.Preload("Artist").Where("library_id = ? AND artist_id = ?", artistID, euryRT.library.ID).Find(&originalRecords).Error; err != nil {
+	if err := euryRT.db.Preload("Artist").Where("library_id = ? AND artist_id = ?", euryRT.library.ID, artistID).Find(&originalRecords).Error; err != nil {
 		return nil, &core.ErrNoExist{
 			Message: "Records",
 		}
@@ -193,7 +194,7 @@ func (euryRT *LibEuryRT) GetAllSongsFromArtist(artistID uint) ([]*core.Song, err
 
 	var originalSongs []database.Song
 
-	if err := euryRT.db.Preload("PrimaryArtist").Preload("CollabArtists").Preload("Record").Where("library_id = ? AND artist_id = ?", euryRT.library.ID, artistID).Find(&originalSongs).Error; err != nil {
+	if err := euryRT.db.Preload("PrimaryArtist").Preload("CollabArtists").Preload("Record").Where("library_id = ? AND primary_artist_id = ?", euryRT.library.ID, artistID).Find(&originalSongs).Error; err != nil {
 		return nil, &core.ErrNoExist{
 			Message: "Songs",
 		}
@@ -316,7 +317,7 @@ func (euryRT *LibEuryRT) GetSongsByName(name string) ([]*core.Song, error) {
 
 	var originalSongs []database.Song
 
-	if err := euryRT.db.Preload("PrimaryArtist").Preload("CollabArtists").Preload("Record").Where("library_id = ? AND name = ?", euryRT.library.ID, name).Find(&originalSongs).Error; err != nil {
+	if err := euryRT.db.Preload("PrimaryArtist").Preload("CollabArtists").Preload("Record").Where("library_id = ? AND title = ?", euryRT.library.ID, name).Find(&originalSongs).Error; err != nil {
 		return nil, &core.ErrNoExist{
 			Message: "Songs",
 		}
@@ -396,7 +397,7 @@ func (euryRT *LibEuryRT) ModifyRecord(record *core.Record, modifyEmptyArrays boo
 		return fmt.Errorf("Artist is nil, when it needs to be defined")
 	}
 
-	if !euryRT.validateArtID(record.ArtID) {
+	if record.ArtID != "" && !euryRT.validateArtID(record.ArtID) {
 		return fmt.Errorf("ArtID failed validation! does it exist?")
 	}
 
@@ -413,6 +414,9 @@ func (euryRT *LibEuryRT) ModifyRecord(record *core.Record, modifyEmptyArrays boo
 
 	updatedRecord.Artist.ID = record.Artist.ID
 
+	tempRecord := &database.Record{}
+	tempRecord.ID = record.ID
+
 	if modifyEmptyArrays || len(record.Songs) > 0 {
 		updatedRecord.Songs = make([]*database.Song, len(record.Songs))
 
@@ -420,10 +424,11 @@ func (euryRT *LibEuryRT) ModifyRecord(record *core.Record, modifyEmptyArrays boo
 			updatedRecord.Songs[songIndex] = &database.Song{}
 			updatedRecord.Songs[songIndex].ID = song.ID
 		}
-	}
 
-	tempRecord := &database.Record{}
-	tempRecord.ID = record.ID
+		if err := euryRT.db.Model(tempRecord).Association("Songs").Replace(updatedRecord.Songs); err != nil {
+			return fmt.Errorf("Failed to write to database: %w", err)
+		}
+	}
 
 	if err := euryRT.db.Model(tempRecord).Updates(&updatedRecord).Error; err != nil {
 		return fmt.Errorf("Failed to write to database: %w", err)
@@ -450,7 +455,7 @@ func (euryRT *LibEuryRT) ModifySong(song *core.Song, modifyEmptyArrays bool) err
 		return fmt.Errorf("PrimaryArtist is nil, when it needs to be defined")
 	}
 
-	if !euryRT.validateArtID(song.ArtID) {
+	if song.ArtID != "" && !euryRT.validateArtID(song.ArtID) {
 		return fmt.Errorf("ArtID failed validation! does it exist?")
 	}
 
@@ -473,16 +478,23 @@ func (euryRT *LibEuryRT) ModifySong(song *core.Song, modifyEmptyArrays bool) err
 	updatedSong.PrimaryArtist.ID = song.PrimaryArtist.ID
 	updatedSong.Record.ID = song.Record.ID
 
-	if modifyEmptyArrays || len(updatedSong.CollabArtists) > 0 {
+	tempSong := &database.Song{}
+	tempSong.ID = song.ID
+
+	if modifyEmptyArrays || len(song.CollabArtists) > 0 {
 		updatedSong.CollabArtists = make([]*database.Artist, len(song.CollabArtists))
 
 		for collabArtistIndex, collabArtist := range song.CollabArtists {
 			updatedSong.CollabArtists[collabArtistIndex] = &database.Artist{}
 			updatedSong.CollabArtists[collabArtistIndex].ID = collabArtist.ID
 		}
+
+		if err := euryRT.db.Model(tempSong).Association("CollabArtists").Replace(updatedSong.CollabArtists); err != nil {
+			return fmt.Errorf("Failed to write to database: %w", err)
+		}
 	}
 
-	if modifyEmptyArrays || len(updatedSong.PlaylistSongs) > 0 {
+	if modifyEmptyArrays || len(song.PlaylistSongs) > 0 {
 		updatedSong.PlaylistSongs = make([]*database.PlaylistSong, len(song.PlaylistSongs))
 
 		for primarySongIndex, primarySong := range song.PlaylistSongs {
@@ -490,9 +502,6 @@ func (euryRT *LibEuryRT) ModifySong(song *core.Song, modifyEmptyArrays bool) err
 			updatedSong.PlaylistSongs[primarySongIndex].ID = primarySong.ID
 		}
 	}
-
-	tempSong := &database.Song{}
-	tempSong.ID = song.ID
 
 	if err := euryRT.db.Model(tempSong).Updates(&updatedSong).Error; err != nil {
 		return fmt.Errorf("Failed to write to database: %w", err)
@@ -733,45 +742,30 @@ func (euryRT *LibEuryRT) AddSongToPlaylist(playlistID uint, songID uint) error {
 	}
 
 	var (
-		songExists                bool
-		playlistExists            bool
+		songInDatabase            database.Song
+		playlistInDatabase        database.Playlist
 		playlistSongAlreadyExists bool
 	)
 
-	// Uses technique from https://stackoverflow.com/questions/66392372/select-exists-with-gorm
-	// Check if the song exists by doing database trickery
-	// We could just try to do .Find but we don't need the result so it's more efficient if we just ask the databace directly
-	err := euryRT.db.Model(&database.Song{}).
-		Select("count(*) > 0").
-		Where("library_id = ? AND id = ?", euryRT.library.ID, songID).
-		Find(&songExists).
-		Error
+	if err := euryRT.db.Preload("PrimaryArtist").Preload("CollabArtists").Preload("Record").Where("library_id = ? AND id = ?", euryRT.library.ID, songID).First(&songInDatabase).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return &core.ErrNoExist{
+				Message: "Song",
+			}
+		}
 
-	if err != nil {
 		return fmt.Errorf("failed to check if Song exists in database: %w", err)
 	}
 
-	if !songExists {
-		return &core.ErrNoExist{
-			Message: "Song",
-		}
-	}
-
 	// Check if the playlist exists
-	err = euryRT.db.Model(&database.Playlist{}).
-		Select("count(*) > 0").
-		Where("library_id = ? AND id = ?", euryRT.library.ID, playlistID).
-		Find(&playlistExists).
-		Error
-
-	if err != nil {
-		return fmt.Errorf("failed to check if Playlist exists in database: %w", err)
-	}
-
-	if !playlistExists {
-		return &core.ErrNoExist{
-			Message: "Playlist",
+	if err := euryRT.db.Where("library_id = ? AND id = ?", euryRT.library.ID, playlistID).First(&playlistInDatabase).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return &core.ErrNoExist{
+				Message: "Playlist",
+			}
 		}
+
+		return fmt.Errorf("failed to check if Playlist exists in database: %w", err)
 	}
 
 	playlistSongToAppend := &database.PlaylistSong{}
@@ -779,7 +773,7 @@ func (euryRT *LibEuryRT) AddSongToPlaylist(playlistID uint, songID uint) error {
 	// Check if the song is already in the playlist and abort if it is
 
 	// Reuse the object because we can
-	err = euryRT.db.Model(playlistSongToAppend).
+	err := euryRT.db.Model(playlistSongToAppend).
 		Select("count(*) > 0").
 		Where("playlist_id = ? AND song_id = ?", playlistID, songID).
 		Find(&playlistSongAlreadyExists).
@@ -809,6 +803,15 @@ func (euryRT *LibEuryRT) AddSongToPlaylist(playlistID uint, songID uint) error {
 		return fmt.Errorf("failed to write the Playlist entry to the database: %w", err)
 	}
 
+	euryRT.broadcastPlaylist(
+		core.PlaylistEventSongAdded,
+		&core.Playlist{
+			ID:   playlistInDatabase.ID,
+			Name: playlistInDatabase.Name,
+		},
+		[]*core.Song{transformSong(&songInDatabase, songInDatabase.ID)},
+	)
+
 	return nil
 }
 
@@ -820,7 +823,7 @@ func (euryRT *LibEuryRT) RemoveSongFromPlaylist(playlistID uint, songID uint) er
 
 	playlistSongEntry := &database.PlaylistSong{}
 
-	if err := euryRT.db.Where("library_id = ? AND playlist_id = ? AND song_id = ?", euryRT.library.ID, playlistID, songID).First(playlistSongEntry).Error; err != nil {
+	if err := euryRT.db.Preload("Playlist").Preload("Song.PrimaryArtist").Preload("Song.CollabArtists").Preload("Song.Record").Where("library_id = ? AND playlist_id = ? AND song_id = ?", euryRT.library.ID, playlistID, songID).First(playlistSongEntry).Error; err != nil {
 		return &core.ErrNoExist{
 			Message: "PlaylistSong",
 		}
@@ -831,6 +834,23 @@ func (euryRT *LibEuryRT) RemoveSongFromPlaylist(playlistID uint, songID uint) er
 	}
 
 	// Reindex songs
+	if err := euryRT.reindexPlaylist(playlistID); err != nil {
+		return fmt.Errorf("failed to reindex Playlist after removal: %w", err)
+	}
+
+	affectedPlaylist := &core.Playlist{
+		ID: playlistID,
+	}
+	if playlistSongEntry.Playlist != nil {
+		affectedPlaylist.ID = playlistSongEntry.Playlist.ID
+		affectedPlaylist.Name = playlistSongEntry.Playlist.Name
+	}
+
+	euryRT.broadcastPlaylist(
+		core.PlaylistEventSongRemoved,
+		affectedPlaylist,
+		[]*core.Song{transformSong(playlistSongEntry.Song, songID)},
+	)
 
 	return nil
 }
@@ -847,7 +867,91 @@ func (euryRT *LibEuryRT) CreatePlaylist(playlistName string) (playlistID uint, e
 		return 0, fmt.Errorf("failed to write Playlist: %w", err)
 	}
 
+	euryRT.broadcastPlaylist(
+		core.PlaylistEventPlaylistCreated,
+		&core.Playlist{
+			ID:   playlistInDatabase.ID,
+			Name: playlistInDatabase.Name,
+		},
+		nil,
+	)
+
 	return playlistInDatabase.ID, nil
+}
+
+// Deletes the playlist with the given ID. Implementations MUST also remove every PlaylistSong belonging to
+// said playlist. The underlying Songs MUST NOT be deleted.
+//
+// If the playlist does not exist, implementations MUST return *ErrNoExist.
+func (euryRT *LibEuryRT) DeletePlaylist(playlistID uint) error {
+	if !euryRT.hasInitFinished {
+		return fmt.Errorf("not iniitalized yet")
+	}
+
+	playlistInDatabase := &database.Playlist{}
+
+	if err := euryRT.db.Where("library_id = ? AND id = ?", euryRT.library.ID, playlistID).First(playlistInDatabase).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return &core.ErrNoExist{
+				Message: "Playlist",
+			}
+		}
+
+		return fmt.Errorf("failed to check if Playlist exists: %w", err)
+	}
+
+	if err := euryRT.db.Where("playlist_id = ?", playlistID).Delete(&([]database.PlaylistSong{})).Error; err != nil {
+		return fmt.Errorf("Failed to delete playlist contents: %w", err)
+	}
+
+	if err := euryRT.db.Where("id = ?", playlistID).Delete(&database.Playlist{}).Error; err != nil {
+		return fmt.Errorf("Failed to delete playlist: %w", err)
+	}
+
+	euryRT.broadcastPlaylist(
+		core.PlaylistEventPlaylistRemoved,
+		&core.Playlist{
+			ID:   playlistInDatabase.ID,
+			Name: playlistInDatabase.Name,
+		},
+		nil,
+	)
+
+	return nil
+}
+
+// Renames the playlist with the given ID. Playlists' names MAY be empty.
+//
+// If the playlist does not exist, implementations MUST return *ErrNoExist.
+func (euryRT *LibEuryRT) RenamePlaylist(playlistID uint, newName string) error {
+	if !euryRT.hasInitFinished {
+		return fmt.Errorf("not iniitalized yet")
+	}
+
+	playlist := &database.Playlist{}
+
+	if err := euryRT.db.Where("library_id = ? AND id = ?", euryRT.library.ID, playlistID).First(playlist).Error; err != nil {
+		return &core.ErrNoExist{
+			Message: "Playlist",
+		}
+	}
+
+	playlist.Name = newName
+
+	if err := euryRT.db.Save(playlist).Error; err != nil {
+		return fmt.Errorf("failed to write updated Playlist: %w", err)
+	}
+
+	euryRT.broadcastPlaylist(
+		core.PlaylistEventPlaylistUpdated,
+		&core.Playlist{
+			ID:   playlist.ID,
+			Name: playlist.Name,
+		},
+		nil,
+	)
+
+	return nil
 }
 
 // Creates an arbitrary artist inside the database.
@@ -864,11 +968,13 @@ func (euryRT *LibEuryRT) CreateArbitraryArtist(artist *core.Artist) (uint, error
 	}
 
 	artistInDatabase := &database.Artist{
-		Name: artist.Name,
+		Name:      artist.Name,
+		LibraryID: euryRT.library.ID,
+		Library:   euryRT.library,
 	}
 
 	euryRT.db.Save(artistInDatabase)
-	euryRT.broadcastArtist(core.ArtistEventAdd, []*core.Artist{transformArtist(artistInDatabase, artist.ID)})
+	euryRT.broadcastArtist(core.ArtistEventAdd, []*core.Artist{transformArtist(artistInDatabase, artistInDatabase.ID)})
 
 	return artistInDatabase.ID, nil
 }
@@ -901,8 +1007,10 @@ func (euryRT *LibEuryRT) CreateArbitraryRecord(record *core.Record, artistID uin
 	}
 
 	recordInDatabase := &database.Record{
-		Name:     record.Name,
-		ArtistID: artistID,
+		Name:      record.Name,
+		ArtistID:  artistID,
+		LibraryID: euryRT.library.ID,
+		Library:   euryRT.library,
 	}
 
 	// Save the new Record
@@ -910,6 +1018,17 @@ func (euryRT *LibEuryRT) CreateArbitraryRecord(record *core.Record, artistID uin
 	euryRT.broadcastRecord(core.RecordEventAdd, []*core.Record{transformRecord(recordInDatabase, recordInDatabase.ID)})
 
 	return recordInDatabase.ID, nil
+}
+
+// Cleans up any records and artists that no longer have any associated songs.
+//
+// This function is OPTIONAL. If not implemented, implementations MUST return *ErrUnsupported.
+func (euryRT *LibEuryRT) CleanupOrphanedEntities() error {
+	if !euryRT.hasInitFinished {
+		return fmt.Errorf("not iniitalized yet")
+	}
+
+	return euryRT.cleanupDatabase(nil, true)
 }
 
 // GetArt returns an image from an ArtID.
@@ -960,8 +1079,7 @@ func (euryRT *LibEuryRT) AddArtToDatabase(imageData image.Image) (artID string, 
 
 	songArtID := string(imageHashAsString)
 
-	// TODO: this if statement is funky
-	if _, err := os.Stat(filepath.Join(euryRT.statePath, "thumbnails", string(imageHashAsString))); !os.IsExist(err) {
+	if _, err := os.Stat(filepath.Join(euryRT.statePath, "thumbnails", string(imageHashAsString))); errors.Is(err, os.ErrNotExist) {
 		// Downscale image and then write it
 		newImage := image.NewRGBA(image.Rect(0, 0, 256, 256))
 		draw.NearestNeighbor.Scale(newImage, newImage.Rect, imageData, imageData.Bounds(), draw.Over, nil)
@@ -1025,6 +1143,15 @@ func (euryRT *LibEuryRT) RegisterArtistHandler(callback core.ArtistCallback) {
 	euryRT.artistHandlerCallbacks = append(euryRT.artistHandlerCallbacks, callback)
 }
 
+// Registers a Playlist handler for Playlist events. You MUST implement at least a form of this. Implementations SHOULD
+// handle these in linear order on a background thread to not lag the main thread.
+//
+// NOTE: if you are writing this function as a EXTISM-based WASM plugin, Eurydice MAY automatically handle wrapping
+// your plugin as something that runs on a background thread anyways.
+func (euryRT *LibEuryRT) RegisterPlaylistHandler(callback core.PlaylistCallback) {
+	euryRT.playlistHandlerCallbacks = append(euryRT.playlistHandlerCallbacks, callback)
+}
+
 // Registers a handler for Eurydice's startup UI for you to show progress of initialization.
 //
 // This function is OPTIONAL, and if not implemented, Eurydice will show a generic loading bar on startup while you
@@ -1051,28 +1178,9 @@ func (euryRT *LibEuryRT) IsReady() bool {
 // configOptions is a local KV store for your given implementation to read and write to.
 // This is intentionally not a Golang map. The goal is for a: these interfaces to be interoperable across languages via WASM,
 // and b: pluggable inside Eurydice.
-func (euryRT *LibEuryRT) Initialize(storage core.PluginStorage) error {
+func (euryRT *LibEuryRT) Initialize(storage core.PluginStorage, logger core.Logger) error {
+	euryRT.logger = logger
 	euryRT.broadcastInit("Starting LibEury...", -1, "Starting...", false)
-
-	// Initialize playlist ID state
-	autoAddNewSongsToPlaylists, err := storage.KVGet("autoAddNewSongsToPlaylists")
-
-	if err != nil {
-		storage.KVSet("autoAddNewSongsToPlaylists", false)
-		autoAddNewSongsToPlaylists = false
-	} else {
-		autoAddID, err := storage.KVGet("autoAddNewSongsToPlaylistID")
-
-		if err != nil {
-			autoAddNewSongsToPlaylists = false
-		} else {
-			autoAddType := autoAddID.(int)
-			euryRT.autoAddNewSongsToPlaylistID = uint(autoAddType)
-		}
-	}
-
-	autoAddNewSongsToPlaylistBool := autoAddNewSongsToPlaylists.(bool)
-	euryRT.autoAddNewSongsToPlaylists = autoAddNewSongsToPlaylistBool
 
 	// Set up libeury storage
 	euryRT.statePath = storage.GetFSBasePath()
@@ -1080,6 +1188,7 @@ func (euryRT *LibEuryRT) Initialize(storage core.PluginStorage) error {
 	// Start up database
 	euryRT.broadcastInit("Initializing Database...", -1, "Starting...", false)
 
+	var err error
 	euryRT.db, err = gorm.Open(sqlite.Open(filepath.Join(euryRT.statePath, "db.sqlite")), &gorm.Config{})
 
 	if err != nil {
@@ -1096,6 +1205,69 @@ func (euryRT *LibEuryRT) Initialize(storage core.PluginStorage) error {
 	); err != nil {
 		return fmt.Errorf("failed to migrate database: %w", err)
 	}
+
+	// Set up first library we find, and if we can't find any, attempt to create one
+	// TOOD: this is a temp measure until we properly write init stuffs for this
+
+	if err := euryRT.db.First(euryRT.library).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// This method will be replaced... at some point... once we write the setup UI code
+			//
+			// Until then, we use a special mechanism used in setup called "legacyLibraryBootstrap", which is basically
+			// just setup poking at our stuff to tell us what library to use to bootstrap.
+			legacyBootstrapType, err := storage.KVGet("legacyLibraryBootstrap")
+
+			if err != nil {
+				return fmt.Errorf("failed to create default library: %w", err)
+			} else {
+				legacyBootstrapStr := legacyBootstrapType.(string)
+
+				euryRT.library = &database.Library{
+					LibraryPath: legacyBootstrapStr,
+				}
+
+				euryRT.db.Create(euryRT.library)
+			}
+		} else {
+			return fmt.Errorf("failed to initiailize default library: %w", err)
+		}
+	}
+
+	// Initialize playlist ID state
+	autoAddNewSongsToPlaylists, err := storage.KVGet("autoAddNewSongsToPlaylists")
+
+	if err != nil {
+		euryRT.logger.Warnf("failed to get key 'autoAddNewSongsToPlaylists' from KV: %w", err)
+
+		storage.KVSet("autoAddNewSongsToPlaylists", false)
+		autoAddNewSongsToPlaylists = false
+	} else {
+		autoAddID, err := storage.KVGet("autoAddNewSongsToPlaylistID")
+
+		if err != nil {
+			autoAddNewSongsToPlaylists = false
+		} else {
+			autoAddType := autoAddID.(float64)
+
+			if autoAddType == 0 {
+				// Create the playlist if it does not exist
+				playlist := &database.Playlist{
+					Name:      "Automatically Synced Songs",
+					LibraryID: euryRT.library.ID,
+				}
+
+				euryRT.db.Create(playlist)
+				storage.KVSet("autoAddNewSongsToPlaylistID", playlist.ID)
+
+				euryRT.autoAddNewSongsToPlaylistID = playlist.ID
+			} else {
+				euryRT.autoAddNewSongsToPlaylistID = uint(autoAddType)
+			}
+		}
+	}
+
+	autoAddNewSongsToPlaylistBool := autoAddNewSongsToPlaylists.(bool)
+	euryRT.autoAddNewSongsToPlaylists = autoAddNewSongsToPlaylistBool
 
 	// Index new songs
 	euryRT.logger.Debugf("ScanLibrary->backingThread: scanning library path '%s'", euryRT.library.LibraryPath)
@@ -1138,9 +1310,12 @@ func (euryRT *LibEuryRT) Initialize(storage core.PluginStorage) error {
 
 	// Step 4: cleanup database (remove entries that are no longer in the filesystem)
 cleanupDatabaseStep:
-	if err = euryRT.cleanupDatabase(allMusicFound); err != nil {
+	if err = euryRT.cleanupDatabase(allMusicFound, false); err != nil {
 		panic(fmt.Sprintf("Failed to cleanup database: %v", err))
 	}
+
+	euryRT.hasInitFinished = true
+	euryRT.broadcastInit("Welcome to Eurydice.", 0, "Started.", true)
 
 	return nil
 }
@@ -1165,6 +1340,16 @@ func (euryRT *LibEuryRT) Search(query string) ([]*core.SearchResult, error) {
 
 // === LibEury Specific Backend Functions ===
 
+// Registers a handler for FilesToMetadata (SyncLocalFileStoreToMetadata) progress events.
+func (euryRT *LibEuryRT) RegisterFTMHandler(callback FTMSyncHandlerCallback) {
+	euryRT.ftmHandlerCallbacks = append(euryRT.ftmHandlerCallbacks, callback)
+}
+
+// Registers a handler for MetadataToFiles (SyncMetadataToLocalFileStore) progress events.
+func (euryRT *LibEuryRT) RegisterMTFHandler(callback MTFSyncHandlerCallback) {
+	euryRT.mtfHandlerCallbacks = append(euryRT.mtfHandlerCallbacks, callback)
+}
+
 // === Internal Functions ===
 
 func (euryRT *LibEuryRT) reindexPlaylist(playlistID uint) error {
@@ -1175,7 +1360,7 @@ func (euryRT *LibEuryRT) reindexPlaylist(playlistID uint) error {
 	// Fetch all songs from the database, to fix ID ordering
 	var songs []database.PlaylistSong
 
-	if err := euryRT.db.Where("playlist_id = ?", playlistID).Find(&songs).Error; err != nil {
+	if err := euryRT.db.Where("playlist_id = ?", playlistID).Order("sort_index ASC").Find(&songs).Error; err != nil {
 		return fmt.Errorf("failed to fetch songs: %w", err)
 	}
 
@@ -1226,5 +1411,26 @@ func (euryRT *LibEuryRT) broadcastRecord(event core.RecordEvent, affectedRecords
 func (euryRT *LibEuryRT) broadcastSong(event core.SongEvent, affectedSongs []*core.Song) {
 	for _, songCallback := range euryRT.songHandlerCallbacks {
 		go songCallback(event, affectedSongs)
+	}
+}
+
+// Dispatch Playlist events
+func (euryRT *LibEuryRT) broadcastPlaylist(event core.PlaylistEvent, affectedPlaylist *core.Playlist, affectedSongs []*core.Song) {
+	for _, playlistCallback := range euryRT.playlistHandlerCallbacks {
+		go playlistCallback(event, affectedPlaylist, affectedSongs)
+	}
+}
+
+// Dispatch FilesToMetadata progress events
+func (euryRT *LibEuryRT) broadcastFTM(progressMessage string, progressBar int, progressBarMessage string, doneSyncing bool) {
+	for _, ftmCallback := range euryRT.ftmHandlerCallbacks {
+		go ftmCallback(progressMessage, progressBar, progressBarMessage, doneSyncing)
+	}
+}
+
+// Dispatch MetadataToFiles progress events
+func (euryRT *LibEuryRT) broadcastMTF(progressMessage string, progressBar int, progressBarMessage string, doneSyncing bool) {
+	for _, mtfCallback := range euryRT.mtfHandlerCallbacks {
+		go mtfCallback(progressMessage, progressBar, progressBarMessage, doneSyncing)
 	}
 }

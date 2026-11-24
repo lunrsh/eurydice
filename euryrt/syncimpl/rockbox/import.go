@@ -13,7 +13,6 @@ import (
 
 	"git.lunr.sh/luna/eurydice/euryrt/core"
 	"go.senan.xyz/taglib"
-	"gorm.io/gorm"
 )
 
 // Imports a playlist to the given CRT.
@@ -120,7 +119,7 @@ func (rockDevRT *RockDevRT) ImportSongsFromPlaylist(playlistToImport *core.Playl
 
 					if _, err := rockDevRT.upstreamRuntime.GetSongByID(uint(song.EurydiceSongID)); err != nil {
 						// If it doesn't exist, copy it to the device
-						if errors.Is(err, gorm.ErrRecordNotFound) {
+						if errors.Is(err, &core.ErrNoExist{}) {
 							rockDevRT.rockboxRT.logger.Debugf("s%d: Could not find song, copying from device", song.EurydiceSongID)
 
 							// Get file mimetype
@@ -207,11 +206,9 @@ func (rockDevRT *RockDevRT) ImportSongsFromPlaylist(playlistToImport *core.Playl
 
 									continue
 								} else {
-									if errors.Is(err, gorm.ErrRecordNotFound) {
+									if errors.Is(err, &core.ErrNoExist{}) {
 										rockDevRT.rockboxRT.logger.Warnf("Could not find song '%s' in database, falling back to other methods", song.FilePath)
 									} else {
-										databaseLockMutex.Unlock()
-
 										songsImported++
 										rockDevRT.sendImportProgress(fmt.Sprintf("Importing: %s", song.FilePath), int((float32(songsImported)/float32(len(songsInPlaylist)))*100), fmt.Sprintf("%d/%d", songsImported, len(songsInPlaylist)), false)
 
@@ -365,5 +362,6 @@ func (rockDevRT *RockDevRT) ImportSongsFromPlaylist(playlistToImport *core.Playl
 	}
 
 	rockDevRT.rockboxRT.logger.Debug("Done.")
+	rockDevRT.sendImportProgress("Done.", 100, "Done!", true)
 	return criticalFailure
 }

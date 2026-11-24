@@ -87,8 +87,6 @@ type syncDevice struct {
 }
 
 type syncState struct {
-	Device *RockDevRT
-
 	PlaylistList []*core.Playlist
 
 	AudioQuality uint
