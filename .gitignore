@@ -27,6 +27,8 @@ go.work.sum
 
 # ---> Eurydice
 dist
+uicomponents/popups/initialize/output.png
+uicomponents/popups/initialize/source.txt
 
 # ---> Apple (metadata)
 .DS_Store

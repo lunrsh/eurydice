@@ -424,9 +424,14 @@ func mainLoop() {
 		firstboot.Render(appState)
 	}
 
-	if imgui.BeginPopupModalV("Initializing...", nil, imgui.WindowFlagsAlwaysAutoResize) {
+	imgui.SetNextWindowSize(imgui.Vec2{X: 600, Y: 264})
+	imgui.PushStyleColorVec4(imgui.ColPopupBg, imgui.Vec4{X: 0, Y: 0, Z: 0, W: 1})
+
+	if imgui.BeginPopupModalV("Initializing...", nil, imgui.WindowFlagsNoResize|imgui.WindowFlagsNoTitleBar) {
 		initialize.Render(appState)
 	}
+
+	imgui.PopStyleColor()
 
 	// HACK: we do it this way because of import cycle issues :(
 	if appState.PageStates.Labeling.LabelingRenamePopup.ShouldOpen {

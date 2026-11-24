@@ -1,16 +1,36 @@
 package initialize
 
 import (
+	"bytes"
+	_ "embed"
 	"fmt"
+	"image/png"
 
 	stateStructs "git.lunr.sh/luna/eurydice/state"
 	"git.lunr.sh/luna/eurydice/uicomponents/widgets/mediamanagement"
 	"git.lunr.sh/luna/eurydice/uicomponents/widgets/playlistmanagement"
 	"git.lunr.sh/luna/eurydice/uicomponents/widgets/songmanagement"
+	"git.lunr.sh/luna/eurydice/utilities"
 	"github.com/AllenDang/cimgui-go/imgui"
 )
 
+//go:embed output.png
+var pngImageData []byte
+
+//go:embed source.txt
+var pngAttribution string
+
 func Render(state *stateStructs.ApplicationState) {
+	if state.PageStates.Initialization.InitPhotoTextureRef == nil {
+		parsedPhoto, err := png.Decode(bytes.NewReader(pngImageData))
+
+		if err != nil {
+			panic(fmt.Sprintf("Failed to decode init splash photo: %v", err))
+		}
+
+		state.PageStates.Initialization.InitPhotoTextureRef = utilities.RawLoadImage(state, parsedPhoto)
+	}
+
 	if !state.PageStates.Initialization.IsRunning && !state.PageStates.Initialization.DoneInitializing {
 		state.PageStates.Initialization.IsRunning = true
 		state.PageStates.Initialization.DoneInitializing = false
@@ -42,6 +62,8 @@ func Render(state *stateStructs.ApplicationState) {
 		state.PageStates.Initialization.ProgressBar = -1
 		state.PageStates.Initialization.ProgressBarMessage = ""
 
+		state.CurrentImguiBackend.DeleteTexture(*state.PageStates.Initialization.InitPhotoTextureRef)
+
 		imgui.CloseCurrentPopup()
 		imgui.EndPopup()
 
@@ -59,11 +81,22 @@ func Render(state *stateStructs.ApplicationState) {
 		progressMessage = "..." + progressMessage[len(progressMessage)-(65-3):]
 	}
 
+	imgui.SetCursorPos(imgui.Vec2{X: 0, Y: 0})
+	imgui.Image(*state.PageStates.Initialization.InitPhotoTextureRef, imgui.Vec2{X: 600, Y: 200})
+
+	imgui.PushFont(state.FontRegular, 13)
+	imgui.SetCursorPos(imgui.Vec2{X: 590 - imgui.CalcTextSize(pngAttribution).X, Y: 168})
+	imgui.Text(pngAttribution)
+	imgui.PopFont()
+
+	imgui.SetCursorPosX(10)
+	imgui.SetCursorPosY(imgui.CursorPosY() + 30)
+
 	imgui.Text(progressMessage + "\n")
-	imgui.Separator()
 	imgui.SetCursorPosY(imgui.CursorPosY() + 1) // Do this because it's not exactly the same
 
 	progressBarMessage := state.PageStates.Initialization.ProgressBarMessage
+
 	if progressBarMessage == "" {
 		progressBarMessage = "Initializing..."
 	}
@@ -77,6 +110,6 @@ func Render(state *stateStructs.ApplicationState) {
 		fraction = capped / 100.0
 	}
 
-	imgui.ProgressBarV(fraction, imgui.Vec2{X: 600, Y: 0}, progressBarMessage)
+	imgui.ProgressBarV(fraction, imgui.Vec2{X: 585, Y: 0}, progressBarMessage)
 	imgui.EndPopup()
 }
