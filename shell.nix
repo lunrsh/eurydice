@@ -6,12 +6,12 @@
     gopls
 
     zig
+    nasm
 
     pkg-config
     libGL
 
     go-task
-    ffmpeg_8
 
     imagemagick
 

@@ -9,6 +9,8 @@ vars:
 
   OUTPUT_FILE: './dist/{{if eq .GOOS "windows"}}eurydice.exe{{else}}eurydice{{end}}'
 
+  FFMPEG_DIST: '{{.ROOT_DIR}}/dist/ffmpeg_dist/{{.GOOS}}_{{.GOARCH}}'
+
   # Fuck you Apple
   PLATFORM_LD_ARGS:
     sh: |
@@ -16,20 +18,15 @@ vars:
         SDK_PATH="$(nix eval --raw 'nixpkgs#apple-sdk_14' 2>/dev/null || echo "")"
 
         if [ "$SDK_PATH" = "" ]; then
-          echo ""
+          echo "-L{{.FFMPEG_DIST}}/lib -Wl,-dead_strip_dylibs"
           exit 0
         fi
 
-        echo "-F$SDK_PATH/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks -L$SDK_PATH/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/lib"
+        echo "-F$SDK_PATH/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks -L$SDK_PATH/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/lib -L{{.FFMPEG_DIST}}/lib -Wl,-dead_strip_dylibs"
       elif [ "{{.GOOS}}" = "windows" ]; then
-        # HACK: use CI stuff only if the dist dir is detected. maybe use env var instead?
-        if [[ -d "/tmp/ffmpeg_dist" ]]; then
-          echo "-static -L/tmp/ffmpeg_dist/lib -mwindows -lavdevice -lavfilter -lavformat -lavcodec -lswresample -lswscale -lavutil -lmp3lame -lws2_32 -lole32 -loleaut32 -lshlwapi -lstrmiids -luuid -lbcrypt -lsecur32 -lncrypt -lcrypt32"
-        else
-          echo "-static -mwindows"
-        fi
+        echo "-static -L{{.FFMPEG_DIST}}/lib -mwindows -lavdevice -lavfilter -lavformat -lavcodec -lswresample -lswscale -lavutil -lmp3lame -lws2_32 -lole32 -loleaut32 -lshlwapi -lstrmiids -luuid -lbcrypt -lsecur32 -lncrypt -lcrypt32"
       else
-        echo "-static"
+        echo "-static -L{{.FFMPEG_DIST}}/lib"
       fi
 
   PLATFORM_CC_ARGS:
@@ -42,11 +39,18 @@ vars:
       fi
 
 tasks:
+  build-ffmpeg:
+    - FALLBACK_OS={{OS}} FALLBACK_ARCH={{ARCH}} ./ci/build_ffmpeg.sh {{.CLI_ARGS}}
+
   build:
     - mkdir dist 2>/dev/null >/dev/null || exit 0
+    - |
+      if [ ! -d "{{.FFMPEG_DIST}}/lib/pkgconfig" ]; then
+        FALLBACK_OS={{OS}} FALLBACK_ARCH={{ARCH}} ./ci/build_ffmpeg.sh {{.CLI_ARGS}}
+      fi
     - cp assets/appbannerassets/output.png uicomponents/popups/initialize/output.png
     - cp assets/appbannerassets/source.txt uicomponents/popups/initialize/source.txt
-    - 'CC="zig cc {{.PLATFORM_CC_ARGS}}" CXX="zig c++ {{.PLATFORM_CC_ARGS}}" GOOS="{{.GOOS}}" GOARCH="{{.GOARCH}}" CGO_LDFLAGS="{{.PLATFORM_LD_ARGS}} $NIX_LDFLAGS" go build -v -ldflags "-linkmode external -X git.lunr.sh/luna/eurydice/state.Version=$(git describe --tags --always --dirty) {{if eq .GOOS "windows"}}-H=windowsgui{{end}} -s -w" -o {{.OUTPUT_FILE}} .'
+    - 'PKG_CONFIG_PATH="{{.FFMPEG_DIST}}/lib/pkgconfig:${PKG_CONFIG_PATH:-}" PKG_CONFIG_PATH_FOR_TARGET="{{.FFMPEG_DIST}}/lib/pkgconfig:${PKG_CONFIG_PATH_FOR_TARGET:-}" CC="zig cc {{.PLATFORM_CC_ARGS}}" CXX="zig c++ {{.PLATFORM_CC_ARGS}}" GOOS="{{.GOOS}}" GOARCH="{{.GOARCH}}" CGO_LDFLAGS="{{.PLATFORM_LD_ARGS}} {{if ne .GOOS "darwin"}}$NIX_LDFLAGS{{end}}" go build -v -tags netgo -ldflags "-linkmode external -X git.lunr.sh/luna/eurydice/state.Version=$(git describe --tags --always --dirty) {{if eq .GOOS "windows"}}-H=windowsgui{{end}} -s -w" -o {{.OUTPUT_FILE}} .'
 
   dev:
     - task: build
