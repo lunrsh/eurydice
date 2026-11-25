@@ -30,7 +30,7 @@ func Panic(title, error string, logger *log.Logger, logFile string) {
 	stackTrace := GetStackTrace()
 
 	// Print crash log to console
-	logger.Errorf("oncrash panic() called! crash log:\n\n%s\n\n%s\n\nBacktrace:\n%s", title, error, stackTrace)
+	logger.Errorf("oncrash panic() called! crash log:\n\n%s\nRunning Eurydice %s\n\n%s\n\nBacktrace:\n%s", title, state.Version, error, stackTrace)
 
 	// When debugging, this can get annoying, so, as a remedy for the potential annoyance, we can disable the crash dialog
 	if os.Getenv("EURYDICE_NO_CRASH_DIALOG") != "" {
@@ -127,7 +127,7 @@ func ICanHazPanicDisplay() {
 
 		imgui.SetNextWindowBgAlpha(0)
 		imgui.BeginV("##CrashPopup", nil, imgui.WindowFlagsNoMove|imgui.WindowFlagsNoDecoration)
-		imgui.TextWrapped("Eurydice has crashed with the following error:\n\n")
+		imgui.TextWrapped(fmt.Sprintf("Eurydice (running: %s) has crashed with the following error:\n\n", state.Version))
 		imgui.PushFont(dummyAppState.FontBold, 14)
 		imgui.TextWrapped(crashError + "\n\n")
 		imgui.PopFont()

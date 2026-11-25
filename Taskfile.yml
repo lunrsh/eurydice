@@ -46,7 +46,7 @@ tasks:
     - mkdir dist 2>/dev/null >/dev/null || exit 0
     - cp assets/appbannerassets/output.png uicomponents/popups/initialize/output.png
     - cp assets/appbannerassets/source.txt uicomponents/popups/initialize/source.txt
-    - 'CC="zig cc {{.PLATFORM_CC_ARGS}}" CXX="zig c++ {{.PLATFORM_CC_ARGS}}" GOOS="{{.GOOS}}" GOARCH="{{.GOARCH}}" CGO_LDFLAGS="{{.PLATFORM_LD_ARGS}} $NIX_LDFLAGS" go build -v -ldflags "-linkmode external {{if eq .GOOS "windows"}}-H=windowsgui{{end}} -s -w" -o {{.OUTPUT_FILE}} .'
+    - 'CC="zig cc {{.PLATFORM_CC_ARGS}}" CXX="zig c++ {{.PLATFORM_CC_ARGS}}" GOOS="{{.GOOS}}" GOARCH="{{.GOARCH}}" CGO_LDFLAGS="{{.PLATFORM_LD_ARGS}} $NIX_LDFLAGS" go build -v -ldflags "-linkmode external -X git.lunr.sh/luna/eurydice/state.Version=$(git describe --tags --always --dirty) {{if eq .GOOS "windows"}}-H=windowsgui{{end}} -s -w" -o {{.OUTPUT_FILE}} .'
 
   dev:
     - task: build

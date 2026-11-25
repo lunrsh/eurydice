@@ -84,7 +84,19 @@ func Render(state *stateStructs.ApplicationState) {
 	imgui.SetCursorPos(imgui.Vec2{X: 0, Y: 0})
 	imgui.Image(*state.PageStates.Initialization.InitPhotoTextureRef, imgui.Vec2{X: 600, Y: 200})
 
+	// git tag has a - if we're running an untagged, development, build
+
+	var versionText string
+
+	if stateStructs.IsDevelBuild {
+		versionText = "development build " + stateStructs.Version
+	} else {
+		versionText = "build " + stateStructs.Version
+	}
+
 	imgui.PushFont(state.FontRegular, 13)
+	imgui.SetCursorPos(imgui.Vec2{X: 590 - imgui.CalcTextSize(versionText).X, Y: 150})
+	imgui.Text(versionText)
 	imgui.SetCursorPos(imgui.Vec2{X: 590 - imgui.CalcTextSize(pngAttribution).X, Y: 168})
 	imgui.Text(pngAttribution)
 	imgui.PopFont()

@@ -326,6 +326,15 @@ func mainLoop() {
 			labeling.RenderMainRelabelPopup(appState)
 		}
 
+		if state.IsDevelBuild {
+			develWarning := "Eurydice Development Version " + state.Version
+
+			textSize := imgui.CalcTextSize(develWarning)
+
+			imgui.SetCursorPosX((imgui.WindowSize().X / 2) - (textSize.X / 2))
+			imgui.Text(develWarning)
+		}
+
 		imgui.SetCursorPosX(imgui.WindowSize().X - sync.ItemWidth)
 		sync.RenderButton(appState)
 
@@ -522,25 +531,29 @@ func main() {
 	}
 
 	// Initialize log levels
-	logLevel := os.Getenv("EURYDICE_LOG_LEVEL")
+	if !state.IsDevelBuild {
+		logLevel := os.Getenv("EURYDICE_LOG_LEVEL")
 
-	if logLevel != "" {
-		switch logLevel {
-		case "debug":
-			logger.SetLevel(log.DebugLevel)
+		if logLevel != "" {
+			switch logLevel {
+			case "debug":
+				logger.SetLevel(log.DebugLevel)
 
-		case "info":
-			logger.SetLevel(log.InfoLevel)
+			case "info":
+				logger.SetLevel(log.InfoLevel)
 
-		case "warn":
-			logger.SetLevel(log.WarnLevel)
+			case "warn":
+				logger.SetLevel(log.WarnLevel)
 
-		case "error":
-			logger.SetLevel(log.ErrorLevel)
+			case "error":
+				logger.SetLevel(log.ErrorLevel)
 
-		case "fatal":
-			logger.SetLevel(log.FatalLevel)
+			case "fatal":
+				logger.SetLevel(log.FatalLevel)
+			}
 		}
+	} else {
+		logger.SetLevel(log.DebugLevel)
 	}
 
 	logger.Info("___________                       .___.__")
@@ -551,7 +564,12 @@ func main() {
 	logger.Info("        \\/              \\/         \\/         \\/    \\/")
 
 	logger.Info("")
-	logger.Info("Eurydice is booting...")
+	logger.Infof("Eurydice (ver: %s) is booting...", state.Version)
+
+	if state.IsDevelBuild {
+		logger.Info("Running development/nightly build, enabling all debug options...")
+	}
+
 	logger.Info("")
 
 	logger.Infof("Logging to file: %s", logFilePath)

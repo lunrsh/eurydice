@@ -287,7 +287,7 @@ func backingThread(state *stateStructs.ApplicationState) {
 	state.PageStates.Initialization.ProgressBar = 0
 	state.PageStates.Initialization.ProgressBarMessage = " "
 
-	time.Sleep(250 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond)
 
 	state.PageStates.Initialization.DoneInitializing = true
 }
