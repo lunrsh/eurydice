@@ -14,7 +14,7 @@ jobs:
 
     steps:
       - name: Install dependencies
-        run: apt-get update && apt-get install -y sudo git-lfs pkg-config binutils-mingw-w64-x86-64 nasm
+        run: apt-get update && apt-get install -y sudo git-lfs
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -40,11 +40,10 @@ jobs:
             -e 's/^[[:space:]]*#gtk3/gtk3/' \
             shell.nix
 
-      - name: Compile FFmpeg (Windows)
-        if: matrix.os == 'windows'
+      - name: Compile FFmpeg
         run: |
           export NIX_PATH=nixpkgs=channel:nixos-unstable
-          nix-shell --command "cd ci; ./build_ffmpeg.sh"
+          nix-shell --command "task build-ffmpeg -- ${{ matrix.os }} amd64"
 
       - name: Build Eurydice
         run: |
