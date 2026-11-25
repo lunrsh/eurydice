@@ -7,7 +7,7 @@ vars:
   GOARCH:
     sh: FALLBACK_OS={{OS}} FALLBACK_ARCH={{ARCH}} ./ci/helpers/goarch_det.sh {{.CLI_ARGS}}
 
-  OUTPUT_FILE: '{{if eq .GOOS "windows"}}eurydice.exe{{else}}eurydice{{end}}'
+  OUTPUT_FILE: './dist/{{if eq .GOOS "windows"}}eurydice.exe{{else}}eurydice{{end}}'
 
   # Fuck you Apple
   PLATFORM_LD_ARGS:
@@ -43,8 +43,11 @@ vars:
 
 tasks:
   build:
-    - 'CC="zig cc {{.PLATFORM_CC_ARGS}}" CXX="zig c++ {{.PLATFORM_CC_ARGS}}" GOOS="{{.GOOS}}" GOARCH="{{.GOARCH}}" CGO_LDFLAGS="{{.PLATFORM_LD_ARGS}} $NIX_LDFLAGS" go build -v -ldflags "-linkmode external {{if eq .GOOS "windows"}}-H=windowsgui{{end}} -s -w" -o {{.OUTPUT_FILE}} .'
+    - mkdir dist 2>/dev/null >/dev/null || exit 0
+    - cp assets/appbannerassets/output.png uicomponents/popups/initialize/output.png
+    - cp assets/appbannerassets/source.txt uicomponents/popups/initialize/source.txt
+    - 'CC="zig cc {{.PLATFORM_CC_ARGS}}" CXX="zig c++ {{.PLATFORM_CC_ARGS}}" GOOS="{{.GOOS}}" GOARCH="{{.GOARCH}}" CGO_LDFLAGS="{{.PLATFORM_LD_ARGS}} $NIX_LDFLAGS" go build -v -ldflags "-linkmode external -X git.lunr.sh/luna/eurydice/state.Version=$(git describe --tags --always --dirty) {{if eq .GOOS "windows"}}-H=windowsgui{{end}} -s -w" -o {{.OUTPUT_FILE}} .'
 
   dev:
     - task: build
-    - EURYDICE_LOG_LEVEL=debug EURYDICE_NO_CRASH_DIALOG=1 EURYDICE_SHOW_DEBUG_UI=1 {{if eq .GOOS "windows"}}./eurydice.exe{{else}}./eurydice{{end}}
+    - EURYDICE_LOG_LEVEL=debug EURYDICE_NO_CRASH_DIALOG=1 EURYDICE_SHOW_DEBUG_UI=1 {{.OUTPUT_FILE}}

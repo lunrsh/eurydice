@@ -6,12 +6,12 @@ import (
 	"strconv"
 	"unsafe"
 
+	"git.lunr.sh/luna/eurydice/euryrt/core"
 	stateStructs "git.lunr.sh/luna/eurydice/state"
 	"git.lunr.sh/luna/eurydice/state/widgetstate/mediastate"
 	"git.lunr.sh/luna/eurydice/utilities"
 	"github.com/AllenDang/cimgui-go/imgui"
 )
-import "git.lunr.sh/luna/eurydice/state/database"
 
 var commonTreeNodeFlags = imgui.TreeNodeFlagsFramePadding |
 	imgui.TreeNodeFlagsSpanAvailWidth |
@@ -103,6 +103,7 @@ func checkAndExecuteDragAndDrop(state *stateStructs.ApplicationState) {
 			dragDropWrapper.Markers = unsafe.Slice((*uint)(dragDropWrapper.MarkerMemPtr), len(originalMarkerSlice))
 			copy(dragDropWrapper.Markers, originalMarkerSlice)
 
+			state.Logger.Debugf("Initialized drag-and-drop payload from media browser with %d marker(s)", len(originalMarkerSlice))
 			imgui.SetDragDropPayload("media_browser_item", uintptr(dragDropMemory), uint64(dragDropSize))
 		} else {
 			dragDropWrapper = (*mediastate.DragDropWrapper)(dragDropPayload.CData.Data)
@@ -238,8 +239,7 @@ func renderArtist(state *stateStructs.ApplicationState, artist *mediastate.Artis
 	if imgui.BeginPopupContextItem() {
 		if !treeNodeIsOpen {
 			if imgui.SelectableBool("Edit Artist Name") {
-				artistInstance := &database.Artist{} // ID isn't settable until we create it because yes
-				artistInstance.ID = artist.ID
+				artistInstance := &core.Artist{ID: artist.ID}
 
 				state.PageStates.Labeling.LabelingRenamePopup.ShouldReindex = true
 				state.PageStates.Labeling.LabelingRenamePopup.ShouldOpen = true
@@ -364,8 +364,7 @@ func renderRecord(state *stateStructs.ApplicationState, record *mediastate.Recor
 	if imgui.BeginPopupContextItem() {
 		if !treeNodeIsOpen {
 			if imgui.SelectableBool("Edit Record Name") {
-				recordInstance := &database.Record{} // ID isn't settable until we create it because yes
-				recordInstance.ID = record.ID
+				recordInstance := &core.Record{ID: record.ID}
 
 				state.PageStates.Labeling.LabelingRenamePopup.ShouldReindex = true
 				state.PageStates.Labeling.LabelingRenamePopup.ShouldOpen = true
@@ -416,8 +415,7 @@ func renderSong(state *stateStructs.ApplicationState, song *mediastate.SongState
 
 	if imgui.BeginPopupContextItem() {
 		if imgui.SelectableBool("Edit Song Title") {
-			songInstance := &database.Song{} // ID isn't settable until we create it because yes
-			songInstance.ID = song.ID
+			songInstance := &core.Song{ID: song.ID}
 
 			state.PageStates.Labeling.LabelingRenamePopup.ShouldReindex = true
 			state.PageStates.Labeling.LabelingRenamePopup.ShouldOpen = true

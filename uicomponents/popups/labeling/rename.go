@@ -3,8 +3,8 @@ package labeling
 import (
 	"fmt"
 
+	"git.lunr.sh/luna/eurydice/euryrt/core"
 	stateStructs "git.lunr.sh/luna/eurydice/state"
-	"git.lunr.sh/luna/eurydice/state/database"
 	"git.lunr.sh/luna/eurydice/uicomponents/widgets/mediamanagement"
 	"git.lunr.sh/luna/eurydice/uicomponents/widgets/playlistmanagement"
 	"git.lunr.sh/luna/eurydice/uicomponents/widgets/songmanagement"
@@ -42,12 +42,42 @@ func RenderRenamePopup(state *stateStructs.ApplicationState) {
 	if imgui.Button("Apply") {
 		// These can use different names for... name, so we just switch on type
 		switch item := state.PageStates.Labeling.LabelingRenamePopup.ItemToEdit.(type) {
-		case *database.Song:
-			state.Config.Database.Model(&item).UpdateColumn("title", state.PageStates.Labeling.LabelingRenamePopup.NewName)
-		case *database.Record:
-			state.Config.Database.Model(&item).UpdateColumn("name", state.PageStates.Labeling.LabelingRenamePopup.NewName)
-		case *database.Artist:
-			state.Config.Database.Model(&item).UpdateColumn("name", state.PageStates.Labeling.LabelingRenamePopup.NewName)
+		case *core.Song:
+			song, err := state.CoreRT.GetSongByID(item.ID)
+
+			if err != nil {
+				panic(fmt.Sprintf("Failed to fetch song %d for rename: %v", item.ID, err))
+			}
+
+			song.Title = state.PageStates.Labeling.LabelingRenamePopup.NewName
+
+			if err := state.CoreRT.ModifySong(song, false); err != nil {
+				panic(fmt.Sprintf("Failed to rename song %d: %v", item.ID, err))
+			}
+		case *core.Record:
+			record, err := state.CoreRT.GetRecordByID(item.ID)
+
+			if err != nil {
+				panic(fmt.Sprintf("Failed to fetch record %d for rename: %v", item.ID, err))
+			}
+
+			record.Name = state.PageStates.Labeling.LabelingRenamePopup.NewName
+
+			if err := state.CoreRT.ModifyRecord(record, false); err != nil {
+				panic(fmt.Sprintf("Failed to rename record %d: %v", item.ID, err))
+			}
+		case *core.Artist:
+			artist, err := state.CoreRT.GetArtistByID(item.ID)
+
+			if err != nil {
+				panic(fmt.Sprintf("Failed to fetch artist %d for rename: %v", item.ID, err))
+			}
+
+			artist.Name = state.PageStates.Labeling.LabelingRenamePopup.NewName
+
+			if err := state.CoreRT.ModifyArtist(artist, false); err != nil {
+				panic(fmt.Sprintf("Failed to rename artist %d: %v", item.ID, err))
+			}
 		default:
 			panic(fmt.Sprintf("Unknown type recieved - %T, this should never happen!", item))
 		}

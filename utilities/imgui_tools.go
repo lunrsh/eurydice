@@ -1,17 +1,15 @@
 package utilities
 
 import (
-	"bytes"
 	"fmt"
 	"image"
 	"image/draw"
-	"os"
-	"path/filepath"
 	"unsafe"
 
 	"github.com/AllenDang/cimgui-go/imgui"
 	"github.com/AllenDang/cimgui-go/utils/vectors"
 
+	"git.lunr.sh/luna/eurydice/euryrt/core"
 	stateStructs "git.lunr.sh/luna/eurydice/state"
 )
 
@@ -42,36 +40,64 @@ func GetRequestAtSelectionRequest(requests vectors.Vector[imgui.SelectionRequest
 func LoadImageFromArtID(state *stateStructs.ApplicationState, artID string) (*imgui.TextureRef, error) {
 	if req, ok := ImageLoadRequestBuf[artID]; ok {
 		req.RequestCount++
+		state.Logger.Debugf("Reusing cached texture for ArtID '%s' (refCount=%d)", artID, req.RequestCount)
 		return req.TextureBuf, nil
 	}
 
-	imageBytes, err := os.ReadFile(filepath.Join(state.Config.AppStatePath, "thumbnails", string(artID)))
+	parsedOriginalImage, err := state.CoreRT.GetArt(artID)
 
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get image for artID '%s': %w", artID, err)
 	}
 
-	parsedOriginalImage, _, err := image.Decode(bytes.NewReader(imageBytes))
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode image for artID '%s': %w", artID, err)
-	}
-
-	rgbaImage, ok := parsedOriginalImage.(*image.RGBA)
-
-	if !ok {
-		rgbaImage = image.NewRGBA(image.Rect(0, 0, parsedOriginalImage.Bounds().Dx(), parsedOriginalImage.Bounds().Dy()))
-		draw.Draw(rgbaImage, rgbaImage.Rect, parsedOriginalImage, parsedOriginalImage.Bounds().Min, draw.Over)
-	}
-
-	texture := state.CurrentImguiBackend.CreateTextureRgba(rgbaImage, parsedOriginalImage.Bounds().Dx(), parsedOriginalImage.Bounds().Dy())
+	texture := RawLoadImage(state, parsedOriginalImage)
 
 	ImageLoadRequestBuf[artID] = &LoadImageRequest{
 		RequestCount: 1,
-		TextureBuf:   &texture,
+		TextureBuf:   texture,
 	}
 
-	return &texture, nil
+	state.Logger.Debugf("Allocated new GPU texture for ArtID '%s' (%dx%d)", artID, parsedOriginalImage.Bounds().Dx(), parsedOriginalImage.Bounds().Dy())
+
+	return texture, nil
+}
+
+// Loads an image from a SyncRuntimeDevice into memory as an imgui texture
+func LoadImageFromDeviceArtID(state *stateStructs.ApplicationState, device core.SyncRuntimeDevice, artID string) (*imgui.TextureRef, error) {
+	if req, ok := ImageLoadRequestBuf[artID]; ok {
+		req.RequestCount++
+		state.Logger.Debugf("Reusing cached device texture for ArtID '%s' (refCount=%d)", artID, req.RequestCount)
+		return req.TextureBuf, nil
+	}
+
+	parsedOriginalImage, _, err := device.GetArt(artID)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get device image for artID '%s': %w", artID, err)
+	}
+
+	texture := RawLoadImage(state, parsedOriginalImage)
+
+	ImageLoadRequestBuf[artID] = &LoadImageRequest{
+		RequestCount: 1,
+		TextureBuf:   texture,
+	}
+
+	state.Logger.Debugf("Allocated new GPU texture for device ArtID '%s' (%dx%d)", artID, parsedOriginalImage.Bounds().Dx(), parsedOriginalImage.Bounds().Dy())
+
+	return texture, nil
+}
+
+func RawLoadImage(state *stateStructs.ApplicationState, givenImage image.Image) *imgui.TextureRef {
+	rgbaImage, ok := givenImage.(*image.RGBA)
+
+	if !ok {
+		rgbaImage = image.NewRGBA(image.Rect(0, 0, givenImage.Bounds().Dx(), givenImage.Bounds().Dy()))
+		draw.Draw(rgbaImage, rgbaImage.Rect, givenImage, givenImage.Bounds().Min, draw.Over)
+	}
+
+	texture := state.CurrentImguiBackend.CreateTextureRgba(rgbaImage, givenImage.Bounds().Dx(), givenImage.Bounds().Dy())
+	return &texture
 }
 
 func UnloadImageFromArtID(state *stateStructs.ApplicationState, artID string) {
@@ -79,6 +105,7 @@ func UnloadImageFromArtID(state *stateStructs.ApplicationState, artID string) {
 		req.RequestCount--
 
 		if req.RequestCount == 0 {
+			state.Logger.Debugf("Deleting GPU texture for ArtID '%s' (refCount reached 0)", artID)
 			state.CurrentImguiBackend.DeleteTexture(*req.TextureBuf)
 			delete(ImageLoadRequestBuf, artID)
 		}

@@ -1,7 +1,9 @@
-package scanlibrary
+package libeury
 
 import (
+	"bytes"
 	"fmt"
+	"image"
 	"io/fs"
 	"mime"
 	"os"
@@ -12,51 +14,47 @@ import (
 	"strings"
 	"sync"
 
-	"git.lunr.sh/luna/eurydice/oncrash"
-	stateStructs "git.lunr.sh/luna/eurydice/state"
-	"git.lunr.sh/luna/eurydice/state/database"
-	"git.lunr.sh/luna/eurydice/state/popupstate/scanstate"
-	"git.lunr.sh/luna/eurydice/utilities"
+	"git.lunr.sh/luna/eurydice/euryrt/manageimpl/libeury/database"
 
 	"go.senan.xyz/taglib"
 	"gorm.io/gorm"
 )
 
 // Gets the song record index based off speculation based on the song's title and artist
-func speculateSongRecordIndex(state *stateStructs.ApplicationState, recordName string, artistName string) int {
+func (euryRT *LibEuryRT) speculateSongRecordIndex(recordName string, artistName string) int {
 	artist := &database.Artist{}
 
-	if err := state.Config.Database.Model(&database.Artist{}).Where("library_id = ? AND name = ?", state.Config.ActiveLibrary.ID, artistName).First(artist).Error; err != nil {
-		state.Logger.Warnf("ScanLibrary->backingThread->indexNewMusic->speculateSongRecordIndex: Failed to find artist: %v", err)
+	if err := euryRT.db.Model(&database.Artist{}).Where("library_id = ? AND name = ?", euryRT.library.ID, artistName).First(artist).Error; err != nil {
+		euryRT.logger.Warnf("Failed to find artist: %v", err)
 		return 0
 	}
 
 	record := &database.Record{}
 
-	if err := state.Config.Database.Model(&database.Record{}).Where("artist_id = ? AND name = ?", artist.ID, recordName).First(record).Error; err != nil {
-		state.Logger.Warnf("ScanLibrary->backingThread->indexNewMusic->speculateSongRecordIndex: Failed to find record: %v", err)
+	if err := euryRT.db.Model(&database.Record{}).Where("artist_id = ? AND name = ?", artist.ID, recordName).First(record).Error; err != nil {
+		euryRT.logger.Warnf("Failed to find record: %v", err)
 		return 0
 	}
 
 	var currentSongCount int64
-	state.Config.Database.Model(&database.Song{}).Where("record_id = ?", record.ID).Count(&currentSongCount)
+	euryRT.db.Model(&database.Song{}).Where("record_id = ?", record.ID).Count(&currentSongCount)
 
 	return int(currentSongCount)
 }
 
 // Finds all music files in the library path and returns them as a slice of paths.
 // Used internally for scanning the library (backingThread, step 1).
-func WalkToFindAllMusic(state *stateStructs.ApplicationState) ([]string, error) {
+func (euryRT *LibEuryRT) walkToFindAllMusic() ([]string, error) {
 	allMusicFound := []string{}
 
-	err := filepath.WalkDir(state.Config.ActiveLibrary.LibraryPath, func(path string, dirEntry fs.DirEntry, err error) error {
+	err := filepath.WalkDir(euryRT.library.LibraryPath, func(path string, dirEntry fs.DirEntry, err error) error {
 		if err != nil {
-			state.Logger.Debugf("ScanLibrary->backingThread->walkToFindAllMusic: error walking path '%s': %s", path, err.Error())
+			euryRT.logger.Debugf("Error walking path '%s': %s", path, err.Error())
 			return err
 		}
 
 		if dirEntry.IsDir() {
-			state.PageStates.LibraryScan.CurrentSongPath = strings.TrimPrefix(path, state.Config.ActiveLibrary.LibraryPath)
+			euryRT.broadcastInit(fmt.Sprintf("Scanning: '%s'", strings.TrimPrefix(path, euryRT.library.LibraryPath)), -1, "Scanning...", false)
 			return nil
 		}
 
@@ -75,7 +73,7 @@ func WalkToFindAllMusic(state *stateStructs.ApplicationState) ([]string, error) 
 			return nil
 		}
 
-		state.Logger.Debugf("ScanLibrary->backingThread->walkToFindAllMusic: adding path '%s'", path)
+		euryRT.logger.Debugf("Adding path '%s'", path)
 		allMusicFound = append(allMusicFound, path)
 
 		return nil
@@ -88,18 +86,18 @@ func WalkToFindAllMusic(state *stateStructs.ApplicationState) ([]string, error) 
 // database yet.
 //
 // Used internally for scanning the library and finding new music to index (backingThread, step 2).
-func FindNonindexedMusic(state *stateStructs.ApplicationState, allMusicFound []string) ([]string, error) {
+func (euryRT *LibEuryRT) findNonindexedMusic(allMusicFound []string) ([]string, error) {
 	uniqueMusicFound := []string{}
 
 	for _, musicPath := range allMusicFound {
-		relativeMusicPath := strings.TrimPrefix(musicPath, state.Config.ActiveLibrary.LibraryPath)
+		relativeMusicPath := strings.TrimPrefix(musicPath, euryRT.library.LibraryPath)
 		attemptingToMatchEntry := &database.Song{}
 
-		state.PageStates.LibraryScan.CurrentSongPath = relativeMusicPath
+		euryRT.broadcastInit(fmt.Sprintf("Scanning: '%s'", relativeMusicPath), -1, "Scanning...", false)
 
-		if err := state.Config.Database.Where("library_id = ? AND relative_path_from_library = ?", state.Config.ActiveLibrary.ID, relativeMusicPath).First(attemptingToMatchEntry).Error; err != nil {
+		if err := euryRT.db.Where("library_id = ? AND relative_path_from_library = ?", euryRT.library.ID, relativeMusicPath).First(attemptingToMatchEntry).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
-				state.Logger.Debugf("ScanLibrary->backingThread->findNonindexedMusic: found new song '%s'", musicPath)
+				euryRT.logger.Debugf("Found new song '%s'", musicPath)
 				uniqueMusicFound = append(uniqueMusicFound, musicPath)
 			} else {
 				return uniqueMusicFound, fmt.Errorf("An error occured while searching for song '%s' in database: %s", musicPath, err.Error())
@@ -113,7 +111,7 @@ func FindNonindexedMusic(state *stateStructs.ApplicationState, allMusicFound []s
 // Given a list of nonindexed music, this function indexes new music.
 //
 // Used internally for scanning the library and indexing new music (backingThread, step 3).
-func IndexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []string) error {
+func (euryRT *LibEuryRT) indexNewMusic(uniqueMusicFound []string) error {
 	cpuThreadCount := runtime.NumCPU()
 
 	delegatedSongsPerThread := make([][]string, cpuThreadCount)
@@ -146,6 +144,8 @@ func IndexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 		}
 	}
 
+	euryRT.logger.Debugf("Indexing %d new song(s) across %d worker thread(s)", len(uniqueMusicFound), cpuThreadCount)
+
 	// Create a processing queue of all the playlist entries (if AutoAddToPlaylists is enabled), so we can
 	// sort the new ones by record, so it's not *completely* out of order. We could just make it sort by
 	// default on the frontend, but that might be confusing to the user, so we sort it in the database instead.
@@ -154,23 +154,27 @@ func IndexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 	// that.
 	var songsInAutoSyncPlaylist []*database.PlaylistSong
 
-	if state.Config.JSONConfig.AutoAddToPlaylists {
+	if euryRT.autoAddNewSongsToPlaylists {
 		songsInAutoSyncPlaylist = make([]*database.PlaylistSong, 0, len(uniqueMusicFound))
 	}
 
 	newRecordsAdded := make([]*database.Record, 0)
 
+	// Positioning data for updates
+	totalSongsScanned := 0
+	totalSongCount := len(uniqueMusicFound)
+
 	// Start execution now!
 	for i := 0; i < cpuThreadCount; i++ {
 		waitGroup.Go(func() {
 			for _, songPath := range delegatedSongsPerThread[i] {
-				state.Logger.Debugf("ScanLibrary->backingThread->indexNewMusic: Fetching properties for '%s'", songPath)
+				euryRT.logger.Debugf("Fetching properties for '%s'", songPath)
 
 				properties, err := taglib.ReadTags(songPath)
 
 				if err != nil {
-					state.Logger.Errorf("ScanLibrary->backingThread->indexNewMusic: Failed to read properties for '%s': %s", songPath, err.Error())
-					state.PageStates.LibraryScan.TotalSongsScanned++
+					euryRT.logger.Errorf("Failed to read properties for '%s': %s", songPath, err.Error())
+					totalSongsScanned++
 					continue
 				}
 
@@ -184,8 +188,8 @@ func IndexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 				)
 
 				songInformation := &database.Song{
-					LibraryID:               state.Config.ActiveLibrary.ID,
-					RelativePathFromLibrary: strings.TrimPrefix(songPath, state.Config.ActiveLibrary.LibraryPath),
+					LibraryID:               euryRT.library.ID,
+					RelativePathFromLibrary: strings.TrimPrefix(songPath, euryRT.library.LibraryPath),
 				}
 
 				if title, ok := properties[taglib.Title]; ok && len(title) > 0 {
@@ -247,7 +251,7 @@ func IndexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 						discNumber, err := strconv.Atoi(discNumberStr)
 
 						if err != nil {
-							state.Logger.Warnf("Failed to parse disc number (err: %v). Defaulting to 1, and hoping for the best...", err)
+							euryRT.logger.Warnf("Failed to parse disc number (err: %v). Defaulting to 1, and hoping for the best...", err)
 							songInformation.TrackNumber, err = strconv.Atoi(trackNumberStr)
 
 							if err != nil {
@@ -271,11 +275,12 @@ func IndexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 							//
 							// ...I am so sorry. Please let this be the last fucking hack in this app.
 
-							state.Logger.Warn("BIG WARNING: EURYDICE DOES NOT SUPPORT MULTIPLE DISCS, AND WE HAVE FOUND A MULTIPLE DISC TRACK. Ignoring the TrackNumber and instead using speculation to determine the track number. YOU MAY HAVE TO FIX THIS.")
+							euryRT.logger.Warn("BIG WARNING: EURYDICE DOES NOT SUPPORT MULTIPLE DISCS, AND WE HAVE FOUND A MULTIPLE DISC TRACK. Ignoring the TrackNumber and instead using speculation to determine the track number. YOU MAY HAVE TO FIX THIS.")
 							wasUnableToFetchTrackNumber = true
 							databaseLockMutex.Lock() // Lock until we add because we do ordering based on the position in the database
 
-							songInformation.TrackNumber = speculateSongRecordIndex(state, songRecord, songArtists[0])
+							songInformation.TrackNumber = euryRT.speculateSongRecordIndex(songRecord, songArtists[0])
+							euryRT.logger.Debugf("Speculated track number %d for multi-disc song '%s' (record='%s', artist='%s')", songInformation.TrackNumber, songInformation.Title, songRecord, songArtists[0])
 						} else {
 							songInformation.TrackNumber, err = strconv.Atoi(trackNumberStr)
 
@@ -298,7 +303,8 @@ func IndexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 					wasUnableToFetchTrackNumber = true
 					databaseLockMutex.Lock() // Lock until we add because we do ordering based on the position in the database
 
-					songInformation.TrackNumber = speculateSongRecordIndex(state, songRecord, songArtists[0])
+					songInformation.TrackNumber = euryRT.speculateSongRecordIndex(songRecord, songArtists[0])
+					euryRT.logger.Debugf("No track number tag found for '%s'; speculated track number %d (record='%s', artist='%s')", songInformation.Title, songInformation.TrackNumber, songRecord, songArtists[0])
 				}
 
 				foundArtists := make([]*database.Artist, len(songArtists))
@@ -310,15 +316,15 @@ func IndexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 						databaseLockMutex.Lock()
 					}
 
-					if err = state.Config.Database.Where("library_id = ? AND name = ?", state.Config.ActiveLibrary.ID, artistName).First(&foundArtists[i]).Error; err != nil {
+					if err = euryRT.db.Where("library_id = ? AND name = ?", euryRT.library.ID, artistName).First(&foundArtists[i]).Error; err != nil {
 						if err == gorm.ErrRecordNotFound {
 							// Create a new artist!
-							state.Logger.Debugf("ScanLibrary->backingThread->indexNewMusic: Creating new artist '%s'\n", artistName)
-							foundArtists[i] = &database.Artist{Name: artistName, LibraryID: state.Config.ActiveLibrary.ID}
+							euryRT.logger.Debugf("Creating new artist '%s'", artistName)
+							foundArtists[i] = &database.Artist{Name: artistName, LibraryID: euryRT.library.ID}
 
-							state.Config.Database.Create(&foundArtists[i])
+							euryRT.db.Create(&foundArtists[i])
 						} else {
-							state.Logger.Debugf("ScanLibrary->backingThread->indexNewMusic: Failed to fetch artist '%s' from database: %s", artistName, err.Error())
+							euryRT.logger.Debugf("Failed to fetch artist '%s' from database: %s", artistName, err.Error())
 						}
 					}
 
@@ -339,18 +345,18 @@ func IndexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 					databaseLockMutex.Lock()
 				}
 
-				if err = state.Config.Database.Where("library_id = ? AND name = ? AND artist_id = ?", state.Config.ActiveLibrary.ID, songRecord, foundArtists[0].ID).First(foundRecord).Error; err != nil {
+				if err = euryRT.db.Where("library_id = ? AND name = ? AND artist_id = ?", euryRT.library.ID, songRecord, foundArtists[0].ID).First(foundRecord).Error; err != nil {
 					if err == gorm.ErrRecordNotFound {
 						// Create a new record
-						state.Logger.Debugf("ScanLibrary->backingThread->indexNewMusic: Creating new record '%s'\n", songRecord)
+						euryRT.logger.Debugf("Creating new record '%s'", songRecord)
 						foundRecord.Name = songRecord
-						foundRecord.LibraryID = state.Config.ActiveLibrary.ID
+						foundRecord.LibraryID = euryRT.library.ID
 						foundRecord.ArtistID = foundArtists[0].ID
 
-						state.Config.Database.Create(foundRecord)
+						euryRT.db.Create(foundRecord)
 						newRecordsAdded = append(newRecordsAdded, foundRecord)
 					} else {
-						state.Logger.Debugf("ScanLibrary->backingThread->indexNewMusic: Failed to fetch record '%s' from database: %s", songRecord, err.Error())
+						euryRT.logger.Debugf("Failed to fetch record '%s' from database: %s", songRecord, err.Error())
 					}
 				}
 
@@ -360,24 +366,30 @@ func IndexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 
 				// Write the album art to local storage
 				if imageBytes, err := taglib.ReadImage(songPath); err == nil {
-					// Run a databaseLockMutex to prevent TOCTOU or double-write
-					if !wasUnableToFetchTrackNumber {
-						databaseLockMutex.Lock()
-					}
-
-					songArtID, err = utilities.AddToArtIDPool(state, imageBytes)
-
-					// Run a databaseLockMutex to prevent TOCTOU or double-write
-					if !wasUnableToFetchTrackNumber {
-						databaseLockMutex.Unlock()
-					}
+					// Decode image bytes
+					imageData, _, err := image.Decode(bytes.NewReader(imageBytes))
 
 					if err != nil {
-						songArtID = ""
-						state.Logger.Errorf("ScanLibrary->backingThread->indexNewMusic: Failed to add image to art ID pool: %s", err.Error())
+						euryRT.logger.Errorf("Failed to decode embedded image: %s", err.Error())
+					} else {
+						// Run a databaseLockMutex to prevent TOCTOU or double-write
+						if !wasUnableToFetchTrackNumber {
+							databaseLockMutex.Lock()
+						}
+
+						songArtID, err = euryRT.AddArtToDatabase(imageData)
+
+						if err != nil {
+							songArtID = ""
+							euryRT.logger.Errorf("Failed to add image to art ID pool: %s", err.Error())
+						}
+
+						if !wasUnableToFetchTrackNumber {
+							databaseLockMutex.Unlock()
+						}
 					}
 				} else {
-					state.Logger.Errorf("ScanLibrary->backingThread->indexNewMusic: Failed to parse embedded image in '%s': %s", songPath, err.Error())
+					euryRT.logger.Errorf("Failed to parse embedded image in '%s': %s", songPath, err.Error())
 				}
 
 				// Now we can add ourselves to the database!
@@ -393,15 +405,15 @@ func IndexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 					databaseLockMutex.Lock()
 				}
 
-				state.Config.Database.Create(songInformation)
+				euryRT.db.Create(songInformation)
 
 				// Automatically add to the playlist if AutoAddToPlaylists is enabled
-				if state.Config.JSONConfig.AutoAddToPlaylists {
+				if euryRT.autoAddNewSongsToPlaylists {
 					songsInAutoSyncPlaylist = append(songsInAutoSyncPlaylist, &database.PlaylistSong{
-						PlaylistID: state.Config.JSONConfig.AutoAddToPlaylistID,
+						PlaylistID: euryRT.autoAddNewSongsToPlaylistID,
 						SongID:     songInformation.ID,
 						Song:       songInformation,
-						LibraryID:  state.Config.ActiveLibrary.ID,
+						LibraryID:  euryRT.library.ID,
 					})
 				}
 
@@ -409,9 +421,10 @@ func IndexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 				// either way we need to unlock it so other threads can access the database
 				databaseLockMutex.Unlock()
 
-				state.Logger.Debugf("ScanLibrary->backingThread->indexNewMusic: Successfully processed '%s' (%s)", songPath, songInformation.Title)
-				state.PageStates.LibraryScan.TotalSongsScanned++
-				state.PageStates.LibraryScan.CurrentSongPath = songInformation.RelativePathFromLibrary
+				euryRT.logger.Debugf("Successfully processed '%s' (%s)", songPath, songInformation.Title)
+
+				totalSongsScanned++
+				euryRT.broadcastInit(fmt.Sprintf("Processing: '%s'", songInformation.RelativePathFromLibrary), int((float32(totalSongsScanned)/float32(totalSongCount))*100), fmt.Sprintf("%d/%d", totalSongsScanned, totalSongCount), false)
 			}
 		})
 	}
@@ -422,8 +435,8 @@ func IndexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 	var currentIndexInAutoSyncPlaylist int64
 
 	// Get the highest index in the auto-sync playlist
-	if state.Config.JSONConfig.AutoAddToPlaylists {
-		state.Config.Database.Model(&database.PlaylistSong{}).Where("playlist_id = ?", state.Config.JSONConfig.AutoAddToPlaylistID).Count(&currentIndexInAutoSyncPlaylist)
+	if euryRT.autoAddNewSongsToPlaylists {
+		euryRT.db.Model(&database.PlaylistSong{}).Where("playlist_id = ?", euryRT.autoAddNewSongsToPlaylistID).Count(&currentIndexInAutoSyncPlaylist)
 	}
 
 	// Sort by record, then add
@@ -433,7 +446,7 @@ func IndexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 
 	for _, song := range songsInAutoSyncPlaylist {
 		song.SortIndex = int(currentIndexInAutoSyncPlaylist)
-		state.Config.Database.Create(song)
+		euryRT.db.Create(song)
 		currentIndexInAutoSyncPlaylist++
 	}
 
@@ -441,12 +454,12 @@ func IndexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 	for _, record := range newRecordsAdded {
 		songs := []*database.Song{}
 
-		if err := state.Config.Database.Model(&database.Song{}).Where("record_id = ?", record.ID).Find(&songs).Error; err != nil {
+		if err := euryRT.db.Model(&database.Song{}).Where("record_id = ?", record.ID).Find(&songs).Error; err != nil {
 			return fmt.Errorf("failed to find songs for record '%s': %w", record.Name, err)
 		}
 
 		if len(songs) == 0 {
-			state.Logger.Warnf("No songs found for record '%s' during ArtID calculation. This should not happen!", record.Name)
+			euryRT.logger.Warnf("No songs found for record '%s' during ArtID calculation. This should not happen!", record.Name)
 			continue
 		}
 
@@ -470,8 +483,9 @@ func IndexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 			continue
 		}
 
+		euryRT.logger.Debugf("Assigned ArtID '%s' to record '%s' (matched %d/%d songs)", mostPopularArtID, record.Name, maxCount, len(songs))
 		record.ArtID = mostPopularArtID
-		state.Config.Database.Save(record)
+		euryRT.db.Save(record)
 	}
 
 	return nil
@@ -483,68 +497,74 @@ func IndexNewMusic(state *stateStructs.ApplicationState, uniqueMusicFound []stri
 // IMPORTANT: musicFound is NOT a list of music to remove. It is a list of music to KEEP.
 //
 // Used internally for scanning the library and cleaning up the database (backingThread, step 4).
-func CleanupDatabase(state *stateStructs.ApplicationState, musicFound []string) error {
-	allSongs := []database.Song{}
-
-	if err := state.Config.Database.Where("library_id = ?", state.Config.ActiveLibrary.ID).Find(&allSongs).Error; err != nil {
-		return fmt.Errorf("failed to find all songs: %w", err)
-	}
+func (euryRT *LibEuryRT) cleanupDatabase(musicFound []string, disableMusicDeletion bool) error {
+	euryRT.broadcastInit("Cleaning Up...", -1, "Cleaning...", false)
 
 	// Use hash maps for looking up songs, and for playlists to reindex
 	playlistsToReindexMap := map[uint]bool{}
-	songPathMap := make(map[string]bool, len(allSongs))
 
-	for _, path := range musicFound {
-		songPathMap[strings.TrimPrefix(path, state.Config.ActiveLibrary.LibraryPath)] = true
-	}
+	// Only delete songs if we're told to
+	if !disableMusicDeletion {
+		allSongs := []database.Song{}
 
-	// First, clean up songs that are no longer in the filesystem
-	for _, song := range allSongs {
-		if !songPathMap[song.RelativePathFromLibrary] {
-			// First, check to see if this song is in any playlists, before we delete the song itself
-			playlistEntries := []database.PlaylistSong{}
+		if err := euryRT.db.Where("library_id = ?", euryRT.library.ID).Find(&allSongs).Error; err != nil {
+			return fmt.Errorf("failed to find all songs: %w", err)
+		}
 
-			if err := state.Config.Database.Where("song_id = ?", song.ID).Find(&playlistEntries).Error; err != nil {
-				return fmt.Errorf("failed to find playlists that contain the current song: %w", err)
-			}
+		songPathMap := make(map[string]bool, len(allSongs))
 
-			// Delete any entries
-			for _, entry := range playlistEntries {
-				if err := state.Config.Database.Delete(&entry).Error; err != nil {
-					return fmt.Errorf("failed to delete song's entry in a playlist: %w", err)
+		for _, path := range musicFound {
+			songPathMap[strings.TrimPrefix(path, euryRT.library.LibraryPath)] = true
+		}
+
+		// First, clean up songs that are no longer in the filesystem
+		for _, song := range allSongs {
+			if !songPathMap[song.RelativePathFromLibrary] {
+				// First, check to see if this song is in any playlists, before we delete the song itself
+				playlistEntries := []database.PlaylistSong{}
+
+				if err := euryRT.db.Where("song_id = ?", song.ID).Find(&playlistEntries).Error; err != nil {
+					return fmt.Errorf("failed to find playlists that contain the current song: %w", err)
 				}
 
-				state.Logger.Debugf("ScanLibrary->backingThread->cleanupDatabase: Deleted song '%s' from playlist ID '%d'", song.Title, entry.PlaylistID)
-
-				playlistsToReindexMap[entry.PlaylistID] = true
-			}
-
-			if err := state.Config.Database.Delete(&song).Error; err != nil {
-				return fmt.Errorf("failed to delete song: %w", err)
-			}
-
-			state.Logger.Debugf("ScanLibrary->backingThread->cleanupDatabase: Deleted song '%s'", song.Title)
-
-			// If we have a thumbnail attached to this song, we check to see if there are any songs or records still using the thumbnail, and if not, delete it
-			if song.ArtID != "" {
-				var songsWithThumbnailCount int64
-				var recordsWithThumbnailCount int64
-
-				// Checking all songs, regardless of library, is intentional, as they can be reused across libraries
-				if err := state.Config.Database.Model(&database.Song{}).Where("art_id = ?", song.ArtID).Count(&songsWithThumbnailCount).Error; err != nil {
-					return fmt.Errorf("failed to find songs with thumbnail: %w", err)
-				}
-
-				if err := state.Config.Database.Model(&database.Record{}).Where("art_id = ?", song.ArtID).Count(&recordsWithThumbnailCount).Error; err != nil {
-					return fmt.Errorf("failed to find records with thumbnail: %w", err)
-				}
-
-				if songsWithThumbnailCount == 0 && recordsWithThumbnailCount == 0 {
-					if err := os.Remove(filepath.Join(state.Config.AppStatePath, "thumbnails", song.ArtID)); err != nil {
-						return fmt.Errorf("failed to remove thumbnail: %w", err)
+				// Delete any entries
+				for _, entry := range playlistEntries {
+					if err := euryRT.db.Delete(&entry).Error; err != nil {
+						return fmt.Errorf("failed to delete song's entry in a playlist: %w", err)
 					}
 
-					state.Logger.Debugf("ScanLibrary->backingThread->cleanupDatabase: Deleted thumbnail ID '%s'", song.ArtID)
+					euryRT.logger.Debugf("Deleted song '%s' from playlist ID '%d'", song.Title, entry.PlaylistID)
+
+					playlistsToReindexMap[entry.PlaylistID] = true
+				}
+
+				if err := euryRT.db.Delete(&song).Error; err != nil {
+					return fmt.Errorf("failed to delete song: %w", err)
+				}
+
+				euryRT.logger.Debugf("Deleted song '%s'", song.Title)
+
+				// If we have a thumbnail attached to this song, we check to see if there are any songs or records still using the thumbnail, and if not, delete it
+				if song.ArtID != "" {
+					var songsWithThumbnailCount int64
+					var recordsWithThumbnailCount int64
+
+					// Checking all songs, regardless of library, is intentional, as they can be reused across libraries
+					if err := euryRT.db.Model(&database.Song{}).Where("art_id = ?", song.ArtID).Count(&songsWithThumbnailCount).Error; err != nil {
+						return fmt.Errorf("failed to find songs with thumbnail: %w", err)
+					}
+
+					if err := euryRT.db.Model(&database.Record{}).Where("art_id = ?", song.ArtID).Count(&recordsWithThumbnailCount).Error; err != nil {
+						return fmt.Errorf("failed to find records with thumbnail: %w", err)
+					}
+
+					if songsWithThumbnailCount == 0 && recordsWithThumbnailCount == 0 {
+						if err := os.Remove(filepath.Join(euryRT.statePath, "thumbnails", song.ArtID)); err != nil {
+							return fmt.Errorf("failed to remove thumbnail: %w", err)
+						}
+
+						euryRT.logger.Debugf("Deleted thumbnail ID '%s'", song.ArtID)
+					}
 				}
 			}
 		}
@@ -553,107 +573,45 @@ func CleanupDatabase(state *stateStructs.ApplicationState, musicFound []string) 
 	// Then, clean up empty records
 	allRecords := []database.Record{}
 
-	if err := state.Config.Database.Preload("Songs").Find(&allRecords).Error; err != nil {
+	if err := euryRT.db.Preload("Songs").Find(&allRecords).Error; err != nil {
 		return fmt.Errorf("failed to find all records: %w", err)
 	}
 
 	for _, record := range allRecords {
 		if len(record.Songs) == 0 {
-			if err := state.Config.Database.Delete(&record).Error; err != nil {
+			if err := euryRT.db.Delete(&record).Error; err != nil {
 				return fmt.Errorf("failed to delete record: %w", err)
 			}
 
-			state.Logger.Debugf("ScanLibrary->backingThread->cleanupDatabase: Deleted record '%s'", record.Name)
+			euryRT.logger.Debugf("Deleted record '%s'", record.Name)
 		}
 	}
 
 	// Finally (in terms of deletion), clean up artists that have no songs anymore
 	allArtists := []database.Artist{}
 
-	if err := state.Config.Database.Preload("PrimarySongs").Preload("CollabSongs").Find(&allArtists).Error; err != nil {
+	if err := euryRT.db.Preload("PrimarySongs").Preload("CollabSongs").Find(&allArtists).Error; err != nil {
 		return fmt.Errorf("failed to find all artists: %w", err)
 	}
 
 	for _, artist := range allArtists {
 		if len(artist.PrimarySongs) == 0 && len(artist.CollabSongs) == 0 {
-			if err := state.Config.Database.Delete(&artist).Error; err != nil {
+			if err := euryRT.db.Delete(&artist).Error; err != nil {
 				return fmt.Errorf("failed to delete artist: %w", err)
 			}
 
-			state.Logger.Debugf("ScanLibrary->backingThread->cleanupDatabase: Deleted artist '%s'", artist.Name)
+			euryRT.logger.Debugf("Deleted artist '%s'", artist.Name)
 		}
 	}
 
 	// And the last step: reindex any playlists that have been modified
 	for playlistIndex, _ := range playlistsToReindexMap {
-		if err := utilities.ReindexDeletedSongs(state, playlistIndex); err != nil {
+		if err := euryRT.reindexPlaylist(playlistIndex); err != nil {
 			return fmt.Errorf("failed to reindex deleted songs in playlist: %w", err)
 		}
 
-		state.Logger.Debugf("ScanLibrary->backingThread->cleanupDatabase: Reindexed playlist ID '%d'", playlistIndex)
+		euryRT.logger.Debugf("Reindexed playlist ID '%d'", playlistIndex)
 	}
 
 	return nil
-}
-
-func backingThread(state *stateStructs.ApplicationState) {
-	// Set up crash handler
-	defer func() {
-		if err := recover(); err != nil {
-			oncrash.Panic("Eurydice crash handler", fmt.Sprintf("Uncaught exception in background task: %s", err), state.Logger, state.LogFilePath)
-		}
-	}()
-
-	// Step 1: scan the filesystem
-	state.Logger.Debugf("ScanLibrary->backingThread: scanning library path '%s'", state.Config.ActiveLibrary.LibraryPath)
-	state.PageStates.LibraryScan.StepNo = scanstate.StepScanningFilesystem
-
-	allMusicFound, err := WalkToFindAllMusic(state)
-
-	if err != nil {
-		// Special case: if we failed to scan the filesystem, it's more of an easy fix that needs less visible.
-		// So, we call Panic directly.
-		state.Logger.Errorf("ScanLibrary->backingThread: We are about to crash! Failed to scan library path '%s': %s", state.Config.ActiveLibrary.LibraryPath, err.Error())
-		oncrash.Panic("Eurydice crash handler", fmt.Sprintf("Failed to read the current library path (%s). Is it readable and accessible?", state.Config.ActiveLibrary.LibraryPath), state.Logger, state.LogFilePath)
-	}
-
-	var uniqueMusicFound []string // hack to allow the goto statement to work
-
-	if len(allMusicFound) == 0 {
-		goto cleanupDatabaseStep
-	}
-
-	// Step 2: scan the database (for entries we already have in the database)
-	state.PageStates.LibraryScan.StepNo = scanstate.StepScanningDatabase
-	uniqueMusicFound, err = FindNonindexedMusic(state, allMusicFound)
-
-	if err != nil {
-		panic(fmt.Sprintf("Failed to find unique music library directories: %v", err))
-	}
-
-	// If we have no unique music found, we jump to the code that cleans up the database (remove entries that are no longer in the filesystem)
-	if len(uniqueMusicFound) == 0 {
-		goto cleanupDatabaseStep
-	}
-
-	// Step 3: add songs (process metadata)
-	state.PageStates.LibraryScan.TotalSongsToScan = len(uniqueMusicFound)
-	state.PageStates.LibraryScan.TotalSongsScanned = 0
-
-	state.PageStates.LibraryScan.StepNo = scanstate.StepAddingSongs
-
-	if err = IndexNewMusic(state, uniqueMusicFound); err != nil {
-		panic(fmt.Sprintf("Failed to index new music: %v", err))
-	}
-
-	// Step 4: cleanup database (remove entries that are no longer in the filesystem)
-cleanupDatabaseStep:
-	state.PageStates.LibraryScan.StepNo = scanstate.StepCleaningUp
-
-	if err = CleanupDatabase(state, allMusicFound); err != nil {
-		panic(fmt.Sprintf("Failed to cleanup database: %v", err))
-	}
-
-	// Show that we're done!
-	state.PageStates.LibraryScan.StepNo = scanstate.StepFinished
 }

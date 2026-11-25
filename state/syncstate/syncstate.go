@@ -1,9 +1,7 @@
 package syncstate
 
 import (
-	"time"
-
-	"git.lunr.sh/luna/eurydice/state/database"
+	"git.lunr.sh/luna/eurydice/euryrt/core"
 )
 
 type SyncDevice struct {
@@ -13,50 +11,28 @@ type SyncDevice struct {
 }
 
 type SyncPlaylist struct {
-	Playlist   *database.Playlist
+	Playlist   *core.Playlist
 	ShouldSync bool
 }
 
 type SyncState struct {
-	TotalSongsSynced int
-	TotalSongsToSync int
-	CurrentSongName  string
-
-	StepNo int
-
 	DeviceList     []*SyncDevice
-	SelectedDevice *SyncDevice
-	DeviceMetadata *SyncMetadata
+	SelectedDevice core.SyncRuntimeDevice
 
-	PlaylistList []*SyncPlaylist
+	QualityLevels []*core.QualityLevel
+	PlaylistList  []*SyncPlaylist
 
-	UISelectedVolumeIndex int32 // Seperate to SelectedVolume because of imgui state management
+	UISelectedVolumeIndex int32
 	AudioQuality          int32
-
-	EstimatedTimeRollingAverages []time.Duration
-	CurrentTimeIndex             int
 
 	DeleteOldSongs     bool
 	DeleteOldPlaylists bool
 
+	IsSyncing          bool
+	DoneSyncing        bool
+	ProgressMessage    string
+	ProgressBar        int
+	ProgressBarMessage string
+
 	ErrHint string
 }
-
-const (
-	StepIdle int = iota
-	StepInit
-	StepFetchingData
-	StepCopyingSongs
-	StepDeletingOldSongs
-	StepSyncingPlaylists
-	StepFinalizing
-	StepFinished
-)
-
-const (
-	AudioOriginalQuality int = iota // same file copied over, only with tags modified
-	AudioLowQuality      int = iota // 128kbps mp3
-	AudioMediumQuality   int = iota // 192kbps mp3
-	AudioHighQuality     int = iota // 320kbps mp3
-	AudioLosslessQuality int = iota // FLAC
-)

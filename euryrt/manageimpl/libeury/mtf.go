@@ -1,4 +1,4 @@
-package metadatatofiles
+package libeury
 
 import (
 	"errors"
@@ -9,20 +9,16 @@ import (
 	"strconv"
 	"sync"
 
-	"git.lunr.sh/luna/eurydice/oncrash"
-	stateStructs "git.lunr.sh/luna/eurydice/state"
-	"git.lunr.sh/luna/eurydice/state/database"
-	"git.lunr.sh/luna/eurydice/state/popupstate/mtfstate"
-	"git.lunr.sh/luna/eurydice/uicomponents/popups/scanlibrary"
+	"git.lunr.sh/luna/eurydice/euryrt/manageimpl/libeury/database"
 	"go.senan.xyz/taglib"
 )
 
 // Given a list of songs, this function updates the metadata embedded in the songs with the metadata currently stored in Eurydice.
-func updateSongs(state *stateStructs.ApplicationState, songs []*database.Song, records map[uint]*database.Record, artists map[uint]*database.Artist) ([]string, error) {
+func (euryRT *LibEuryRT) updateFilesFromMetadata(songs []*database.Song, records map[uint]*database.Record, artists map[uint]*database.Artist) ([]string, error) {
 	relativePathsOfSongsToKeep := make([]string, 0, len(songs)) // We keep track of the songs to keep, to pass in to the cleanup code
 
 	// Before we do anything, we fetch the current active library path, so we can get the path to songs
-	state.Logger.Debug("Sync->backingThread: Fetching library path")
+	euryRT.logger.Debug("Fetching library path")
 
 	cpuThreadCount := runtime.NumCPU()
 
@@ -56,31 +52,42 @@ func updateSongs(state *stateStructs.ApplicationState, songs []*database.Song, r
 		}
 	}
 
+	euryRT.logger.Debugf("Updating files from metadata for %d song(s) across %d worker thread(s)", len(songs), cpuThreadCount)
+
+	totalSongsToUpdate := len(songs)
+	totalSongsUpdated := 0
+
 	// Start execution now!
 	for i := 0; i < cpuThreadCount; i++ {
 		waitGroup.Go(func() {
-			// Set up crash handler
-			defer func() {
-				if err := recover(); err != nil {
-					oncrash.Panic("Eurydice crash handler", fmt.Sprintf("Uncaught exception in background task: %s", err), state.Logger, state.LogFilePath)
-				}
-			}()
-
 			for _, song := range delegatedSongsPerThread[i] {
-				// Check on the song's file existence on disk, just to ensure that it does properly exist still incase it was moved after indexing
-				state.Logger.Debugf("MetadataToFiles->backingThread->updateSongs: Ensuring file exists on disk for '%s'", song.Title)
+				songFullPath := filepath.Join(euryRT.library.LibraryPath, song.RelativePathFromLibrary)
 
-				if _, err := os.Stat(filepath.Join(state.Config.ActiveLibrary.LibraryPath, song.RelativePathFromLibrary)); err != nil {
+				// Check on the song's file existence on disk, just to ensure that it does properly exist still incase it was moved after indexing
+				euryRT.logger.Debugf("Ensuring file exists on disk for '%s'", song.Title)
+
+				if _, err := os.Stat(songFullPath); err != nil {
 					if errors.Is(err, os.ErrNotExist) {
-						state.Logger.Errorf("MetadataToFiles->backingThread->updateSongs: File does not exist on disk for '%s'. Deleting from database, and skipping", song.Title)
-						state.PageStates.MTFUpdate.TotalSongsUpdated++
+						euryRT.logger.Errorf("File does not exist on disk for '%s'. Deleting from database, and skipping", song.Title)
+
+						databaseLockMutex.Lock()
+						totalSongsUpdated++
+						updatedCount := totalSongsUpdated
+						databaseLockMutex.Unlock()
+
+						euryRT.broadcastMTF(
+							fmt.Sprintf("Currently updating: %s", song.Title),
+							int((float32(updatedCount)/float32(totalSongsToUpdate))*100),
+							fmt.Sprintf("Updating... (%d/%d)", updatedCount, totalSongsToUpdate),
+							false,
+						)
 						continue
 					} else {
 						panic(fmt.Sprintf("Failed to check file existence for '%s': %v", song.Title, err))
 					}
 				}
 
-				state.Logger.Debugf("MetadataToFiles->backingThread->updateSongs: Fetching artist and record information for '%s'", song.Title)
+				euryRT.logger.Debugf("Fetching artist and record information for '%s'", song.Title)
 
 				otherArtistIDsOnThisSong := []uint{}
 
@@ -88,20 +95,22 @@ func updateSongs(state *stateStructs.ApplicationState, songs []*database.Song, r
 				// We could do a Preload prior, but we're trying to save memory here
 				//
 				// FIXME: apply same techniques to syncing?
-				if err := state.Config.Database.Where("song_id = ?", song.ID).Table("song_other_artists").Pluck("artist_id", &otherArtistIDsOnThisSong).Error; err != nil {
+				databaseLockMutex.Lock()
+
+				if err := euryRT.db.Where("song_id = ?", song.ID).Table("song_other_artists").Pluck("artist_id", &otherArtistIDsOnThisSong).Error; err != nil {
+					databaseLockMutex.Unlock()
 					panic(fmt.Sprintf("Failed to fetch other artist IDs on song %d: %s", song.ID, err))
 				}
 
 				artistsOnThisSong := make([]*database.Artist, 1+len(otherArtistIDsOnThisSong))
 
-				// Lock the database to ensure no one else loads artists and records while we're loading them
-				databaseLockMutex.Lock()
-
 				// Fetch the primary artist
 				if primaryArtist, ok := artists[song.PrimaryArtistID]; ok {
 					artistsOnThisSong[0] = primaryArtist
 				} else {
-					if err := state.Config.Database.First(&primaryArtist, song.PrimaryArtistID).Error; err != nil {
+					primaryArtist = &database.Artist{}
+					if err := euryRT.db.First(primaryArtist, song.PrimaryArtistID).Error; err != nil {
+						databaseLockMutex.Unlock()
 						panic(fmt.Sprintf("Failed to fetch primary artist for song %d: %v", song.ID, err))
 					}
 
@@ -114,7 +123,9 @@ func updateSongs(state *stateStructs.ApplicationState, songs []*database.Song, r
 					if artist, ok := artists[artistID]; ok {
 						artistsOnThisSong[artistIndexInList+1] = artist
 					} else {
-						if err := state.Config.Database.First(&artist, artistID).Error; err != nil {
+						artist = &database.Artist{}
+						if err := euryRT.db.First(artist, artistID).Error; err != nil {
+							databaseLockMutex.Unlock()
 							panic(fmt.Sprintf("Failed to fetch collaborator artist ID %d: %v", artistID, err))
 						}
 
@@ -127,12 +138,18 @@ func updateSongs(state *stateStructs.ApplicationState, songs []*database.Song, r
 				record, ok := records[song.RecordID]
 
 				if !ok {
-					if err := state.Config.Database.Where("id = ?", song.RecordID).First(&record).Error; err != nil {
+					record = &database.Record{}
+					if err := euryRT.db.Where("id = ?", song.RecordID).First(record).Error; err != nil {
+						databaseLockMutex.Unlock()
 						panic(fmt.Sprintf("Failed to fetch record for song %d: %v", song.ID, err))
 					}
 
 					records[song.RecordID] = record
 				}
+
+				// Get the total tracks on this record
+				var totalTracksInt int64
+				euryRT.db.Model(&database.Song{}).Where("record_id = ?", song.RecordID).Count(&totalTracksInt)
 
 				// Now that we have all our data, we can unlock the mutex
 				databaseLockMutex.Unlock()
@@ -157,51 +174,47 @@ func updateSongs(state *stateStructs.ApplicationState, songs []*database.Song, r
 				newTags[taglib.Album] = []string{record.Name}
 
 				// Get the track number and total tracks
-				var (
-					trackNumber string
-					totalTracks string
-
-					totalTracksInt int64
-				)
-
-				trackNumber = strconv.Itoa(song.TrackNumber + 1) // TrackNumber is 0-based, but we want 1-based
-
-				state.Config.Database.Model(&database.Song{}).Where("record_id = ?", song.RecordID).Count(&totalTracksInt)
-				totalTracks = strconv.Itoa(int(totalTracksInt))
+				trackNumber := strconv.Itoa(song.TrackNumber + 1) // TrackNumber is 0-based, but we want 1-based
+				totalTracks := strconv.Itoa(int(totalTracksInt))
 
 				newTags[taglib.TrackNumber] = []string{trackNumber + "/" + totalTracks}
 
 				// Write tags to the song
-				state.Logger.Debug("MetadataToFiles->backingThread->updateSongs: Writing updated tags to song")
+				euryRT.logger.Debug("Writing updated tags to song")
 
-				if err := taglib.WriteTags(filepath.Join(state.Config.ActiveLibrary.LibraryPath, song.RelativePathFromLibrary), newTags, taglib.Clear); err != nil {
+				if err := taglib.WriteTags(songFullPath, newTags, taglib.Clear); err != nil {
 					panic(fmt.Sprintf("Failed to write tags to song '%s': %v", song.Title, err))
 				}
 
 				// Fetch the album art and update it, if we have some!
 				if song.ArtID != "" {
-					state.Logger.Debug("MetadataToFiles->backingThread->updateSongs: Fetching album art for song")
-					albumArt, err := os.ReadFile(filepath.Join(state.Config.AppStatePath, "thumbnails", song.ArtID))
+					euryRT.logger.Debug("Fetching album art for song")
+					albumArt, err := os.ReadFile(filepath.Join(euryRT.statePath, "thumbnails", song.ArtID))
 
 					if err != nil {
 						panic(fmt.Sprintf("Failed to fetch album art for song '%s': %v", song.Title, err))
 					}
 
-					state.Logger.Debug("MetadataToFiles->backingThread->updateSongs: Applying album art to song")
+					euryRT.logger.Debug("Applying album art to song")
 
-					if err := taglib.WriteImage(filepath.Join(state.Config.ActiveLibrary.LibraryPath, song.RelativePathFromLibrary), albumArt); err != nil {
+					if err := taglib.WriteImage(songFullPath, albumArt); err != nil {
 						panic(fmt.Sprintf("Failed to write album art to song '%s': %v", song.Title, err))
 					}
 				}
 
 				// We're done!
-				state.PageStates.MTFUpdate.TotalSongsUpdated++
-				state.PageStates.MTFUpdate.CurrentSongPath = fmt.Sprintf("%s - %s", artistsOnThisSong[0].Name, song.Title)
-
-				// Lock because appending is not thread-safe
 				databaseLockMutex.Lock()
-				relativePathsOfSongsToKeep = append(relativePathsOfSongsToKeep, song.RelativePathFromLibrary)
+				totalSongsUpdated++
+				updatedCount := totalSongsUpdated
+				relativePathsOfSongsToKeep = append(relativePathsOfSongsToKeep, songFullPath)
 				databaseLockMutex.Unlock()
+
+				euryRT.broadcastMTF(
+					fmt.Sprintf("Currently updating: %s - %s", artistsOnThisSong[0].Name, song.Title),
+					int((float32(updatedCount)/float32(totalSongsToUpdate))*100),
+					fmt.Sprintf("Updating... (%d/%d)", updatedCount, totalSongsToUpdate),
+					false,
+				)
 			}
 		})
 	}
@@ -210,43 +223,39 @@ func updateSongs(state *stateStructs.ApplicationState, songs []*database.Song, r
 	return relativePathsOfSongsToKeep, nil
 }
 
-func backingThread(state *stateStructs.ApplicationState) {
-	// Set up crash handler
-	defer func() {
-		if err := recover(); err != nil {
-			oncrash.Panic("Eurydice crash handler", fmt.Sprintf("Uncaught exception in background task: %s", err), state.Logger, state.LogFilePath)
-		}
-	}()
+func (euryRT *LibEuryRT) SyncMetadataToLocalFileStore() error {
+	if !euryRT.hasInitFinished {
+		return fmt.Errorf("not iniitalized yet")
+	}
 
-	// Switch to updating files step
-	state.PageStates.MTFUpdate.StepNo = mtfstate.StepUpdatingFiles
+	euryRT.broadcastMTF("Initializing runtime...", -1, "Initializing...", false)
 
 	// Initialize data structures
 	songs := []*database.Song{}
 	records := map[uint]*database.Record{}
 	artists := map[uint]*database.Artist{}
 
-	if err := state.Config.Database.Where("library_id = ?", state.Config.ActiveLibrary.ID).Find(&songs).Error; err != nil {
-		panic(fmt.Sprintf("Failed to fetch songs: %v", err))
+	if err := euryRT.db.Where("library_id = ?", euryRT.library.ID).Find(&songs).Error; err != nil {
+		return fmt.Errorf("failed to fetch songs: %w", err)
 	}
 
-	// Update songs on device
-	state.PageStates.MTFUpdate.TotalSongsToUpdate = len(songs)
-	relativePathsOfSongsToKeep, err := updateSongs(state, songs, records, artists)
+	// Update songs on disk
+	relativePathsOfSongsToKeep, err := euryRT.updateFilesFromMetadata(songs, records, artists)
 
 	if err != nil {
-		panic(fmt.Sprintf("Failed to update songs: %v", err))
+		return fmt.Errorf("failed to update songs: %w", err)
 	}
 
-	// We call out to scanlibrary here if we're missing songs as it has a nice cleanup function to remove songs, records, albums, and playlist entries
+	// Clean up database if any songs were missing from disk
 	if len(relativePathsOfSongsToKeep) != len(songs) {
-		state.PageStates.MTFUpdate.StepNo = mtfstate.StepCleaningUp
+		euryRT.broadcastMTF("Removing missing songs from database, please wait...", -1, "Cleaning...", false)
 
-		if err := scanlibrary.CleanupDatabase(state, relativePathsOfSongsToKeep); err != nil {
-			panic(fmt.Sprintf("Failed to cleanup database: %v", err))
+		if err := euryRT.cleanupDatabase(relativePathsOfSongsToKeep, true); err != nil {
+			return fmt.Errorf("failed to cleanup database: %w", err)
 		}
 	}
 
 	// We're done!
-	state.PageStates.MTFUpdate.StepNo = mtfstate.StepFinished
+	euryRT.broadcastMTF("Done.", 100, "Done!", true)
+	return nil
 }

@@ -7,7 +7,7 @@ import (
 	"path"
 
 	stateStructs "git.lunr.sh/luna/eurydice/state"
-	"git.lunr.sh/luna/eurydice/state/database"
+	"git.lunr.sh/luna/eurydice/utilities"
 	"github.com/AllenDang/cimgui-go/imgui"
 	"github.com/sqweek/dialog"
 )
@@ -19,7 +19,7 @@ func Render(state *stateStructs.ApplicationState) {
 		imgui.CloseCurrentPopup()
 		imgui.EndPopup()
 	case 0:
-		imgui.Text("Welcome to the Eurydice Rockbox management tool, made by Luna, et al.\n\nYou are using an alpha version! Thanks for being an early tester! Be wary of any bugs that may lurk beneath the surface.\n\nFirst, you need to tell me where your song library is, before I get started:\n\n")
+		imgui.Text("Welcome to the Eurydice Rockbox management tool, made by Luna, et al.\n\nThis setup screen will be replaced soon.\n\nFirst, you need to tell me where your song library is, before I get started:\n\n")
 		textCursorPosition := imgui.CursorScreenPos()
 
 		imgui.SetCursorScreenPos(imgui.Vec2{
@@ -27,7 +27,7 @@ func Render(state *stateStructs.ApplicationState) {
 			Y: textCursorPosition.Y - 6,
 		})
 
-		imgui.InputTextWithHint("##AudioPath", "Audio Path", &state.Config.JSONConfig.LibraryPath, 0, nil)
+		imgui.InputTextWithHint("##AudioPath", "Audio Path", &state.PageStates.FirstBoot.LibraryPath, 0, nil)
 		imgui.SameLine()
 
 		if imgui.Button("Browse...") {
@@ -36,8 +36,8 @@ func Render(state *stateStructs.ApplicationState) {
 			if err != nil {
 				state.Logger.Warnf("Failed to get audio directory: %v", err)
 			} else {
-				state.Logger.Infof("got text buf: %s", musicLibrary)
-				state.Config.JSONConfig.LibraryPath = musicLibrary
+				state.Logger.Infof("Chose path: %s", musicLibrary)
+				state.PageStates.FirstBoot.LibraryPath = musicLibrary
 			}
 		}
 
@@ -100,7 +100,7 @@ func Render(state *stateStructs.ApplicationState) {
 			Y: checkBoxCursorPosition.Y - 3.5,
 		})
 
-		imgui.Checkbox("##AutoAddToPlaylists", &state.Config.JSONConfig.AutoAddToPlaylists)
+		imgui.Checkbox("##AutoAddToPlaylists", &state.PageStates.FirstBoot.AutoAddToPlaylists)
 
 		textCursorPosition := imgui.CursorScreenPos()
 
@@ -122,38 +122,32 @@ func Render(state *stateStructs.ApplicationState) {
 		imgui.CloseCurrentPopup()
 		imgui.EndPopup()
 
-		// Initialize core database
-		library := &database.Library{
-			LibraryPath: state.Config.JSONConfig.LibraryPath,
-		}
+		// Initialize plugin store for libeury
+		euryStore := utilities.PluginStore{}
+		euryStore.Hydrate(state, "libeury")
 
-		state.Config.Database.Create(library)
-
-		// Create holding playlist, if enabled
-		if state.Config.JSONConfig.AutoAddToPlaylists {
-			playlist := &database.Playlist{
-				Name:      "Automatically Synced Songs",
-				LibraryID: library.ID,
-			}
-
-			state.Config.Database.Create(playlist)
-			state.Config.JSONConfig.AutoAddToPlaylistID = playlist.ID
-		}
+		euryStore.KVSet("legacyLibraryBootstrap", state.PageStates.FirstBoot.LibraryPath)
+		euryStore.KVSet("autoAddNewSongsToPlaylists", state.PageStates.FirstBoot.AutoAddToPlaylists)
 
 		// Sync configuration
 		state.Config.JSONConfig.HasOOBEFinished = true
-		state.PageStates.FirstBoot.HasFirstbootPageOpenedAlready = false
-		state.PageStates.FirstBoot.PageNo = 0 // incase the user finds a way to run this again?
+		state.Config.JSONConfig.ActiveCommonPlugin = "libeury"
+		state.Config.JSONConfig.ActiveSyncPlugin = "rockbox"
 
+		// Write the updated configuration to text
 		updatedConfiguration, err := json.Marshal(state.Config.JSONConfig)
 
 		if err != nil {
-			panic(fmt.Sprintf("Failed to marshal configuration: %v", err))
+			panic(fmt.Sprintf("Failed to marshal configuration: %s", err.Error()))
 		}
 
+		// Save it to disk
 		if err := os.WriteFile(state.Config.JSONConfigPath, updatedConfiguration, 0644); err != nil {
-			panic(fmt.Sprintf("Failed to write configuration: %v", err))
+			panic(fmt.Sprintf("Failed to write configuration: %s", err.Error()))
 		}
+
+		state.PageStates.FirstBoot.HasFirstbootPageOpenedAlready = false
+		state.PageStates.FirstBoot.PageNo = 0 // incase the user finds a way to run this again?
 
 		return
 	}

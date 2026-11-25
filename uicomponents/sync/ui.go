@@ -2,16 +2,14 @@ package sync
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
-	"time"
 
+	"git.lunr.sh/luna/eurydice/euryrt/core"
+	"git.lunr.sh/luna/eurydice/oncrash"
 	stateStructs "git.lunr.sh/luna/eurydice/state"
-	"git.lunr.sh/luna/eurydice/state/database"
 	"git.lunr.sh/luna/eurydice/state/syncstate"
 	"git.lunr.sh/luna/eurydice/uicomponents/widgets/songmanagement"
 	"github.com/AllenDang/cimgui-go/imgui"
@@ -20,156 +18,146 @@ import (
 
 var ItemWidth float32
 
+func selectAndInitDevice(state *stateStructs.ApplicationState, deviceIndex int32) error {
+	if int(deviceIndex) < 0 || int(deviceIndex) >= len(state.PageStates.Sync.DeviceList) {
+		return fmt.Errorf("invalid device index: %d", deviceIndex)
+	}
+
+	targetDevice := state.PageStates.Sync.DeviceList[deviceIndex]
+
+	if !state.SyncRT.MatchDevice(targetDevice.Mountpoint) {
+		return fmt.Errorf("selected device at %s is not supported by active sync runtime (%s)", targetDevice.Mountpoint, state.SyncRT.PluginID())
+	}
+
+	initializedDevice, err := state.SyncRT.InitializeDevice(targetDevice.Mountpoint, state.CoreRT)
+
+	if err != nil {
+		return fmt.Errorf("failed to initialize device at %s: %w", targetDevice.Mountpoint, err)
+	}
+
+	// Register the sync progress handler once on the newly initialized device instance
+	initializedDevice.RegisterSyncHandler(func(progressMessage string, progressBar int, progressBarMessage string, doneSyncing bool) {
+		if progressMessage != "" {
+			state.PageStates.Sync.ProgressMessage = progressMessage
+		}
+
+		state.PageStates.Sync.ProgressBar = progressBar
+
+		if progressBarMessage != "" {
+			state.PageStates.Sync.ProgressBarMessage = progressBarMessage
+		}
+
+		if doneSyncing {
+			state.PageStates.Sync.DoneSyncing = true
+		}
+	})
+
+	state.PageStates.Sync.SelectedDevice = initializedDevice
+	state.PageStates.Sync.QualityLevels = initializedDevice.GetQualityLevels()
+
+	if int(state.PageStates.Sync.AudioQuality) < 0 || int(state.PageStates.Sync.AudioQuality) >= len(state.PageStates.Sync.QualityLevels) {
+		state.PageStates.Sync.AudioQuality = 0
+	}
+
+	return nil
+}
+
+func backingThread(state *stateStructs.ApplicationState, playlistsToSync []*core.Playlist, qualityLevel *core.QualityLevel) {
+	defer func() {
+		if err := recover(); err != nil {
+			oncrash.Panic("Eurydice crash handler", fmt.Sprintf("Uncaught exception in sync background task: %s", err), state.Logger, state.LogFilePath)
+		}
+	}()
+
+	success, err := state.PageStates.Sync.SelectedDevice.Sync(
+		playlistsToSync,
+		state.PageStates.Sync.DeleteOldSongs,
+		state.PageStates.Sync.DeleteOldPlaylists,
+		qualityLevel,
+	)
+
+	if err != nil {
+		state.Logger.Errorf("Sync failed: %v", err)
+		state.PageStates.Sync.ErrHint = fmt.Sprintf("Failed to sync to device: %v", err)
+	} else if !success {
+		state.Logger.Error("Sync returned unsuccessful status")
+		state.PageStates.Sync.ErrHint = "Failed to sync to device."
+	}
+
+	// Mark sync as finished once the blocking Sync() call completes
+	state.PageStates.Sync.DoneSyncing = true
+}
+
+func finishSyncOnMainThread(state *stateStructs.ApplicationState) {
+	state.PageStates.Sync.IsSyncing = false
+	state.PageStates.Sync.DoneSyncing = false
+
+	if state.PageStates.SongManagement.IsCurrentlyDisplayingPlaylist {
+		if err := songmanagement.BootstrapIndex(state, state.PageStates.SongManagement.PlaylistID); err != nil {
+			panic(fmt.Sprintf("Failed to bootstrap song index in UI: %v", err))
+		}
+	} else {
+		if err := songmanagement.LoadAllSongs(state); err != nil {
+			panic(fmt.Sprintf("Failed to load all songs in UI: %v", err))
+		}
+	}
+}
+
 func RenderSyncProgressModal(state *stateStructs.ApplicationState) {
 	defer imgui.EndPopup()
 
-	switch state.PageStates.Sync.StepNo {
-	case syncstate.StepInit:
-		imgui.Text("Initializing runtime...\n")
-		imgui.Separator()
-		imgui.SetCursorPosY(imgui.CursorPosY() + 1) // Do this because it's not exactly the same
+	if state.PageStates.Sync.DoneSyncing {
+		finishSyncOnMainThread(state)
+		imgui.CloseCurrentPopup()
 
-		imgui.ProgressBarV(float32(imgui.Time()*-0.25), imgui.Vec2{X: 600, Y: 0}, "Starting...")
-		imgui.Separator()
-		imgui.SetCursorPosY(imgui.CursorPosY() + 1)
-
-		if imgui.Button("Close") {
-			imgui.CloseCurrentPopup()
-		}
-	case syncstate.StepFetchingData:
-		currentSongName := state.PageStates.Sync.CurrentSongName
-
-		if len(currentSongName) > 92 {
-			// Truncate characters but leave room for the ellipsis prefix
-			currentSongName = "..." + currentSongName[len(currentSongName)-(92-3):]
+		if state.PageStates.Sync.ErrHint != "" {
+			imgui.OpenPopupStr("Error | Sync")
 		}
 
-		imgui.Text("Grabbing metadata from the connected device and Eurydice...\n")
-		imgui.Text("Song: ")
-		imgui.SameLine()
-		imgui.PushFont(state.FontBold, 14)
-		imgui.Text(currentSongName)
-		imgui.PopFont()
+		return
+	}
 
-		imgui.Separator()
-		imgui.SetCursorPosY(imgui.CursorPosY() + 1) // Do this because it's not exactly the same
+	progressMessage := state.PageStates.Sync.ProgressMessage
 
-		imgui.ProgressBarV(float32(imgui.Time()*-0.25), imgui.Vec2{X: 600, Y: 0}, "Fetching...")
-		imgui.Separator()
-		imgui.SetCursorPosY(imgui.CursorPosY() + 1)
+	if progressMessage == "" {
+		progressMessage = "Initializing..."
+	}
 
-		if imgui.Button("Close") {
-			imgui.CloseCurrentPopup()
-		}
-	case syncstate.StepCopyingSongs:
-		// Calculate estimated time remaining based on the rolling average of sync times
-		estimatedTimeRemaining := time.Duration(0)
-		totalElementsGoingIntoAverage := 0
+	if len(progressMessage) > 92 {
+		// Truncate characters but leave room for the ellipsis prefix
+		progressMessage = "..." + progressMessage[len(progressMessage)-(92-3):]
+	}
 
-		for _, currentDuration := range state.PageStates.Sync.EstimatedTimeRollingAverages {
-			if currentDuration == 0 {
-				break
-			}
+	imgui.Text(progressMessage + "\n")
+	imgui.Separator()
+	imgui.SetCursorPosY(imgui.CursorPosY() + 1) // Do this because it's not exactly the same
 
-			totalElementsGoingIntoAverage++
-			estimatedTimeRemaining += currentDuration
-		}
+	progressBarMessage := state.PageStates.Sync.ProgressBarMessage
 
-		// Display estimated time remaining
-		var displayedTimeRemaining string
+	if progressBarMessage == "" {
+		progressBarMessage = "Initializing..."
+	}
 
-		if estimatedTimeRemaining != 0 {
-			estimatedTimeRemaining /= time.Duration(totalElementsGoingIntoAverage)                                                   // Get the average duration per element
-			estimatedTimeRemaining *= time.Duration(state.PageStates.Sync.TotalSongsToSync - state.PageStates.Sync.TotalSongsSynced) // Multiply by the number of songs remaining to sync
-			estimatedTimeRemaining = estimatedTimeRemaining.Round(time.Second)                                                       // Average to the second to remove milliseconds from the display
+	var fraction float32
 
-			displayedTimeRemaining = fmt.Sprintf("~%s remaining", estimatedTimeRemaining.String())
-		} else {
-			displayedTimeRemaining = "calculating..."
-		}
+	if state.PageStates.Sync.ProgressBar < 0 {
+		fraction = float32(imgui.Time() * -0.25)
+	} else {
+		capped := min(state.PageStates.Sync.ProgressBar, 100)
+		fraction = float32(capped) / 100.0
+	}
 
-		currentSongName := state.PageStates.Sync.CurrentSongName
+	imgui.ProgressBarV(fraction, imgui.Vec2{X: 600, Y: 0}, progressBarMessage)
+	imgui.Separator()
+	imgui.SetCursorPosY(imgui.CursorPosY() + 1)
 
-		if len(currentSongName) > 92 {
-			// Truncate characters but leave room for the ellipsis prefix
-			currentSongName = "..." + currentSongName[len(currentSongName)-(92-3):]
-		}
-
-		imgui.Text(fmt.Sprintf("Syncing song: %s (%s)\n", currentSongName, displayedTimeRemaining))
-		imgui.Separator()
-		imgui.SetCursorPosY(imgui.CursorPosY() + 1) // Do this because it's not exactly the same
-
-		progressBarText := fmt.Sprintf("Syncing... (%d/%d)", state.PageStates.Sync.TotalSongsSynced+1, state.PageStates.Sync.TotalSongsToSync)
-		imgui.ProgressBarV(float32(state.PageStates.Sync.TotalSongsSynced)/float32(state.PageStates.Sync.TotalSongsToSync), imgui.Vec2{X: 600, Y: 0}, progressBarText)
-		imgui.Separator()
-		imgui.SetCursorPosY(imgui.CursorPosY() + 1)
-
-		if imgui.Button("Close") {
-			imgui.CloseCurrentPopup()
-		}
-	case syncstate.StepDeletingOldSongs:
-		currentSongName := state.PageStates.Sync.CurrentSongName
-
-		if len(currentSongName) > 92 {
-			// Truncate characters but leave room for the ellipsis prefix
-			currentSongName = "..." + currentSongName[len(currentSongName)-(92-3):]
-		}
-
-		imgui.Text(fmt.Sprintf("Removing song: %s\n", currentSongName))
-		imgui.Separator()
-		imgui.SetCursorPosY(imgui.CursorPosY() + 1) // Do this because it's not exactly the same
-
-		progressBarText := fmt.Sprintf("Removing... (%d/%d)", state.PageStates.Sync.TotalSongsSynced+1, state.PageStates.Sync.TotalSongsToSync)
-		imgui.ProgressBarV(float32(state.PageStates.Sync.TotalSongsSynced)/float32(state.PageStates.Sync.TotalSongsToSync), imgui.Vec2{X: 600, Y: 0}, progressBarText)
-		imgui.Separator()
-		imgui.SetCursorPosY(imgui.CursorPosY() + 1)
-
-		if imgui.Button("Close") {
-			imgui.CloseCurrentPopup()
-		}
-	case syncstate.StepSyncingPlaylists:
-		imgui.Text("Syncing playlists...\n")
-		imgui.Separator()
-		imgui.SetCursorPosY(imgui.CursorPosY() + 1) // Do this because it's not exactly the same
-
-		imgui.ProgressBarV(float32(imgui.Time()*-0.25), imgui.Vec2{X: 600, Y: 0}, "Syncing...")
-		imgui.Separator()
-		imgui.SetCursorPosY(imgui.CursorPosY() + 1)
-
-		if imgui.Button("Close") {
-			imgui.CloseCurrentPopup()
-		}
-	case syncstate.StepFinalizing:
-		imgui.Text("Finalizing sync...\n")
-		imgui.Separator()
-		imgui.SetCursorPosY(imgui.CursorPosY() + 1) // Do this because it's not exactly the same
-
-		imgui.ProgressBarV(float32(imgui.Time()*-0.25), imgui.Vec2{X: 600, Y: 0}, "Finalizing...")
-		imgui.Separator()
-		imgui.SetCursorPosY(imgui.CursorPosY() + 1)
-
-		if imgui.Button("Close") {
-			imgui.CloseCurrentPopup()
-		}
-	case syncstate.StepFinished:
-		state.PageStates.Sync.StepNo = syncstate.StepIdle
-
-		if state.PageStates.SongManagement.IsCurrentlyDisplayingPlaylist {
-			if err := songmanagement.BootstrapIndex(state, state.PageStates.SongManagement.PlaylistID); err != nil {
-				panic(fmt.Sprintf("Failed to bootstrap song index in UI: %v", err))
-			}
-		} else {
-			if err := songmanagement.LoadAllSongs(state); err != nil {
-				panic(fmt.Sprintf("Failed to load all songs in UI: %v", err))
-			}
-		}
-
+	if imgui.Button("Close") {
 		imgui.CloseCurrentPopup()
 	}
 }
 
 func RenderSyncSetupModal(state *stateStructs.ApplicationState) {
-	displayedDeviceList := []string{}
+	displayedDeviceList := make([]string, 0, len(state.PageStates.Sync.DeviceList))
 
 	for _, device := range state.PageStates.Sync.DeviceList {
 		var displayedText string
@@ -188,7 +176,16 @@ func RenderSyncSetupModal(state *stateStructs.ApplicationState) {
 	imgui.SameLine()
 	imgui.SetNextItemWidth(300)
 
-	imgui.ComboStrarr("##SelectedDevice", &state.PageStates.Sync.UISelectedVolumeIndex, displayedDeviceList, int32(len(displayedDeviceList)))
+	if imgui.ComboStrarr("##SelectedDevice", &state.PageStates.Sync.UISelectedVolumeIndex, displayedDeviceList, int32(len(displayedDeviceList))) {
+		if err := selectAndInitDevice(state, state.PageStates.Sync.UISelectedVolumeIndex); err != nil {
+			state.PageStates.Sync.ErrHint = err.Error()
+			imgui.CloseCurrentPopup()
+			imgui.EndPopup()
+			imgui.OpenPopupStr("Error | Sync")
+
+			return
+		}
+	}
 
 	imgui.AlignTextToFramePadding()
 	imgui.Text("Storage Usage:")
@@ -204,12 +201,9 @@ func RenderSyncSetupModal(state *stateStructs.ApplicationState) {
 	imgui.Separator()
 	imgui.Spacing()
 
-	displayedAudioQualityList := []string{
-		"Same Quality, Same File Size",
-		"Low Quality, Small File Size (MP3, 128kbps)",
-		"Medium Quality, Medium File Size (MP3, 192kbps)",
-		"High Quality, Large File Size (MP3, 320kbps)",
-		"Lossless, Very Large File Size (FLAC)",
+	displayedAudioQualityList := make([]string, 0, len(state.PageStates.Sync.QualityLevels))
+	for _, level := range state.PageStates.Sync.QualityLevels {
+		displayedAudioQualityList = append(displayedAudioQualityList, level.Name)
 	}
 
 	imgui.AlignTextToFramePadding()
@@ -246,9 +240,6 @@ func RenderSyncSetupModal(state *stateStructs.ApplicationState) {
 	imgui.Spacing()
 
 	if imgui.Button("Sync") {
-		// Update selected device
-		state.PageStates.Sync.SelectedDevice = state.PageStates.Sync.DeviceList[state.PageStates.Sync.UISelectedVolumeIndex]
-
 		// Update current sync settings
 		state.Config.JSONConfig.DeleteOldSongs = state.PageStates.Sync.DeleteOldSongs
 		state.Config.JSONConfig.DeleteOldPlaylists = state.PageStates.Sync.DeleteOldPlaylists
@@ -266,8 +257,28 @@ func RenderSyncSetupModal(state *stateStructs.ApplicationState) {
 			panic(fmt.Sprintf("Failed to write config: %v", err))
 		}
 
-		state.PageStates.Sync.StepNo = syncstate.StepInit
-		go backingThread(state)
+		playlistsToSync := []*core.Playlist{}
+		for _, playlistEntry := range state.PageStates.Sync.PlaylistList {
+			if playlistEntry.ShouldSync {
+				playlistsToSync = append(playlistsToSync, playlistEntry.Playlist)
+			}
+		}
+
+		var selectedQuality *core.QualityLevel
+		if int(state.PageStates.Sync.AudioQuality) >= 0 && int(state.PageStates.Sync.AudioQuality) < len(state.PageStates.Sync.QualityLevels) {
+			selectedQuality = state.PageStates.Sync.QualityLevels[state.PageStates.Sync.AudioQuality]
+		} else if len(state.PageStates.Sync.QualityLevels) > 0 {
+			selectedQuality = state.PageStates.Sync.QualityLevels[0]
+		}
+
+		state.PageStates.Sync.ErrHint = ""
+		state.PageStates.Sync.IsSyncing = true
+		state.PageStates.Sync.DoneSyncing = false
+		state.PageStates.Sync.ProgressMessage = "Initializing runtime..."
+		state.PageStates.Sync.ProgressBar = -1
+		state.PageStates.Sync.ProgressBarMessage = "Starting..."
+
+		go backingThread(state, playlistsToSync, selectedQuality)
 
 		imgui.EndPopup()
 		imgui.CloseCurrentPopup()
@@ -296,8 +307,15 @@ func RenderButton(state *stateStructs.ApplicationState) {
 
 	ItemWidth = imgui.CalcTextSize("Sync to Device").X + (20 * state.ScaleFactor)
 
-	switch state.PageStates.Sync.StepNo {
-	case syncstate.StepIdle:
+	if state.PageStates.Sync.DoneSyncing {
+		finishSyncOnMainThread(state)
+
+		if state.PageStates.Sync.ErrHint != "" {
+			imgui.OpenPopupStr("Error | Sync")
+		}
+	}
+
+	if !state.PageStates.Sync.IsSyncing {
 		if imgui.ButtonV("Sync to Device", imgui.Vec2{X: ItemWidth, Y: 0}) {
 			state.PageStates.Sync.DeviceList = []*syncstate.SyncDevice{}
 			partitions, err := disk.Partitions(false)
@@ -307,20 +325,8 @@ func RenderButton(state *stateStructs.ApplicationState) {
 			}
 
 			for _, partition := range partitions {
-				if _, err := os.ReadDir(filepath.Join(partition.Mountpoint, ".rockbox")); err != nil {
-					if errors.Is(err, os.ErrNotExist) {
-						// Check if we have Eurydice metadata on this partition, and if we don't, then skip this
-						if _, err := os.ReadFile(filepath.Join(partition.Mountpoint, ".eurydice.json")); err != nil {
-							state.Logger.Debugf("Partition %s does not contain a .rockbox directory or a eurydice metadata file, skipping", partition.Mountpoint)
-							continue
-						}
-					} else if errors.Is(err, os.ErrPermission) {
-						state.Logger.Debugf("Partition %s's .rockbox directory is not accessible, skipping", partition.Mountpoint)
-						continue
-					} else {
-						state.Logger.Errorf("Unexpected error: %v", err)
-						continue
-					}
+				if !state.SyncRT.MatchDevice(partition.Mountpoint) {
+					continue
 				}
 
 				diskUsage, err := disk.Usage(partition.Mountpoint)
@@ -336,36 +342,48 @@ func RenderButton(state *stateStructs.ApplicationState) {
 					UsagePercent: diskUsage.UsedPercent,
 				})
 
-				state.Logger.Infof("Found a matching Rockbox device: %s (%s)", partition.Device, partition.Mountpoint)
+				state.Logger.Infof("Found a matching device (%s): %s (%s)", state.SyncRT.PluginID(), partition.Device, partition.Mountpoint)
 			}
 
 			if len(state.PageStates.Sync.DeviceList) == 0 {
-				state.PageStates.Sync.ErrHint = "No devices running Rockbox found! Is your music player plugged in?"
+				state.PageStates.Sync.ErrHint = "No compatible devices found! Is your music player plugged in?"
 				imgui.OpenPopupStr("Error | Sync")
 
 				return
 			}
 
-			playlistsFromDatabase := []database.Playlist{}
+			state.PageStates.Sync.UISelectedVolumeIndex = 0
+			state.PageStates.Sync.AudioQuality = state.Config.JSONConfig.AudioQuality
+			state.PageStates.Sync.DeleteOldSongs = state.Config.JSONConfig.DeleteOldSongs
+			state.PageStates.Sync.DeleteOldPlaylists = state.Config.JSONConfig.DeleteOldPlaylists
 
-			namedPlaylists := []*syncstate.SyncPlaylist{}
-			unnamedPlaylists := []*syncstate.SyncPlaylist{}
+			if err := selectAndInitDevice(state, 0); err != nil {
+				state.PageStates.Sync.ErrHint = err.Error()
+				imgui.OpenPopupStr("Error | Sync")
 
-			if err := state.Config.Database.Where("library_id = ?", state.Config.ActiveLibrary.ID).Find(&playlistsFromDatabase).Error; err != nil {
+				return
+			}
+
+			playlistsFromRuntime, err := state.CoreRT.GetPlaylists()
+
+			if err != nil {
 				state.Logger.Errorf("Failed to get playlists: %v", err)
 			}
 
+			namedPlaylists := []*syncstate.SyncPlaylist{}
+			unnamedPlaylists := []*syncstate.SyncPlaylist{}
 			unnamedPlaylistCount := 1
 
-			for _, databasePlaylist := range playlistsFromDatabase {
+			for _, runtimePlaylist := range playlistsFromRuntime {
+				playlistCopy := *runtimePlaylist
 				playlistSyncState := &syncstate.SyncPlaylist{
-					Playlist:   &databasePlaylist,
+					Playlist:   &playlistCopy,
 					ShouldSync: true,
 				}
 
-				if databasePlaylist.Name == "" {
+				if playlistCopy.Name == "" {
 					// Bit of a hack, but meh, if it works it works
-					databasePlaylist.Name = fmt.Sprintf("Unnamed Playlist #%d", unnamedPlaylistCount)
+					playlistCopy.Name = fmt.Sprintf("Unnamed Playlist #%d", unnamedPlaylistCount)
 					unnamedPlaylistCount++
 
 					unnamedPlaylists = append(unnamedPlaylists, playlistSyncState)
@@ -381,11 +399,9 @@ func RenderButton(state *stateStructs.ApplicationState) {
 			state.PageStates.Sync.PlaylistList = unnamedPlaylists
 			state.PageStates.Sync.PlaylistList = append(state.PageStates.Sync.PlaylistList, namedPlaylists...)
 
-			state.PageStates.Sync.AudioQuality = state.Config.JSONConfig.AudioQuality
-
 			imgui.OpenPopupStr("Sync Options")
 		}
-	case syncstate.StepInit:
+	} else {
 		currentCursorPos := imgui.CursorPos()
 
 		if imgui.InvisibleButton("SyncButton", imgui.Vec2{X: ItemWidth, Y: imgui.ContentRegionAvail().Y * 2}) {
@@ -393,65 +409,20 @@ func RenderButton(state *stateStructs.ApplicationState) {
 		}
 
 		imgui.SetCursorPos(currentCursorPos)
-		imgui.ProgressBarV(float32(imgui.Time()*-0.5), imgui.Vec2{X: ItemWidth, Y: 0}, "Starting...")
-	case syncstate.StepFetchingData:
-		currentCursorPos := imgui.CursorPos()
 
-		if imgui.InvisibleButton("SyncButton", imgui.Vec2{X: ItemWidth, Y: imgui.ContentRegionAvail().Y * 2}) {
-			imgui.OpenPopupStr("Sync Progress")
+		progressBarMessage := state.PageStates.Sync.ProgressBarMessage
+		if progressBarMessage == "" {
+			progressBarMessage = "Starting..."
 		}
 
-		imgui.SetCursorPos(currentCursorPos)
-		imgui.ProgressBarV(float32(imgui.Time()*-0.5), imgui.Vec2{X: ItemWidth, Y: 0}, "Fetching...")
-	case syncstate.StepCopyingSongs:
-		currentCursorPos := imgui.CursorPos()
-
-		if imgui.InvisibleButton("SyncButton", imgui.Vec2{X: ItemWidth, Y: imgui.ContentRegionAvail().Y * 2}) {
-			imgui.OpenPopupStr("Sync Progress")
-		}
-
-		imgui.SetCursorPos(currentCursorPos)
-		progressBarText := fmt.Sprintf("Synced %d/%d", state.PageStates.Sync.TotalSongsSynced+1, state.PageStates.Sync.TotalSongsToSync)
-		imgui.ProgressBarV(float32(state.PageStates.Sync.TotalSongsSynced)/float32(state.PageStates.Sync.TotalSongsToSync), imgui.Vec2{X: ItemWidth, Y: 0}, progressBarText)
-	case syncstate.StepDeletingOldSongs:
-		currentCursorPos := imgui.CursorPos()
-
-		if imgui.InvisibleButton("SyncButton", imgui.Vec2{X: ItemWidth, Y: imgui.ContentRegionAvail().Y * 2}) {
-			imgui.OpenPopupStr("Sync Progress")
-		}
-
-		imgui.SetCursorPos(currentCursorPos)
-		progressBarText := fmt.Sprintf("Removed %d/%d", state.PageStates.Sync.TotalSongsSynced+1, state.PageStates.Sync.TotalSongsToSync)
-		imgui.ProgressBarV(float32(state.PageStates.Sync.TotalSongsSynced)/float32(state.PageStates.Sync.TotalSongsToSync), imgui.Vec2{X: ItemWidth, Y: 0}, progressBarText)
-	case syncstate.StepSyncingPlaylists:
-		currentCursorPos := imgui.CursorPos()
-
-		if imgui.InvisibleButton("SyncButton", imgui.Vec2{X: ItemWidth, Y: imgui.ContentRegionAvail().Y * 2}) {
-			imgui.OpenPopupStr("Sync Progress")
-		}
-
-		imgui.SetCursorPos(currentCursorPos)
-		imgui.ProgressBarV(float32(imgui.Time()*-0.5), imgui.Vec2{X: ItemWidth, Y: 0}, "Copying...")
-	case syncstate.StepFinalizing:
-		currentCursorPos := imgui.CursorPos()
-
-		if imgui.InvisibleButton("SyncButton", imgui.Vec2{X: ItemWidth, Y: imgui.ContentRegionAvail().Y * 2}) {
-			imgui.OpenPopupStr("Sync Progress")
-		}
-
-		imgui.SetCursorPos(currentCursorPos)
-		imgui.ProgressBarV(float32(imgui.Time()*-0.5), imgui.Vec2{X: ItemWidth, Y: 0}, "Finalizing...")
-	case syncstate.StepFinished:
-		if state.PageStates.SongManagement.IsCurrentlyDisplayingPlaylist {
-			if err := songmanagement.BootstrapIndex(state, state.PageStates.SongManagement.PlaylistID); err != nil {
-				panic(fmt.Sprintf("Failed to bootstrap song index in UI: %v", err))
-			}
+		var fraction float32
+		if state.PageStates.Sync.ProgressBar < 0 {
+			fraction = float32(imgui.Time() * -0.5)
 		} else {
-			if err := songmanagement.LoadAllSongs(state); err != nil {
-				panic(fmt.Sprintf("Failed to load all songs in UI: %v", err))
-			}
+			capped := min(state.PageStates.Sync.ProgressBar, 100)
+			fraction = float32(capped) / 100.0
 		}
 
-		state.PageStates.Sync.StepNo = syncstate.StepIdle
+		imgui.ProgressBarV(fraction, imgui.Vec2{X: ItemWidth, Y: 0}, progressBarMessage)
 	}
 }

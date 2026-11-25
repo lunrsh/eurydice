@@ -13,6 +13,8 @@
     go-task
     ffmpeg_8
 
+    imagemagick
+
     #xorg.libX11
     #wayland
     #gtk3

@@ -6,17 +6,16 @@ import (
 	"strings"
 
 	stateStructs "git.lunr.sh/luna/eurydice/state"
-	"git.lunr.sh/luna/eurydice/state/database"
 	"git.lunr.sh/luna/eurydice/state/widgetstate/playlistselectionstate"
 )
 
 func BootstrapIndex(state *stateStructs.ApplicationState) error {
-	allPlaylists := []database.Playlist{}
-
 	allVisibleNamedPlaylists := []*playlistselectionstate.PlaylistState{}
 	unnamedPlaylists := []*playlistselectionstate.PlaylistState{}
 
-	if err := state.Config.Database.Where("library_id = ?", state.Config.ActiveLibrary.ID).Find(&allPlaylists).Error; err != nil {
+	allPlaylists, err := state.CoreRT.GetPlaylists()
+
+	if err != nil {
 		return fmt.Errorf("failed to load playlists: %w", err)
 	}
 
