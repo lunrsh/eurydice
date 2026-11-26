@@ -1072,10 +1072,6 @@ func (euryRT *LibEuryRT) GetArt(artID string) (image.Image, error) {
 //
 // **IF NOT IMPLEMENTED, SOME RECATEGORIZATION FEATURES MAY BE DISABLED.**
 func (euryRT *LibEuryRT) AddArtToDatabase(imageData image.Image) (artID string, err error) {
-	if !euryRT.hasInitFinished {
-		return "", fmt.Errorf("not iniitalized yet")
-	}
-
 	md5Hash := md5.New()
 	hashImage(imageData, md5Hash)
 
