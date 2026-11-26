@@ -59,10 +59,11 @@ tasks:
   package-macos:
     # if this fails: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
     # and if it fails after THAT: xcodebuild -runFirstLaunch
+    - task: build
     - rm -rf dist/Eurydice.app
     - mkdir -p dist/Eurydice.app/Contents dist/Eurydice.app/Contents/Resources dist/Eurydice.app/Contents/MacOS 2>/dev/null || exit 0
     - |
-      xcrun actool ./assets/eurydice-icon-macos.icon \
+      env -u SDKROOT DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun actool ./assets/eurydice-icon-macos.icon \
       --compile ./dist/Eurydice.app/Contents/Resources \
       --app-icon eurydice-icon-macos \
       --platform macosx \
@@ -70,6 +71,6 @@ tasks:
       --output-partial-info-plist ./dist/EurydicePartial.plist \
       --enable-on-demand-resources NO
     - cp dist/eurydice dist/Eurydice.app/Contents/MacOS/eurydice
-    - cp assets/mach.plist dist/Eurydice.app/Contents/info.plist
+    - cp assets/mach.plist dist/Eurydice.app/Contents/Info.plist
     - xattr -cr dist/Eurydice.app
     - codesign -fs "Luna Solaris" --deep dist/Eurydice.app
