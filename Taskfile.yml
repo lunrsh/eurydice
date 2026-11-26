@@ -43,7 +43,7 @@ tasks:
     - FALLBACK_OS={{OS}} FALLBACK_ARCH={{ARCH}} ./ci/build_ffmpeg.sh {{.CLI_ARGS}}
 
   build:
-    - mkdir dist 2>/dev/null >/dev/null || exit 0
+    - mkdir dist 2>/dev/null || exit 0
     - |
       if [ ! -d "{{.FFMPEG_DIST}}/lib/pkgconfig" ]; then
         FALLBACK_OS={{OS}} FALLBACK_ARCH={{ARCH}} ./ci/build_ffmpeg.sh {{.CLI_ARGS}}
@@ -55,3 +55,21 @@ tasks:
   dev:
     - task: build
     - EURYDICE_LOG_LEVEL=debug EURYDICE_NO_CRASH_DIALOG=1 EURYDICE_SHOW_DEBUG_UI=1 {{.OUTPUT_FILE}}
+
+  package-macos:
+    # if this fails: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+    # and if it fails after THAT: xcodebuild -runFirstLaunch
+    - rm -rf dist/Eurydice.app
+    - mkdir -p dist/Eurydice.app/Contents dist/Eurydice.app/Contents/Resources dist/Eurydice.app/Contents/MacOS 2>/dev/null || exit 0
+    - |
+      xcrun actool ./assets/eurydice-icon-macos.icon \
+      --compile ./dist/Eurydice.app/Contents/Resources \
+      --app-icon eurydice-icon-macos \
+      --platform macosx \
+      --minimum-deployment-target 14.0 \
+      --output-partial-info-plist ./dist/EurydicePartial.plist \
+      --enable-on-demand-resources NO
+    - cp dist/eurydice dist/Eurydice.app/Contents/MacOS/eurydice
+    - cp assets/mach.plist dist/Eurydice.app/Contents/info.plist
+    - xattr -cr dist/Eurydice.app
+    - codesign -fs "Luna Solaris" --deep dist/Eurydice.app
