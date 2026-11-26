@@ -204,7 +204,7 @@ func mainLoop() {
 			imgui.EndMenu()
 		}
 
-		if os.Getenv("EURYDICE_SHOW_DEBUG_UI") != "" {
+		if os.Getenv("EURYDICE_SHOW_DEBUG_UI") != "" || state.IsDevelBuild {
 			if imgui.BeginMenu("Debug") {
 				isAnyMenubarOpen = true
 
