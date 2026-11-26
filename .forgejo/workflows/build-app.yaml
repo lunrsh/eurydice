@@ -36,6 +36,7 @@ jobs:
         run: |
           sed -i \
             -e 's/^[[:space:]]*#xorg\.libX11/xorg.libX11/' \
+            -e 's/^[[:space:]]*#libgl/libgl/' \
             -e 's/^[[:space:]]*#wayland/wayland/' \
             -e 's/^[[:space:]]*#gtk3/gtk3/' \
             shell.nix
